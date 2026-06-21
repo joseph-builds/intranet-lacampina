@@ -208,7 +208,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/`,
+        emailRedirectTo: "https://intranet.ie1267bicentenario.edu.pe/",
         data: userData
       }
     });

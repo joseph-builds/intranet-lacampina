@@ -300,7 +300,7 @@ serve(async (req: Request) => {
                   .from('course_enrollments')
                   .select('id')
                   .eq('student_id', profileId)
-                  .eq('course_id', courseId)
+                  .eq('modulo_id', courseId)
                   .single();
 
                 if (!existingEnrollment) {
@@ -308,7 +308,7 @@ serve(async (req: Request) => {
                     .from('course_enrollments')
                     .insert({
                       student_id: profileId,
-                      course_id: courseId,
+                      modulo_id: courseId,
                     });
 
                   if (enrollError) {
@@ -447,7 +447,7 @@ serve(async (req: Request) => {
               // Inscribir estudiante en todos los cursos de las aulas especificadas
               const enrollmentData = classroomCourses.map(course => ({
                 student_id: studentData.id,
-                course_id: course.id,
+                modulo_id: course.id,
                 enrolled_at: new Date().toISOString()
               }))
 
@@ -480,7 +480,7 @@ serve(async (req: Request) => {
               console.error('❌ Error al verificar cursos:', verifyError)
             } else if (existingCourses && existingCourses.length > 0) {
               // Filtrar cursos que no fueron inscritos previamente
-              const existingEnrollmentCourses = enrollmentResults.map(e => e.course_id)
+              const existingEnrollmentCourses = enrollmentResults.map(e => e.modulo_id)
               const newCourseIds = existingCourses
                 .filter(course => !existingEnrollmentCourses.includes(course.id))
                 .map(course => course.id)
@@ -488,7 +488,7 @@ serve(async (req: Request) => {
               if (newCourseIds.length > 0) {
                 const enrollmentData = newCourseIds.map(courseId => ({
                   student_id: studentData.id,
-                  course_id: courseId,
+                  modulo_id: courseId,
                   enrolled_at: new Date().toISOString()
                 }))
 

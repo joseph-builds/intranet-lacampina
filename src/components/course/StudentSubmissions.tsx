@@ -130,16 +130,16 @@ export function StudentSubmissions({
         mimeType = file.type;
       }
 
-      // Get course_id from resource
+      // Get modulo_id from resource
       const { data: resource, error: resourceError } = await supabase
         .from('course_weekly_resources')
-        .select('section:course_weekly_sections!inner(course_id)')
+        .select('section:course_weekly_sections!inner(modulo_id)')
         .eq('id', resourceId)
         .single();
 
       if (resourceError) throw resourceError;
 
-      const courseId = (resource.section as any).course_id;
+      const courseId = (resource.section as any).modulo_id;
 
       // Use edge function to handle assignment creation and submission
       const { data, error } = await supabase.functions.invoke('submit-assignment', {

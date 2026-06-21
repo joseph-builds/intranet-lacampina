@@ -91,7 +91,7 @@ const AdminBulkStudentImport = () => {
               const { data: enrollments } = await supabase
                 .from('course_enrollments')
                 .select('student_id')
-                .in('course_id', courseIds);
+                .in('modulo_id', courseIds);
               
               // Count unique students
               const uniqueStudents = new Set(enrollments?.map(e => e.student_id) || []);

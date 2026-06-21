@@ -28,7 +28,7 @@ interface Exam {
   start_time: string;
   duration_minutes: number;
   max_score: number;
-  course_id: string;
+  modulo_id: string;
   source: 'exam' | 'weekly_resource';
   course: {
     id: string;
@@ -67,7 +67,7 @@ const Exams = () => {
     const { data: quizData } = await supabase
       .from('quizzes')
       .select('id')
-      .eq('course_id', courseId)
+      .eq('modulo_id', courseId)
       .eq('title', quizTitle)
       .maybeSingle();
 
@@ -131,7 +131,7 @@ const Exams = () => {
       const combinedExams: Exam[] = await Promise.all([
         ...(examsData || []).map(async exam => {
           const submission = profile?.role === 'student' 
-            ? await checkExamSubmission(exam.id, exam.title, exam.course_id)
+            ? await checkExamSubmission(exam.id, exam.title, exam.modulo_id)
             : null;
           
           return {
@@ -141,7 +141,7 @@ const Exams = () => {
             start_time: exam.start_time,
             duration_minutes: exam.duration_minutes,
             max_score: exam.max_score,
-            course_id: exam.course_id,
+            modulo_id: exam.modulo_id,
             source: 'exam' as const,
             course: exam.course,
             submission
@@ -159,7 +159,7 @@ const Exams = () => {
             start_time: resource.assignment_deadline || new Date().toISOString(),
             duration_minutes: 60, // Default duration
             max_score: resource.max_score || 100,
-            course_id: resource.section.course.id,
+            modulo_id: resource.section.course.id,
             source: 'weekly_resource' as const,
             course: resource.section.course,
             submission
@@ -337,7 +337,7 @@ const Exams = () => {
                         variant="outline"
                         asChild
                       >
-                        <Link to={`/courses/${exam.course_id}`}>
+                        <Link to={`/courses/${exam.modulo_id}`}>
                           Ver Curso
                         </Link>
                       </Button>

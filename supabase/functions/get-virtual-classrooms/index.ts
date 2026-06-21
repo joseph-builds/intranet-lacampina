@@ -134,14 +134,14 @@ serve(async (req: Request) => {
     if (courseIds.length > 0) {
       const { data: enrollments, error: enrollmentsError } = await supabaseClient
         .from('course_enrollments')
-        .select('course_id, student_id')
-        .in('course_id', courseIds)
+        .select('modulo_id, student_id')
+        .in('modulo_id', courseIds)
       
       if (!enrollmentsError && enrollments) {
         enrollments.forEach(enrollment => {
-          const courseEnrollments = enrollmentsMap.get(enrollment.course_id) || []
+          const courseEnrollments = enrollmentsMap.get(enrollment.modulo_id) || []
           courseEnrollments.push(enrollment)
-          enrollmentsMap.set(enrollment.course_id, courseEnrollments)
+          enrollmentsMap.set(enrollment.modulo_id, courseEnrollments)
         })
       }
     }

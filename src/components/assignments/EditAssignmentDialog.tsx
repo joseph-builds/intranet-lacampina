@@ -49,7 +49,7 @@ export function EditAssignmentDialog({ assignmentId, open, onOpenChange, onSucce
   const [resourceId, setResourceId] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
-    course_id: '',
+    modulo_id: '',
     title: '',
     description: '',
     due_date: null as Date | null,
@@ -87,7 +87,7 @@ export function EditAssignmentDialog({ assignmentId, open, onOpenChange, onSucce
 
       if (assignment) {
         setFormData({
-          course_id: assignment.course_id,
+          modulo_id: assignment.modulo_id,
           title: assignment.title,
           description: assignment.description || '',
           due_date: new Date(assignment.due_date),
@@ -221,7 +221,7 @@ export function EditAssignmentDialog({ assignmentId, open, onOpenChange, onSucce
       const { error: assignmentError } = await supabase
         .from('assignments')
         .update({
-          course_id: formData.course_id,
+          modulo_id: formData.modulo_id,
           title: formData.title.trim(),
           description: formData.description.trim() || null,
           due_date: formData.due_date.toISOString(),
@@ -257,7 +257,7 @@ export function EditAssignmentDialog({ assignmentId, open, onOpenChange, onSucce
         const { data: sections } = await supabase
           .from('course_weekly_sections')
           .select('id')
-          .eq('course_id', formData.course_id)
+          .eq('modulo_id', formData.modulo_id)
           .order('week_number', { ascending: false })
           .limit(1);
 
@@ -325,10 +325,10 @@ export function EditAssignmentDialog({ assignmentId, open, onOpenChange, onSucce
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="course_id">Curso</Label>
+              <Label htmlFor="modulo_id">Curso</Label>
               <Select
-                value={formData.course_id}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, course_id: value }))}
+                value={formData.modulo_id}
+                onValueChange={(value) => setFormData(prev => ({ ...prev, modulo_id: value }))}
               >
                 <SelectTrigger>
                   <SelectValue />

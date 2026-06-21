@@ -38,21 +38,21 @@ serve(async (req) => {
     }
 
     const url = new URL(req.url);
-    const course_id = url.searchParams.get('course_id');
+    const modulo_id = url.searchParams.get('modulo_id');
     const start_date = url.searchParams.get('start_date');
     const end_date = url.searchParams.get('end_date');
 
-    if (!course_id) {
-      throw new Error('course_id es requerido');
+    if (!modulo_id) {
+      throw new Error('modulo_id es requerido');
     }
 
-    console.log('📊 Obteniendo asistencia del curso:', course_id);
+    console.log('📊 Obteniendo asistencia del curso:', modulo_id);
 
     // Verify permissions
     if (profile.role === 'teacher') {
       const { data: isTeacher } = await supabaseClient
         .rpc('is_any_course_teacher', { 
-          _course_id: course_id, 
+          _course_id: modulo_id, 
           _user_id: user.id 
         });
 
@@ -78,7 +78,7 @@ serve(async (req) => {
           email
         )
       `)
-      .eq('course_id', course_id)
+      .eq('modulo_id', modulo_id)
       .order('date', { ascending: false })
       .order('student(last_name)', { ascending: true });
 

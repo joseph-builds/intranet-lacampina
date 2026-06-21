@@ -168,7 +168,7 @@ export type Database = {
       }
       assignments: {
         Row: {
-          course_id: string | null
+          modulo_id: string | null
           created_at: string | null
           description: string | null
           due_date: string | null
@@ -179,7 +179,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
-          course_id?: string | null
+          modulo_id?: string | null
           created_at?: string | null
           description?: string | null
           due_date?: string | null
@@ -190,7 +190,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
-          course_id?: string | null
+          modulo_id?: string | null
           created_at?: string | null
           description?: string | null
           due_date?: string | null
@@ -203,7 +203,7 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "assignments_course_id_fkey"
-            columns: ["course_id"]
+            columns: ["modulo_id"]
             isOneToOne: false
             referencedRelation: "courses"
             referencedColumns: ["id"]
@@ -213,7 +213,7 @@ export type Database = {
       attendance: {
         Row: {
           classroom_id: string | null
-          course_id: string | null
+          modulo_id: string | null
           created_at: string | null
           date: string
           id: string
@@ -225,7 +225,7 @@ export type Database = {
         }
         Insert: {
           classroom_id?: string | null
-          course_id?: string | null
+          modulo_id?: string | null
           created_at?: string | null
           date: string
           id?: string
@@ -237,7 +237,7 @@ export type Database = {
         }
         Update: {
           classroom_id?: string | null
-          course_id?: string | null
+          modulo_id?: string | null
           created_at?: string | null
           date?: string
           id?: string
@@ -257,7 +257,7 @@ export type Database = {
           },
           {
             foreignKeyName: "attendance_course_id_fkey"
-            columns: ["course_id"]
+            columns: ["modulo_id"]
             isOneToOne: false
             referencedRelation: "courses"
             referencedColumns: ["id"]
@@ -315,19 +315,19 @@ export type Database = {
       }
       course_enrollments: {
         Row: {
-          course_id: string | null
+          modulo_id: string | null
           enrolled_at: string | null
           id: string
           student_id: string | null
         }
         Insert: {
-          course_id?: string | null
+          modulo_id?: string | null
           enrolled_at?: string | null
           id?: string
           student_id?: string | null
         }
         Update: {
-          course_id?: string | null
+          modulo_id?: string | null
           enrolled_at?: string | null
           id?: string
           student_id?: string | null
@@ -335,7 +335,7 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "course_enrollments_course_id_fkey"
-            columns: ["course_id"]
+            columns: ["modulo_id"]
             isOneToOne: false
             referencedRelation: "courses"
             referencedColumns: ["id"]
@@ -351,7 +351,7 @@ export type Database = {
       }
       course_events: {
         Row: {
-          course_id: string
+          modulo_id: string
           created_at: string | null
           created_by: string
           description: string | null
@@ -365,7 +365,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
-          course_id: string
+          modulo_id: string
           created_at?: string | null
           created_by: string
           description?: string | null
@@ -379,7 +379,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
-          course_id?: string
+          modulo_id?: string
           created_at?: string | null
           created_by?: string
           description?: string | null
@@ -395,7 +395,7 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "course_events_course_id_fkey"
-            columns: ["course_id"]
+            columns: ["modulo_id"]
             isOneToOne: false
             referencedRelation: "courses"
             referencedColumns: ["id"]
@@ -434,7 +434,7 @@ export type Database = {
       }
       course_forum_topics: {
         Row: {
-          course_id: string
+          modulo_id: string
           created_at: string | null
           created_by: string
           description: string | null
@@ -445,7 +445,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
-          course_id: string
+          modulo_id: string
           created_at?: string | null
           created_by: string
           description?: string | null
@@ -456,7 +456,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
-          course_id?: string
+          modulo_id?: string
           created_at?: string | null
           created_by?: string
           description?: string | null
@@ -470,7 +470,7 @@ export type Database = {
       }
       course_modules: {
         Row: {
-          course_id: string
+          modulo_id: string
           created_at: string | null
           description: string | null
           id: string
@@ -480,7 +480,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
-          course_id: string
+          modulo_id: string
           created_at?: string | null
           description?: string | null
           id?: string
@@ -490,7 +490,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
-          course_id?: string
+          modulo_id?: string
           created_at?: string | null
           description?: string | null
           id?: string
@@ -542,21 +542,21 @@ export type Database = {
       }
       course_teachers: {
         Row: {
-          course_id: string
+          modulo_id: string
           created_at: string | null
           id: string
           is_primary: boolean | null
           teacher_id: string
         }
         Insert: {
-          course_id: string
+          modulo_id: string
           created_at?: string | null
           id?: string
           is_primary?: boolean | null
           teacher_id: string
         }
         Update: {
-          course_id?: string
+          modulo_id?: string
           created_at?: string | null
           id?: string
           is_primary?: boolean | null
@@ -565,7 +565,7 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "course_teachers_course_id_fkey"
-            columns: ["course_id"]
+            columns: ["modulo_id"]
             isOneToOne: false
             referencedRelation: "courses"
             referencedColumns: ["id"]
@@ -662,7 +662,7 @@ export type Database = {
       }
       course_weekly_sections: {
         Row: {
-          course_id: string
+          modulo_id: string
           created_at: string | null
           description: string | null
           end_date: string | null
@@ -675,7 +675,7 @@ export type Database = {
           week_number: number
         }
         Insert: {
-          course_id: string
+          modulo_id: string
           created_at?: string | null
           description?: string | null
           end_date?: string | null
@@ -688,7 +688,7 @@ export type Database = {
           week_number: number
         }
         Update: {
-          course_id?: string
+          modulo_id?: string
           created_at?: string | null
           description?: string | null
           end_date?: string | null
@@ -703,7 +703,7 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "course_weekly_sections_course_id_fkey"
-            columns: ["course_id"]
+            columns: ["modulo_id"]
             isOneToOne: false
             referencedRelation: "courses"
             referencedColumns: ["id"]
@@ -775,7 +775,7 @@ export type Database = {
       }
       exams: {
         Row: {
-          course_id: string | null
+          modulo_id: string | null
           created_at: string | null
           description: string | null
           duration_minutes: number
@@ -786,7 +786,7 @@ export type Database = {
           title: string
         }
         Insert: {
-          course_id?: string | null
+          modulo_id?: string | null
           created_at?: string | null
           description?: string | null
           duration_minutes: number
@@ -797,7 +797,7 @@ export type Database = {
           title: string
         }
         Update: {
-          course_id?: string | null
+          modulo_id?: string | null
           created_at?: string | null
           description?: string | null
           duration_minutes?: number
@@ -810,7 +810,7 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "exams_course_id_fkey"
-            columns: ["course_id"]
+            columns: ["modulo_id"]
             isOneToOne: false
             referencedRelation: "courses"
             referencedColumns: ["id"]
@@ -1133,7 +1133,7 @@ export type Database = {
       }
       quizzes: {
         Row: {
-          course_id: string
+          modulo_id: string
           created_at: string | null
           description: string | null
           due_date: string | null
@@ -1145,7 +1145,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
-          course_id: string
+          modulo_id: string
           created_at?: string | null
           description?: string | null
           due_date?: string | null
@@ -1157,7 +1157,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
-          course_id?: string
+          modulo_id?: string
           created_at?: string | null
           description?: string | null
           due_date?: string | null
@@ -1171,7 +1171,7 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "quizzes_course_id_fkey"
-            columns: ["course_id"]
+            columns: ["modulo_id"]
             isOneToOne: false
             referencedRelation: "courses"
             referencedColumns: ["id"]
@@ -1223,7 +1223,7 @@ export type Database = {
         Row: {
           completed_at: string | null
           completion_percentage: number | null
-          course_id: string
+          modulo_id: string
           id: string
           module_id: string | null
           progress_type: string
@@ -1233,7 +1233,7 @@ export type Database = {
         Insert: {
           completed_at?: string | null
           completion_percentage?: number | null
-          course_id: string
+          modulo_id: string
           id?: string
           module_id?: string | null
           progress_type: string
@@ -1243,7 +1243,7 @@ export type Database = {
         Update: {
           completed_at?: string | null
           completion_percentage?: number | null
-          course_id?: string
+          modulo_id?: string
           id?: string
           module_id?: string | null
           progress_type?: string

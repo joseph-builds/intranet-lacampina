@@ -66,7 +66,7 @@ export function ClassroomCoursesList({ classroomId, classroomName }: ClassroomCo
           const { data: enrollment } = await supabase
             .from('course_enrollments')
             .select('id')
-            .eq('course_id', course.id)
+            .eq('modulo_id', course.id)
             .eq('student_id', profile?.id)
             .maybeSingle();
 
@@ -74,12 +74,12 @@ export function ClassroomCoursesList({ classroomId, classroomName }: ClassroomCo
           const { data: sectionsData } = await supabase
             .from('course_weekly_sections')
             .select('id')
-            .eq('course_id', course.id);
+            .eq('modulo_id', course.id);
 
           const { data: progressData } = await supabase
             .from('student_progress')
             .select('id')
-            .eq('course_id', course.id)
+            .eq('modulo_id', course.id)
             .eq('student_id', profile?.id)
             .eq('progress_type', 'section_completed');
 
@@ -110,7 +110,7 @@ export function ClassroomCoursesList({ classroomId, classroomName }: ClassroomCo
       const { error } = await supabase
         .from('course_enrollments')
         .insert({
-          course_id: courseId,
+          modulo_id: courseId,
           student_id: profile.id
         });
 

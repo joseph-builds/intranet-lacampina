@@ -108,10 +108,10 @@ export function ResourceDetailModal({ resource, isOpen, onClose }: ResourceDetai
       if (!assignmentId && resource.resource_type === 'assignment') {
         setIsCreatingAssignment(true);
         
-        // Obtener el course_id de la sección
+        // Obtener el modulo_id de la sección
         const { data: sectionData, error: sectionError } = await supabase
           .from('course_weekly_sections')
-          .select('course_id')
+          .select('modulo_id')
           .eq('id', resource.section_id)
           .single();
 
@@ -125,7 +125,7 @@ export function ResourceDetailModal({ resource, isOpen, onClose }: ResourceDetai
             description: resource.description,
             due_date: resource.assignment_deadline,
             max_score: resource.max_score || 100,
-            course_id: sectionData.course_id,
+            modulo_id: sectionData.modulo_id,
             is_published: resource.is_published
           })
           .select()

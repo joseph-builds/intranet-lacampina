@@ -52,7 +52,7 @@ export function ExamSubmissions({ examId, courseId }: ExamSubmissionsProps) {
       // Get exam to find quiz
       const { data: examData, error: examError } = await supabase
         .from('exams')
-        .select('title, course_id')
+        .select('title, modulo_id')
         .eq('id', examId)
         .single();
 
@@ -62,7 +62,7 @@ export function ExamSubmissions({ examId, courseId }: ExamSubmissionsProps) {
       const { data: quizData, error: quizError } = await supabase
         .from('quizzes')
         .select('id')
-        .eq('course_id', examData.course_id)
+        .eq('modulo_id', examData.modulo_id)
         .eq('title', examData.title)
         .single();
 
@@ -81,7 +81,7 @@ export function ExamSubmissions({ examId, courseId }: ExamSubmissionsProps) {
             email
           )
         `)
-        .eq('course_id', courseId);
+        .eq('modulo_id', courseId);
 
       if (enrollError) throw enrollError;
       setEnrolledStudents(enrollments || []);

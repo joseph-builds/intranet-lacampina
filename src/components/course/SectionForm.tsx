@@ -43,7 +43,7 @@ export function SectionForm({ courseId, onClose, onSuccess }: SectionFormProps) 
       const { data: existingWeek } = await supabase
         .from('course_weekly_sections')
         .select('id')
-        .eq('course_id', courseId)
+        .eq('modulo_id', courseId)
         .eq('week_number', formData.week_number)
         .single();
 
@@ -56,7 +56,7 @@ export function SectionForm({ courseId, onClose, onSuccess }: SectionFormProps) 
       const { error } = await supabase
         .from('course_weekly_sections')
         .insert({
-          course_id: courseId,
+          modulo_id: courseId,
           week_number: formData.week_number,
           title: formData.title.trim(),
           description: formData.description.trim() || null,

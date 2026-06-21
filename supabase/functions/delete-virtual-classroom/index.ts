@@ -90,7 +90,7 @@ serve(async (req: Request) => {
       const { count, error: enrollmentError } = await supabaseClient
         .from('course_enrollments')
         .select('*', { count: 'exact', head: true })
-        .in('course_id', courseIds)
+        .in('modulo_id', courseIds)
 
       if (!enrollmentError && count) {
         enrollmentCount = count

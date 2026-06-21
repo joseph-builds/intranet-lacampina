@@ -42,7 +42,7 @@ export function AttendanceRecords({ courseId }: AttendanceRecordsProps) {
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
 const response = await fetch(
-  `${supabaseUrl}/functions/v1/get-course-attendance?course_id=${courseId}`,
+  `${supabaseUrl}/functions/v1/get-course-attendance?modulo_id=${courseId}`,
   {
     headers: {
       Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,

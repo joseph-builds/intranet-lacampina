@@ -71,7 +71,7 @@ export function StudentCourses() {
       // Get paginated enrolled courses - simplified query
       const { data: enrollments, error: enrollError } = await supabase
         .from('course_enrollments')
-        .select('course_id')
+        .select('modulo_id')
         .eq('student_id', profile!.id)
         .range((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE - 1)
         .order('enrolled_at', { ascending: false });
@@ -89,7 +89,7 @@ export function StudentCourses() {
       }
 
       // Get course IDs
-      const courseIds = enrollments.map(e => e.course_id);
+      const courseIds = enrollments.map(e => e.modulo_id);
       console.log('Course IDs:', courseIds);
 
       // Fetch course details separately
@@ -133,33 +133,33 @@ export function StudentCourses() {
       // Single query for all pending assignments across all courses
       const { data: allAssignments } = await supabase
         .from('assignments')
-        .select('id, course_id')
-        .in('course_id', courseIds)
+        .select('id, modulo_id')
+        .in('modulo_id', courseIds)
         .eq('is_published', true)
         .gt('due_date', new Date().toISOString());
 
       // Single query for all upcoming exams across all courses
       const { data: allExams } = await supabase
         .from('exams')
-        .select('id, course_id')
-        .in('course_id', courseIds)
+        .select('id, modulo_id')
+        .in('modulo_id', courseIds)
         .eq('is_published', true)
         .gt('start_time', new Date().toISOString());
 
-      // Group by course_id
+      // Group by modulo_id
       const assignmentsByCourse = new Map<string, number>();
       const examsByCourse = new Map<string, number>();
 
       allAssignments?.forEach(assignment => {
         if (!submittedIds.has(assignment.id)) {
-          const current = assignmentsByCourse.get(assignment.course_id) || 0;
-          assignmentsByCourse.set(assignment.course_id, current + 1);
+          const current = assignmentsByCourse.get(assignment.modulo_id) || 0;
+          assignmentsByCourse.set(assignment.modulo_id, current + 1);
         }
       });
 
       allExams?.forEach(exam => {
-        const current = examsByCourse.get(exam.course_id) || 0;
-        examsByCourse.set(exam.course_id, current + 1);
+        const current = examsByCourse.get(exam.modulo_id) || 0;
+        examsByCourse.set(exam.modulo_id, current + 1);
       });
 
       // Map to courses

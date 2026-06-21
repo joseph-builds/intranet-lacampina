@@ -51,7 +51,7 @@ serve(async (req) => {
       .from('assignments')
       .select('id')
       .eq('title', assignmentTitle)
-      .eq('course_id', courseId)
+      .eq('modulo_id', courseId)
       .maybeSingle();
 
     if (existingAssignment) {
@@ -64,7 +64,7 @@ serve(async (req) => {
           title: assignmentTitle,
           description: `Tarea: ${assignmentTitle}`,
           max_score: 100,
-          course_id: courseId,
+          modulo_id: courseId,
           is_published: true
         })
         .select()

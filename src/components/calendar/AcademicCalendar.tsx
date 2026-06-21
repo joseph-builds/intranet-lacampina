@@ -28,7 +28,7 @@ interface CourseEvent {
   start_date: string;
   end_date: string;
   location: string | null;
-  course_id: string;
+  modulo_id: string;
   courses?: {
     name: string;
     code: string;
@@ -40,7 +40,7 @@ interface Assignment {
   title: string;
   description: string | null;
   due_date: string;
-  course_id: string;
+  modulo_id: string;
   courses?: {
     name: string;
     code: string;
@@ -77,7 +77,7 @@ export function AcademicCalendar() {
         .from('course_events')
         .select(`
           *,
-          courses:course_id (
+          courses:modulo_id (
             name,
             code
           )
@@ -95,8 +95,8 @@ export function AcademicCalendar() {
           title,
           description,
           due_date,
-          course_id,
-          courses:course_id (
+          modulo_id,
+          courses:modulo_id (
             name,
             code
           )
@@ -108,12 +108,12 @@ export function AcademicCalendar() {
       if (profile?.role === 'student') {
         const { data: enrollments } = await supabase
           .from('course_enrollments')
-          .select('course_id')
+          .select('modulo_id')
           .eq('user_id', profile.id);
         
         if (enrollments && enrollments.length > 0) {
-          const courseIds = enrollments.map(e => e.course_id);
-          assignmentsQuery = assignmentsQuery.in('course_id', courseIds);
+          const courseIds = enrollments.map(e => e.modulo_id);
+          assignmentsQuery = assignmentsQuery.in('modulo_id', courseIds);
         }
       }
 

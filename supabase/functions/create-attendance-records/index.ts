@@ -38,16 +38,16 @@ serve(async (req) => {
       throw new Error('No tiene permisos para registrar asistencia');
     }
 
-    const { course_id, date, attendance_records } = await req.json();
+    const { modulo_id, date, attendance_records } = await req.json();
 
-    console.log('📝 Registrando asistencia para curso:', course_id, 'fecha:', date);
+    console.log('📝 Registrando asistencia para curso:', modulo_id, 'fecha:', date);
 
     // Verificar que el profesor es dueño del curso o es admin
     if (profile.role === 'teacher') {
       const { data: course } = await supabaseClient
         .from('courses')
         .select('teacher_id')
-        .eq('id', course_id)
+        .eq('id', modulo_id)
         .single();
 
       if (!course || course.teacher_id !== profile.id) {
@@ -59,12 +59,12 @@ serve(async (req) => {
     await supabaseClient
       .from('attendance')
       .delete()
-      .eq('course_id', course_id)
+      .eq('modulo_id', modulo_id)
       .eq('date', date);
 
     // Insert new records
     const recordsToInsert = attendance_records.map((record: any) => ({
-      course_id,
+      modulo_id,
       student_id: record.student_id,
       date,
       status: record.status,

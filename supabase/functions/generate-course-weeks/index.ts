@@ -54,7 +54,7 @@ serve(async (req) => {
       }
 
       const weekData = {
-        course_id: courseId,
+        modulo_id: courseId,
         week_number: week,
         title: `Semana ${week}`,
         description: `Contenido para la semana ${week} del curso`,

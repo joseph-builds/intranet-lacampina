@@ -79,7 +79,7 @@ interface ActivityTimeline {
 }
 
 interface CourseDetail {
-  course_id: string;
+  modulo_id: string;
   course_name: string;
   course_code: string;
   student_count: number;
@@ -185,8 +185,8 @@ export default function TeacherDetailView() {
       // First, get all assignments
       const { data: allAssignments } = await supabase
         .from('assignments')
-        .select('id, is_published, course_id, created_at')
-        .in('course_id', courseIds);
+        .select('id, is_published, modulo_id, created_at')
+        .in('modulo_id', courseIds);
 
       const assignmentIds = allAssignments?.map(a => a.id) || [];
       
@@ -271,13 +271,13 @@ export default function TeacherDetailView() {
     const { data: exams } = await supabase
       .from('exams')
       .select('id')
-      .in('course_id', courseIds);
+      .in('modulo_id', courseIds);
 
     // Get attendance records
     const { data: attendance } = await supabase
       .from('attendance')
       .select('id')
-      .in('course_id', courseIds)
+      .in('modulo_id', courseIds)
       .eq('recorded_by', teacherId);
 
     // Get unique students count using direct SQL query via rpc
@@ -302,7 +302,7 @@ export default function TeacherDetailView() {
         const { data: enrollments } = await supabase
           .from('course_enrollments')
           .select('student_id')
-          .in('course_id', courseIdsForCount);
+          .in('modulo_id', courseIdsForCount);
         
         uniqueStudents = new Set(enrollments?.map(e => e.student_id) || []).size;
         console.log('Student count (fallback method):', uniqueStudents);
@@ -390,7 +390,7 @@ export default function TeacherDetailView() {
     const { data: attendance } = await supabase
       .from('attendance')
       .select('date')
-      .in('course_id', courseIds)
+      .in('modulo_id', courseIds)
       .eq('recorded_by', teacherId)
       .gte('date', last30Days.toISOString());
 
@@ -437,7 +437,7 @@ export default function TeacherDetailView() {
         const enrollmentCount = studentCount || 0;
 
         // Filter assignments for this course
-        const assignments = allAssignments.filter(a => a.course_id === course.id);
+        const assignments = allAssignments.filter(a => a.modulo_id === course.id);
         const assignmentIds = assignments.map(a => a.id);
 
         // Filter submissions for this course's assignments
@@ -455,14 +455,14 @@ export default function TeacherDetailView() {
         const { data: attendance } = await supabase
           .from('attendance')
           .select('status')
-          .eq('course_id', course.id);
+          .eq('modulo_id', course.id);
 
         const presentCount = attendance?.filter(a => a.status === 'present').length || 0;
         const totalAttendance = attendance?.length || 0;
         const attendanceRate = totalAttendance > 0 ? (presentCount / totalAttendance) * 100 : 0;
 
         return {
-          course_id: course.id,
+          modulo_id: course.id,
           course_name: course.name,
           course_code: course.code,
           student_count: enrollmentCount,
@@ -514,7 +514,7 @@ export default function TeacherDetailView() {
           .from('attendance')
           .select('status')
           .eq('student_id', student.student_id)
-          .in('course_id', courseIds);
+          .in('modulo_id', courseIds);
 
         const presentCount = attendance?.filter(a => a.status === 'present').length || 0;
         const totalAttendance = attendance?.length || 0;
@@ -1021,7 +1021,7 @@ export default function TeacherDetailView() {
                     </TableHeader>
                     <TableBody>
                       {courses.map((course) => (
-                        <TableRow key={course.course_id}>
+                        <TableRow key={course.modulo_id}>
                           <TableCell className="font-medium">{course.course_name}</TableCell>
                           <TableCell>{course.course_code}</TableCell>
                           <TableCell className="text-right">{course.student_count}</TableCell>

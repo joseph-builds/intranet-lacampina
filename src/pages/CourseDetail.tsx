@@ -122,7 +122,7 @@ export default function CourseDetail() {
             email
           )
         `)
-        .eq('course_id', id);
+        .eq('modulo_id', id);
 
       if (error) throw error;
       
@@ -160,7 +160,7 @@ export default function CourseDetail() {
             email
           )
         `)
-        .eq('course_id', id);
+        .eq('modulo_id', id);
 
       if (error) throw error;
       setAdditionalTeachers(data?.map(item => item.teacher).filter(Boolean) || []);

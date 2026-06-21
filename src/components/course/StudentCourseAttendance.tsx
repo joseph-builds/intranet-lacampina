@@ -49,7 +49,7 @@ export function StudentCourseAttendance({ courseId }: StudentCourseAttendancePro
       const { data: attendanceData, error } = await supabase
         .from('attendance')
         .select('id, date, status, notes')
-        .eq('course_id', courseId)
+        .eq('modulo_id', courseId)
         .eq('student_id', profile.id)
         .order('date', { ascending: false });
 

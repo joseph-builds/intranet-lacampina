@@ -21,7 +21,7 @@ interface Assignment {
   description: string;
   due_date: string;
   max_score: number;
-  course_id: string;
+  modulo_id: string;
   source: 'assignment' | 'weekly_resource';
   course: {
     id: string;
@@ -113,7 +113,7 @@ const Assignments = () => {
         description: assignment.description || '',
         due_date: assignment.due_date,
         max_score: assignment.max_score,
-        course_id: assignment.course_id,
+        modulo_id: assignment.modulo_id,
         source: 'assignment' as const,
         course: assignment.course,
         submissions: assignment.submissions
@@ -175,8 +175,8 @@ const Assignments = () => {
   };
 
   // Get unique courses for filter
-  const uniqueCourses = Array.from(new Set(assignments.map(a => a.course_id)))
-    .map(courseId => assignments.find(a => a.course_id === courseId)?.course)
+  const uniqueCourses = Array.from(new Set(assignments.map(a => a.modulo_id)))
+    .map(courseId => assignments.find(a => a.modulo_id === courseId)?.course)
     .filter(Boolean);
 
   // Apply filters
@@ -185,7 +185,7 @@ const Assignments = () => {
                          assignment.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          assignment.course.name.toLowerCase().includes(searchTerm.toLowerCase());
     
-    const matchesCourse = courseFilter === 'all' || assignment.course_id === courseFilter;
+    const matchesCourse = courseFilter === 'all' || assignment.modulo_id === courseFilter;
     
     const status = getAssignmentStatus(assignment).status;
     const matchesStatus = statusFilter === 'all' || status === statusFilter;
@@ -383,7 +383,7 @@ const Assignments = () => {
                         variant="outline"
                         asChild
                       >
-                        <Link to={`/courses/${assignment.course_id}`}>
+                        <Link to={`/courses/${assignment.modulo_id}`}>
                           Ver Curso
                         </Link>
                       </Button>

@@ -39,7 +39,7 @@ export default function ParentStudentAssignments({ studentId }: ParentStudentAss
           title,
           description,
           due_date,
-          course:course_id (name)
+          course:modulo_id (name)
         `)
         .order('due_date', { ascending: false })
         .limit(10);

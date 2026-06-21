@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
         assignment_deadline,
         section_id,
         course_weekly_sections!inner (
-          course_id
+          modulo_id
         )
       `)
       .eq('resource_type', 'assignment')
@@ -50,13 +50,13 @@ Deno.serve(async (req) => {
 
     for (const assignment of assignments || []) {
       const dueDate = new Date(assignment.assignment_deadline);
-      const courseId = assignment.course_weekly_sections.course_id;
+      const courseId = assignment.course_weekly_sections.modulo_id;
 
       // Obtener estudiantes inscritos en el curso
       const { data: enrollments, error: enrollmentsError } = await supabase
         .from('course_enrollments')
         .select('student_id')
-        .eq('course_id', courseId);
+        .eq('modulo_id', courseId);
 
       if (enrollmentsError) {
         console.error(`Error fetching enrollments for course ${courseId}:`, enrollmentsError);

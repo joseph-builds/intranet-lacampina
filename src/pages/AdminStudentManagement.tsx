@@ -46,7 +46,7 @@ interface Course {
 interface Enrollment {
   id: string;
   student_id: string;
-  course_id: string;
+  modulo_id: string;
   enrolled_at: string;
   course: Course;
 }
@@ -307,7 +307,7 @@ const AdminStudentManagement = () => {
         .from('course_enrollments')
         .select('id')
         .eq('student_id', selectedStudent.id)
-        .eq('course_id', selectedCourseForEnrollment)
+        .eq('modulo_id', selectedCourseForEnrollment)
         .single();
 
       if (existingEnrollment) {
@@ -323,7 +323,7 @@ const AdminStudentManagement = () => {
         .from('course_enrollments')
         .insert([{
           student_id: selectedStudent.id,
-          course_id: selectedCourseForEnrollment,
+          modulo_id: selectedCourseForEnrollment,
           enrolled_at: new Date().toISOString()
         }]);
 
@@ -757,7 +757,7 @@ const AdminStudentManagement = () => {
                   </SelectTrigger>
                   <SelectContent>
                     {courses
-                      .filter(course => !studentEnrollments.some(enrollment => enrollment.course_id === course.id))
+                      .filter(course => !studentEnrollments.some(enrollment => enrollment.modulo_id === course.id))
                       .map((course) => (
                         <SelectItem key={course.id} value={course.id}>
                           {course.name} ({course.code})

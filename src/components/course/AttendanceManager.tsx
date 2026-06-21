@@ -126,7 +126,7 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
             email
           )
         `)
-        .eq('course_id', courseId);
+        .eq('modulo_id', courseId);
 
       if (error) throw error;
 
@@ -151,7 +151,7 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
       const { data, error } = await supabase
         .from('attendance')
         .select('student_id, status, notes')
-        .eq('course_id', courseId)
+        .eq('modulo_id', courseId)
         .eq('date', dateStr);
 
       if (error) throw error;
@@ -201,7 +201,7 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
 
       const { error } = await supabase.functions.invoke('create-attendance-records', {
         body: {
-          course_id: courseId,
+          modulo_id: courseId,
           date: dateStr,
           attendance_records: attendanceRecords,
         },

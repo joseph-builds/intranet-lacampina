@@ -87,7 +87,7 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
             email
           )
         `)
-        .eq('course_id', courseId);
+        .eq('modulo_id', courseId);
 
       if (error) throw error;
       setCourseTeachers(data?.map(item => item.teacher).filter(Boolean) || []);
@@ -106,7 +106,7 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
       const { error } = await supabase
         .from('course_teachers')
         .insert({
-          course_id: courseId,
+          modulo_id: courseId,
           teacher_id: teacherId,
           is_primary: false
         });
@@ -126,7 +126,7 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
       const { error } = await supabase
         .from('course_teachers')
         .delete()
-        .eq('course_id', courseId)
+        .eq('modulo_id', courseId)
         .eq('teacher_id', teacherId);
 
       if (error) throw error;

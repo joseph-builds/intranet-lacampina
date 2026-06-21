@@ -138,7 +138,7 @@ export function ClassroomCourses({ classroomId, canManage, onUpdate }: Classroom
       console.log('🔑 JWT Token para Postman:', session.session.access_token);
 
       // Use fetch directly to get better error information
-      const supabaseUrl = 'https://dvucxenjdfxxqtekhqfg.supabase.co';
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const response = await fetch(`${supabaseUrl}/functions/v1/create-course`, {
         method: 'POST',
         headers: {

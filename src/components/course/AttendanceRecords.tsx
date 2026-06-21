@@ -39,14 +39,16 @@ export function AttendanceRecords({ courseId }: AttendanceRecordsProps) {
     try {
       setLoading(true);
       
-      const response = await fetch(
-        `https://dvucxenjdfxxqtekhqfg.supabase.co/functions/v1/get-course-attendance?course_id=${courseId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
-          },
-        }
-      );
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+
+const response = await fetch(
+  `${supabaseUrl}/functions/v1/get-course-attendance?course_id=${courseId}`,
+  {
+    headers: {
+      Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+    },
+  }
+);
 
       if (!response.ok) {
         const errorData = await response.json();

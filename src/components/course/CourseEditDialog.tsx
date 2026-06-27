@@ -27,7 +27,7 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
     code: '',
     description: '',
     academic_year: '',
-    teacher_id: '',
+    teacher_principal_id: '',
     start_date: '',
     end_date: ''
   });
@@ -55,7 +55,7 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
         code: data.code || '',
         description: data.description || '',
         academic_year: data.academic_year || '',
-        teacher_id: data.teacher_id || '',
+        teacher_principal_id: data.teacher_principal_id || '',
         start_date: data.start_date || '',
         end_date: data.end_date || ''
       });
@@ -151,7 +151,7 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
           code: formData.code,
           description: formData.description,
           academic_year: formData.academic_year,
-          teacher_id: formData.teacher_id,
+          teacher_principal_id: formData.teacher_principal_id,
           start_date: formData.start_date || null,
           end_date: formData.end_date || null
         })
@@ -251,8 +251,8 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
           <div className="space-y-2">
             <Label htmlFor="teacher">Profesor Principal *</Label>
             <Select
-              value={formData.teacher_id}
-              onValueChange={(value) => setFormData({ ...formData, teacher_id: value })}
+              value={formData.teacher_principal_id}
+              onValueChange={(value) => setFormData({ ...formData, teacher_principal_id: value })}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Seleccionar profesor" />
@@ -278,7 +278,7 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
                 </SelectTrigger>
                 <SelectContent>
                   {teachers
-                    .filter(t => t.id !== formData.teacher_id && !courseTeachers.some(ct => ct.id === t.id))
+                    .filter(t => t.id !== formData.teacher_principal_id && !courseTeachers.some(ct => ct.id === t.id))
                     .map((teacher) => (
                       <SelectItem key={teacher.id} value={teacher.id}>
                         {teacher.first_name} {teacher.last_name}

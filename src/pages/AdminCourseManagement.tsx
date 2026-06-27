@@ -29,14 +29,12 @@ interface Course {
   name: string;
   description?: string;
   code: string;
-  teacher_id: string;
+  teacher_principal_id: string;
   teacher?: Teacher;
   academic_year: string;
   start_date?: string;
   end_date?: string;
-  additional_teachers?: string[];
   is_active: boolean;
-  schedule?: string;
   enrollments?: { count: number }[];
 }
 
@@ -44,11 +42,12 @@ interface CourseFormData {
   name: string;
   description: string;
   code: string;
-  teacher_id: string;
+  teacher_principal_id: string;
   academic_year: string;
+  semester: string;
+  program_id: string;
   start_date: string;
   end_date: string;
-  additional_teachers: string[];
 }
 
 const AdminCourseManagement = () => {
@@ -66,11 +65,12 @@ const AdminCourseManagement = () => {
     name: '',
     description: '',
     code: '',
-    teacher_id: '',
+    teacher_principal_id: '',
     academic_year: '2024',
+    semester: '',
+    program_id: '',
     start_date: '',
     end_date: '',
-    additional_teachers: [],
   });
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showBulkTeacherModal, setShowBulkTeacherModal] = useState(false);
@@ -98,7 +98,7 @@ const AdminCourseManagement = () => {
         .from('courses')
         .select(`
           *,
-          teacher:profiles!courses_teacher_id_fkey (
+          teacher:profiles!courses_teacher_principal_id_fkey (
             id,
             first_name,
             last_name,
@@ -116,12 +116,7 @@ const AdminCourseManagement = () => {
           variant: "destructive",
         });
       } else {
-        // Solucionar error de tipo: schedule puede venir como Json (string, null, number, object)
-        const fixedCourses = (data || []).map((c: any) => ({
-          ...c,
-          schedule: typeof c.schedule === 'string' ? c.schedule : (c.schedule ? JSON.stringify(c.schedule) : ''),
-        }));
-        setCourses(fixedCourses);
+        setCourses((data as any) || []);
       }
     } catch (error) {
       console.error('Error:', error);
@@ -159,11 +154,12 @@ const AdminCourseManagement = () => {
       name: '',
       description: '',
       code: '',
-      teacher_id: '',
+      teacher_principal_id: '',
       academic_year: '2024',
+      semester: '',
+      program_id: '',
       start_date: '',
       end_date: '',
-      additional_teachers: [],
     });
   }, []);
 
@@ -173,11 +169,12 @@ const AdminCourseManagement = () => {
       name: course.name,
       description: course.description || '',
       code: course.code,
-      teacher_id: course.teacher_id,
+      teacher_principal_id: course.teacher_principal_id,
       academic_year: course.academic_year,
+      semester: (course as any).semester || '',
+      program_id: (course as any).program_id || '',
       start_date: course.start_date || '',
       end_date: course.end_date || '',
-      additional_teachers: course.additional_teachers || [],
     });
     setIsEditModalOpen(true);
   };
@@ -256,39 +253,18 @@ const AdminCourseManagement = () => {
   // Horario: abrir modal y cargar datos
   const openScheduleModal = (course: Course) => {
     setScheduleEditCourse(course);
-    let scheduleArr: any[] = [];
-    try {
-      if (course.schedule) {
-        const parsed = typeof course.schedule === 'string' ? JSON.parse(course.schedule) : course.schedule;
-        if (Array.isArray(parsed)) scheduleArr = parsed;
-      }
-    } catch {}
-    setScheduleForm(scheduleArr);
+    // courses.schedule removed in schema refactor — schedule managed via modulos (Categoría B)
+    setScheduleForm([]);
     setShowScheduleModal(true);
   };
 
   // Horario: guardar
   const saveSchedule = async () => {
     if (!scheduleEditCourse) return;
-    setInlineSaving(prev => ({ ...prev, [scheduleEditCourse.id]: true }));
-    try {
-      const { error } = await supabase
-        .from('courses')
-        .update({ schedule: JSON.stringify(scheduleForm) })
-        .eq('id', scheduleEditCourse.id);
-      if (error) {
-        toast({ title: 'Error', description: 'No se pudo guardar el horario', variant: 'destructive' });
-      } else {
-        toast({ title: 'Horario actualizado', description: 'El horario fue guardado correctamente.' });
-        fetchCourses();
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setInlineSaving(prev => ({ ...prev, [scheduleEditCourse.id]: false }));
-      setShowScheduleModal(false);
-      setScheduleEditCourse(null);
-    }
+    // courses.schedule removed in schema refactor — schedule managed via modulos (Categoría B)
+    toast({ title: 'Info', description: 'El horario se gestiona desde los módulos del curso.' });
+    setShowScheduleModal(false);
+    setScheduleEditCourse(null);
   };
 
   // Horario: helpers para UI
@@ -345,7 +321,7 @@ const AdminCourseManagement = () => {
 
   // Crear curso
   const handleCreateCourse = async () => {
-    if (!formData.name || !formData.code || !formData.teacher_id || !formData.academic_year) {
+    if (!formData.name || !formData.code || !formData.teacher_principal_id || !formData.academic_year) {
       toast({
         title: "Campos requeridos",
         description: "Por favor completa todos los campos obligatorios.",
@@ -362,8 +338,11 @@ const AdminCourseManagement = () => {
             name: formData.name,
             description: formData.description,
             code: formData.code,
-            teacher_id: formData.teacher_id,
+            teacher_principal_id: formData.teacher_principal_id,
             academic_year: formData.academic_year,
+            semester: formData.semester,
+            program_id: formData.program_id,
+            start_date: formData.start_date,
             is_active: true,
           },
         ]);
@@ -392,7 +371,7 @@ const AdminCourseManagement = () => {
   // Editar curso
   const handleEditCourse = async () => {
     if (!editingCourse) return;
-    if (!formData.name || !formData.code || !formData.teacher_id || !formData.academic_year) {
+    if (!formData.name || !formData.code || !formData.teacher_principal_id || !formData.academic_year) {
       toast({
         title: "Campos requeridos",
         description: "Por favor completa todos los campos obligatorios.",
@@ -408,11 +387,10 @@ const AdminCourseManagement = () => {
           name: formData.name,
           description: formData.description,
           code: formData.code,
-          teacher_id: formData.teacher_id,
+          teacher_principal_id: formData.teacher_principal_id,
           academic_year: formData.academic_year,
           start_date: formData.start_date,
           end_date: formData.end_date,
-          additional_teachers: formData.additional_teachers,
         })
         .eq('id', editingCourse.id);
       if (error) {
@@ -498,7 +476,7 @@ const AdminCourseManagement = () => {
                   Profesores Asignados
                   <Users className="inline h-5 w-5 text-purple-500" />
                 </div>
-                <div className="text-2xl font-bold">{[...new Set(courses.map(c => c.teacher_id).filter(Boolean))].length}</div>
+                <div className="text-2xl font-bold">{[...new Set(courses.map(c => c.teacher_principal_id).filter(Boolean))].length}</div>
                 <p className="text-xs text-gray-500 mt-1">Profesores con al menos un curso</p>
               </div>
             </Card>
@@ -613,7 +591,7 @@ const AdminCourseManagement = () => {
                                         setSaving(true);
                                         try {
                                           for (const id of selectedIds) {
-                                            await supabase.from('courses').update({ teacher_id: bulkTeacherId }).eq('id', id);
+                                            await supabase.from('courses').update({ teacher_principal_id: bulkTeacherId }).eq('id', id);
                                           }
                                           toast({ title: 'Profesor asignado', description: 'Profesor asignado a los cursos seleccionados.' });
                                           setShowBulkTeacherModal(false);
@@ -672,10 +650,8 @@ const AdminCourseManagement = () => {
                                       onClick={async () => {
                                         setSaving(true);
                                         try {
-                                          for (const id of selectedIds) {
-                                            await supabase.from('courses').update({ schedule: JSON.stringify(bulkSchedule) }).eq('id', id);
-                                          }
-                                          toast({ title: 'Horario asignado', description: 'Horario asignado a los cursos seleccionados.' });
+                                          // courses.schedule removed in schema refactor — managed via modulos (Categoría B)
+                                          toast({ title: 'Info', description: 'El horario se gestiona desde los módulos del curso.' });
                                           setShowBulkScheduleModal(false);
                                           setBulkSchedule([]);
                                           setSelectedIds([]);
@@ -708,8 +684,8 @@ const AdminCourseManagement = () => {
                       <TableCell className={quickEditMode ? "cursor-pointer group" : ""}>
                         {quickEditMode ? (
                           <Select
-                            value={quickEditChanges[course.id]?.teacher_id ?? course.teacher_id}
-                            onValueChange={val => handleQuickEditChange(course.id, 'teacher_id', val)}
+                            value={quickEditChanges[course.id]?.teacher_principal_id ?? course.teacher_principal_id}
+                            onValueChange={val => handleQuickEditChange(course.id, 'teacher_principal_id', val)}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="Seleccionar profesor" />
@@ -749,7 +725,7 @@ const AdminCourseManagement = () => {
                       </TableCell>
                       <TableCell className={quickEditMode ? "cursor-pointer group" : ""}>
                         <span className="group-hover:underline group-hover:text-blue-600 flex items-center">
-                          {getScheduleSummary(course.schedule) || <span className="text-gray-400">Sin horario</span>}
+                          <span className="text-gray-400">Gestionado por módulos</span>
                           {quickEditMode && (
                             <Button size="sm" variant="ghost" className="ml-1 p-1" onClick={e => { e.stopPropagation(); openScheduleModal(course); }}><Edit className="w-3 h-3" /></Button>
                           )}
@@ -829,7 +805,7 @@ const AdminCourseManagement = () => {
             </div>
             <div className="mt-2">
               <Label>Profesor</Label>
-              <Select value={formData.teacher_id} onValueChange={handleSelectChange('teacher_id')}>
+              <Select value={formData.teacher_principal_id} onValueChange={handleSelectChange('teacher_principal_id')}>
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar profesor" />
                 </SelectTrigger>
@@ -892,7 +868,7 @@ const AdminCourseManagement = () => {
 
           <div className="space-y-2">
             <Label htmlFor="edit-teacher">Profesor Principal *</Label>
-            <Select value={formData.teacher_id} onValueChange={handleSelectChange('teacher_id')}>
+            <Select value={formData.teacher_principal_id} onValueChange={handleSelectChange('teacher_principal_id')}>
               <SelectTrigger>
                 <SelectValue placeholder="Seleccionar profesor" />
               </SelectTrigger>
@@ -906,42 +882,7 @@ const AdminCourseManagement = () => {
             </Select>
           </div>
 
-          <div className="space-y-3">
-            <Label>Profesores Adicionales</Label>
-            <Select
-              onValueChange={value => {
-                if (!formData.additional_teachers.includes(value)) {
-                  setFormData(prev => ({ ...prev, additional_teachers: [...prev.additional_teachers, value] }));
-                }
-              }}
-            >
-              <SelectTrigger className="flex-1">
-                <SelectValue placeholder="Agregar profesor" />
-              </SelectTrigger>
-              <SelectContent>
-                {teachers
-                  .filter(t => t.id !== formData.teacher_id && !formData.additional_teachers.includes(t.id))
-                  .map((teacher) => (
-                    <SelectItem key={teacher.id} value={teacher.id}>
-                      {teacher.first_name} {teacher.last_name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-            {formData.additional_teachers.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {formData.additional_teachers.map(id => {
-                  const teacher = teachers.find(t => t.id === id);
-                  return teacher ? (
-                    <span key={id} className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs flex items-center">
-                      {teacher.first_name} {teacher.last_name}
-                      <button type="button" className="ml-1 text-red-500" onClick={() => setFormData(prev => ({ ...prev, additional_teachers: prev.additional_teachers.filter(tid => tid !== id) }))}>&times;</button>
-                    </span>
-                  ) : null;
-                })}
-              </div>
-            )}
-          </div>
+          {/* Profesores adicionales se gestionan desde course_teachers (Categoría B) */}
 
           <div className="p-4 bg-muted/50 rounded-lg">
             <p className="text-sm text-muted-foreground">

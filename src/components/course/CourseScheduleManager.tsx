@@ -60,68 +60,24 @@ export function CourseScheduleManager({ courseId, canEdit: _canEdit }: CourseSch
       return;
     }
 
-    // Verificar si es tutor del aula virtual del curso
-    if (profile.role === 'tutor' || profile.roles?.includes('tutor')) {
-      try {
-        const { data: courseData, error } = await supabase
-          .from('courses')
-          .select('classroom_id')
-          .eq('id', courseId)
-          .single();
-
-        if (error) throw error;
-
-        if (courseData?.classroom_id) {
-          const { data: classroomData, error: classroomError } = await supabase
-            .from('virtual_classrooms')
-            .select('tutor_id')
-            .eq('id', courseData.classroom_id)
-            .single();
-
-          if (classroomError) throw classroomError;
-
-          if (classroomData?.tutor_id === profile.id) {
-            setCanEdit(true);
-            return;
-          }
-        }
-      } catch (error) {
-        console.error('Error checking tutor permissions:', error);
-      }
-    }
-
+    // courses.classroom_id no longer exists — tutor permission via modulos pending Categoría B
     setCanEdit(false);
   };
 
   const fetchSchedule = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('courses')
-        .select('schedule')
-        .eq('id', courseId)
-        .single();
-
-      if (error) throw error;
-
-      if (data?.schedule && Array.isArray(data.schedule)) {
-        // Map the schedule from DB to our DaySchedule format
-        const scheduleMap = new Map(
-          data.schedule.map((s: any) => [s.day, { start_time: s.start_time, end_time: s.end_time }])
-        );
-        
-        setDaySchedules(
-          WEEKDAYS.map(day => ({
-            day: day.value,
-            start_time: scheduleMap.get(day.value)?.start_time || '',
-            end_time: scheduleMap.get(day.value)?.end_time || '',
-            enabled: scheduleMap.has(day.value),
-          }))
-        );
-      }
+      // courses.schedule moved to modulos table — will be redirected in Categoría B
+      setDaySchedules(
+        WEEKDAYS.map(day => ({
+          day: day.value,
+          start_time: '',
+          end_time: '',
+          enabled: false,
+        }))
+      );
     } catch (error) {
       console.error('Error fetching schedule:', error);
-      toast.error('Error al cargar el horario');
     } finally {
       setLoading(false);
     }
@@ -171,23 +127,8 @@ export function CourseScheduleManager({ courseId, canEdit: _canEdit }: CourseSch
         }
       }
 
-      // Build the schedule array in the format expected by the DB
-      const scheduleArray = enabledSchedules.map(s => ({
-        day: s.day,
-        start_time: s.start_time,
-        end_time: s.end_time,
-      }));
-
-      const { error } = await supabase
-        .from('courses')
-        .update({
-          schedule: scheduleArray,
-        })
-        .eq('id', courseId);
-
-      if (error) throw error;
-
-      toast.success('Horario guardado correctamente');
+      // courses.schedule removed in schema refactor — schedule is managed per módulo (Categoría B)
+      toast.info('El horario se configura desde los módulos del curso');
     } catch (error) {
       console.error('Error saving schedule:', error);
       toast.error('Error al guardar el horario');

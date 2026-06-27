@@ -1,0 +1,409 @@
+table_name,column_name,data_type,is_nullable
+academic_events,id,uuid,NO
+academic_events,title,text,NO
+academic_events,description,text,YES
+academic_events,event_type,USER-DEFINED,NO
+academic_events,start_date,timestamp with time zone,NO
+academic_events,end_date,timestamp with time zone,NO
+academic_events,is_published,boolean,YES
+academic_events,created_by,uuid,NO
+academic_events,created_at,timestamp with time zone,YES
+academic_events,updated_at,timestamp with time zone,YES
+announcements,id,uuid,NO
+announcements,title,text,NO
+announcements,content,text,NO
+announcements,author_id,uuid,NO
+announcements,target_roles,ARRAY,YES
+announcements,is_published,boolean,YES
+announcements,priority,text,YES
+announcements,created_at,timestamp with time zone,YES
+announcements,updated_at,timestamp with time zone,YES
+assignment_submissions,id,uuid,NO
+assignment_submissions,assignment_id,uuid,YES
+assignment_submissions,student_id,uuid,YES
+assignment_submissions,content,text,YES
+assignment_submissions,file_url,text,YES
+assignment_submissions,score,text,YES
+assignment_submissions,feedback,text,YES
+assignment_submissions,submitted_at,timestamp with time zone,YES
+assignment_submissions,graded_at,timestamp with time zone,YES
+assignment_submissions,file_path,text,YES
+assignment_submissions,file_name,text,YES
+assignment_submissions,file_size,integer,YES
+assignment_submissions,mime_type,text,YES
+assignment_submissions,student_files,jsonb,YES
+assignment_submissions,feedback_files,jsonb,YES
+assignments,id,uuid,NO
+assignments,course_id,uuid,YES
+assignments,title,text,NO
+assignments,description,text,YES
+assignments,due_date,timestamp with time zone,YES
+assignments,max_score,numeric,YES
+assignments,is_published,boolean,YES
+assignments,created_at,timestamp with time zone,YES
+assignments,updated_at,timestamp with time zone,YES
+attendance,id,uuid,NO
+attendance,course_id,uuid,YES
+attendance,student_id,uuid,YES
+attendance,date,date,NO
+attendance,status,text,YES
+attendance,notes,text,YES
+attendance,recorded_by,uuid,YES
+attendance,created_at,timestamp with time zone,YES
+attendance,classroom_id,uuid,YES
+attendance,recorded_at,timestamp with time zone,YES
+chatbot_conversations,id,uuid,NO
+chatbot_conversations,user_id,uuid,YES
+chatbot_conversations,message,text,NO
+chatbot_conversations,response,text,NO
+chatbot_conversations,category,text,YES
+chatbot_conversations,created_at,timestamp with time zone,YES
+course_enrollments,id,uuid,NO
+course_enrollments,modulo_id,uuid,NO
+course_enrollments,student_id,uuid,NO
+course_enrollments,matricula_id,uuid,YES
+course_enrollments,tipo_estudiante,text,YES
+course_enrollments,enrolled_at,timestamp with time zone,YES
+course_enrollments,is_active,boolean,YES
+course_enrollments_old,id,uuid,NO
+course_enrollments_old,course_id,uuid,YES
+course_enrollments_old,student_id,uuid,YES
+course_enrollments_old,enrolled_at,timestamp with time zone,YES
+course_events,id,uuid,NO
+course_events,course_id,uuid,NO
+course_events,title,text,NO
+course_events,description,text,YES
+course_events,event_type,text,NO
+course_events,start_date,timestamp with time zone,NO
+course_events,end_date,timestamp with time zone,NO
+course_events,location,text,YES
+course_events,is_published,boolean,YES
+course_events,created_by,uuid,NO
+course_events,created_at,timestamp with time zone,YES
+course_events,updated_at,timestamp with time zone,YES
+course_forum_posts,id,uuid,NO
+course_forum_posts,topic_id,uuid,NO
+course_forum_posts,content,text,NO
+course_forum_posts,created_by,uuid,NO
+course_forum_posts,parent_post_id,uuid,YES
+course_forum_posts,created_at,timestamp with time zone,YES
+course_forum_posts,updated_at,timestamp with time zone,YES
+course_forum_topics,id,uuid,NO
+course_forum_topics,course_id,uuid,NO
+course_forum_topics,title,text,NO
+course_forum_topics,description,text,YES
+course_forum_topics,created_by,uuid,NO
+course_forum_topics,is_pinned,boolean,YES
+course_forum_topics,is_locked,boolean,YES
+course_forum_topics,created_at,timestamp with time zone,YES
+course_forum_topics,updated_at,timestamp with time zone,YES
+course_modules,id,uuid,NO
+course_modules,course_id,uuid,NO
+course_modules,title,text,NO
+course_modules,description,text,YES
+course_modules,position,integer,NO
+course_modules,is_published,boolean,YES
+course_modules,created_at,timestamp with time zone,YES
+course_modules,updated_at,timestamp with time zone,YES
+course_resources,id,uuid,NO
+course_resources,module_id,uuid,NO
+course_resources,title,text,NO
+course_resources,description,text,YES
+course_resources,resource_type,text,NO
+course_resources,resource_url,text,YES
+course_resources,file_size,integer,YES
+course_resources,position,integer,NO
+course_resources,is_published,boolean,YES
+course_resources,created_at,timestamp with time zone,YES
+course_teachers,id,uuid,NO
+course_teachers,course_id,uuid,NO
+course_teachers,teacher_id,uuid,NO
+course_teachers,is_primary,boolean,YES
+course_teachers,created_at,timestamp with time zone,YES
+course_weekly_resources,id,uuid,NO
+course_weekly_resources,section_id,uuid,NO
+course_weekly_resources,title,text,NO
+course_weekly_resources,description,text,YES
+course_weekly_resources,resource_type,text,NO
+course_weekly_resources,resource_url,text,YES
+course_weekly_resources,file_size,integer,YES
+course_weekly_resources,mime_type,text,YES
+course_weekly_resources,is_published,boolean,YES
+course_weekly_resources,position,integer,NO
+course_weekly_resources,settings,jsonb,YES
+course_weekly_resources,created_at,timestamp with time zone,YES
+course_weekly_resources,updated_at,timestamp with time zone,YES
+course_weekly_resources,file_path,text,YES
+course_weekly_resources,allows_student_submissions,boolean,YES
+course_weekly_resources,assignment_deadline,timestamp with time zone,YES
+course_weekly_resources,max_score,numeric,YES
+course_weekly_resources,assignment_id,uuid,YES
+course_weekly_resources,teacher_files,jsonb,YES
+course_weekly_sections,id,uuid,NO
+course_weekly_sections,course_id,uuid,NO
+course_weekly_sections,week_number,integer,NO
+course_weekly_sections,title,text,NO
+course_weekly_sections,description,text,YES
+course_weekly_sections,start_date,date,YES
+course_weekly_sections,end_date,date,YES
+course_weekly_sections,is_published,boolean,YES
+course_weekly_sections,position,integer,NO
+course_weekly_sections,created_at,timestamp with time zone,YES
+course_weekly_sections,updated_at,timestamp with time zone,YES
+courses,id,uuid,NO
+courses,name,text,NO
+courses,description,text,YES
+courses,code,text,NO
+courses,program_id,uuid,NO
+courses,teacher_principal_id,uuid,NO
+courses,academic_year,text,NO
+courses,semester,text,NO
+courses,is_active,boolean,YES
+courses,start_date,date,NO
+courses,end_date,date,YES
+courses,numero_modulos,integer,NO
+courses,material,text,YES
+courses,created_at,timestamp with time zone,YES
+courses,updated_at,timestamp with time zone,YES
+courses_old,id,uuid,NO
+courses_old,name,text,NO
+courses_old,description,text,YES
+courses_old,code,text,NO
+courses_old,teacher_id,uuid,NO
+courses_old,academic_year,text,NO
+courses_old,is_active,boolean,YES
+courses_old,created_at,timestamp with time zone,YES
+courses_old,updated_at,timestamp with time zone,YES
+courses_old,classroom_id,uuid,YES
+courses_old,start_date,date,YES
+courses_old,end_date,date,YES
+courses_old,schedule,jsonb,YES
+cursos_grabados,id,uuid,NO
+cursos_grabados,name,text,NO
+cursos_grabados,description,text,YES
+cursos_grabados,program_id,uuid,YES
+cursos_grabados,video_url,text,YES
+cursos_grabados,duration_hours,numeric,YES
+cursos_grabados,is_active,boolean,YES
+cursos_grabados,created_at,timestamp with time zone,YES
+cursos_grabados,updated_at,timestamp with time zone,YES
+exams,id,uuid,NO
+exams,course_id,uuid,YES
+exams,title,text,NO
+exams,description,text,YES
+exams,start_time,timestamp with time zone,NO
+exams,duration_minutes,integer,NO
+exams,max_score,numeric,YES
+exams,is_published,boolean,YES
+exams,created_at,timestamp with time zone,YES
+game_sessions,id,uuid,NO
+game_sessions,game_id,uuid,YES
+game_sessions,player_id,uuid,YES
+game_sessions,score,integer,NO
+game_sessions,duration_seconds,integer,YES
+game_sessions,completed_at,timestamp with time zone,YES
+matriculas,id,uuid,NO
+matriculas,cod_matricula,text,NO
+matriculas,estudiante_id,uuid,NO
+matriculas,codigo_estudiante,text,YES
+matriculas,usuario_id,uuid,NO
+matriculas,modulos_matriculados,jsonb,NO
+matriculas,num_cursos,integer,YES
+matriculas,moneda_monto,text,YES
+matriculas,valor_matricula,numeric,NO
+matriculas,descuento,numeric,YES
+matriculas,id_clases_grabadas,uuid,YES
+matriculas,valor_clase_grabada,numeric,YES
+matriculas,book_incluido,boolean,YES
+matriculas,kit_incluido,boolean,YES
+matriculas,precio_final,numeric,NO
+matriculas,observaciones,text,YES
+matriculas,created_at,timestamp with time zone,YES
+matriculas,updated_at,timestamp with time zone,YES
+mental_games,id,uuid,NO
+mental_games,name,text,NO
+mental_games,description,text,YES
+mental_games,game_type,text,NO
+mental_games,difficulty_level,integer,YES
+mental_games,instructions,text,YES
+mental_games,is_active,boolean,YES
+mental_games,created_at,timestamp with time zone,YES
+modulos,id,uuid,NO
+modulos,name,text,NO
+modulos,num_modulo,integer,NO
+modulos,description,text,YES
+modulos,code,text,NO
+modulos,course_id,uuid,NO
+modulos,teacher_principal_id,uuid,NO
+modulos,academic_year,text,NO
+modulos,semester_year,text,NO
+modulos,is_active,boolean,YES
+modulos,start_date,date,NO
+modulos,end_date,date,NO
+modulos,schedule,jsonb,YES
+modulos,aditional_teachers,ARRAY,YES
+modulos,created_at,timestamp with time zone,YES
+modulos,updated_at,timestamp with time zone,YES
+notifications,id,uuid,NO
+notifications,user_id,uuid,NO
+notifications,assignment_id,uuid,YES
+notifications,type,text,NO
+notifications,message,text,NO
+notifications,is_read,boolean,YES
+notifications,created_at,timestamp with time zone,YES
+pagos,id,uuid,NO
+pagos,codigo_producto,text,NO
+pagos,categoria_producto,text,NO
+pagos,comprobante,text,YES
+pagos,monto_pago,numeric,NO
+pagos,fecha_pago,date,NO
+pagos,metodo_pago,text,NO
+pagos,moneda_pago,text,YES
+pagos,estado_pago,text,NO
+pagos,usuario_id,uuid,NO
+pagos,estudiante_id,uuid,YES
+pagos,observaciones,text,YES
+pagos,created_at,timestamp with time zone,YES
+pagos,updated_at,timestamp with time zone,YES
+parent_student_relationships,id,uuid,NO
+parent_student_relationships,parent_id,uuid,YES
+parent_student_relationships,student_id,uuid,YES
+parent_student_relationships,relationship_type,text,NO
+parent_student_relationships,is_primary,boolean,YES
+parent_student_relationships,created_at,timestamp with time zone,YES
+parent_student_relationships,is_active,boolean,YES
+profiles,id,uuid,NO
+profiles,user_id,uuid,NO
+profiles,email,text,NO
+profiles,first_name,text,NO
+profiles,last_name,text,NO
+profiles,role,USER-DEFINED,NO
+profiles,phone,text,YES
+profiles,avatar_url,text,YES
+profiles,is_active,boolean,YES
+profiles,created_at,timestamp with time zone,YES
+profiles,updated_at,timestamp with time zone,YES
+profiles,document_type,text,YES
+profiles,document_number,text,YES
+profiles,student_code,text,YES
+profiles,paternal_surname,text,YES
+profiles,maternal_surname,text,YES
+profiles,gender,text,YES
+profiles,birth_date,date,YES
+programas,id,uuid,NO
+programas,name,text,NO
+programas,code,text,NO
+programas,description,text,YES
+programas,is_active,boolean,YES
+programas,created_at,timestamp with time zone,YES
+programas,updated_at,timestamp with time zone,YES
+quiz_questions,id,uuid,NO
+quiz_questions,quiz_id,uuid,NO
+quiz_questions,question_text,text,NO
+quiz_questions,question_type,text,NO
+quiz_questions,options,jsonb,YES
+quiz_questions,correct_answer,text,YES
+quiz_questions,points,numeric,YES
+quiz_questions,position,integer,NO
+quiz_questions,created_at,timestamp with time zone,YES
+quiz_submissions,id,uuid,NO
+quiz_submissions,quiz_id,uuid,NO
+quiz_submissions,student_id,uuid,NO
+quiz_submissions,answers,jsonb,NO
+quiz_submissions,score,text,YES
+quiz_submissions,submitted_at,timestamp with time zone,YES
+quiz_submissions,attempt_number,integer,YES
+quizzes,id,uuid,NO
+quizzes,course_id,uuid,NO
+quizzes,title,text,NO
+quizzes,description,text,YES
+quizzes,time_limit_minutes,integer,YES
+quizzes,max_attempts,integer,YES
+quizzes,is_published,boolean,YES
+quizzes,due_date,timestamp with time zone,YES
+quizzes,created_at,timestamp with time zone,YES
+quizzes,updated_at,timestamp with time zone,YES
+registro_compra_materiales,id,uuid,NO
+registro_compra_materiales,nombre,text,NO
+registro_compra_materiales,tipo_material,text,NO
+registro_compra_materiales,usuario_id,uuid,NO
+registro_compra_materiales,estudiante_id,uuid,NO
+registro_compra_materiales,course_id,uuid,NO
+registro_compra_materiales,estado_pago,text,YES
+registro_compra_materiales,monto,numeric,YES
+registro_compra_materiales,fecha_registro,timestamp with time zone,YES
+registro_compra_materiales,fecha_pago,timestamp with time zone,YES
+registro_compra_materiales,created_at,timestamp with time zone,YES
+registro_compra_materiales,updated_at,timestamp with time zone,YES
+reservations,id,uuid,NO
+reservations,service_name,text,NO
+reservations,user_id,uuid,YES
+reservations,reservation_date,timestamp with time zone,NO
+reservations,duration_minutes,integer,YES
+reservations,status,text,YES
+reservations,notes,text,YES
+reservations,created_at,timestamp with time zone,YES
+student_progress,id,uuid,NO
+student_progress,student_id,uuid,NO
+student_progress,course_id,uuid,NO
+student_progress,module_id,uuid,YES
+student_progress,resource_id,uuid,YES
+student_progress,progress_type,text,NO
+student_progress,completion_percentage,integer,YES
+student_progress,completed_at,timestamp with time zone,YES
+support_tickets,id,uuid,NO
+support_tickets,user_id,uuid,YES
+support_tickets,title,text,NO
+support_tickets,description,text,NO
+support_tickets,category,text,NO
+support_tickets,priority,text,YES
+support_tickets,status,text,YES
+support_tickets,assigned_to,uuid,YES
+support_tickets,created_at,timestamp with time zone,YES
+support_tickets,updated_at,timestamp with time zone,YES
+survey_responses,id,uuid,NO
+survey_responses,survey_id,uuid,YES
+survey_responses,respondent_id,uuid,YES
+survey_responses,responses,jsonb,NO
+survey_responses,submitted_at,timestamp with time zone,YES
+surveys,id,uuid,NO
+surveys,title,text,NO
+surveys,description,text,YES
+surveys,target_role,USER-DEFINED,NO
+surveys,questions,jsonb,NO
+surveys,is_active,boolean,YES
+surveys,created_by,uuid,NO
+surveys,created_at,timestamp with time zone,YES
+surveys,expires_at,timestamp with time zone,YES
+teacher_activity_summary,teacher_id,uuid,YES
+teacher_activity_summary,first_name,text,YES
+teacher_activity_summary,last_name,text,YES
+teacher_activity_summary,email,text,YES
+teacher_activity_summary,is_active,boolean,YES
+teacher_activity_summary,total_assignments_created,bigint,YES
+teacher_activity_summary,published_assignments,bigint,YES
+teacher_activity_summary,assignments_last_week,bigint,YES
+teacher_activity_summary,assignments_last_month,bigint,YES
+teacher_activity_summary,total_submissions_to_grade,bigint,YES
+teacher_activity_summary,graded_submissions,bigint,YES
+teacher_activity_summary,pending_grading,bigint,YES
+teacher_activity_summary,avg_grading_time_hours,numeric,YES
+teacher_activity_summary,last_grading_date,timestamp with time zone,YES
+teacher_activity_summary,total_exams_created,bigint,YES
+teacher_activity_summary,published_exams,bigint,YES
+teacher_activity_summary,total_courses,bigint,YES
+teacher_activity_summary,active_courses,bigint,YES
+teacher_activity_summary,attendance_records_created,bigint,YES
+teacher_activity_summary,last_attendance_recorded,timestamp with time zone,YES
+user_roles,id,uuid,NO
+user_roles,user_id,uuid,NO
+user_roles,role,USER-DEFINED,NO
+user_roles,created_at,timestamp with time zone,YES
+venta_cursos_grabados,id,uuid,NO
+venta_cursos_grabados,estudiante_id,uuid,NO
+venta_cursos_grabados,usuario_id,uuid,NO
+venta_cursos_grabados,id_clases_grabadas,uuid,NO
+venta_cursos_grabados,valor_venta,numeric,NO
+venta_cursos_grabados,matricula_id,uuid,YES
+venta_cursos_grabados,created_at,timestamp with time zone,YES
+venta_cursos_grabados,updated_at,timestamp with time zone,YES

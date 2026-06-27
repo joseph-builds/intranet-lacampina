@@ -24,6 +24,11 @@ interface Teacher {
   email: string;
 }
 
+interface Program {
+  id: string;
+  name: string;
+}
+
 interface Course {
   id: string;
   name: string;
@@ -54,6 +59,7 @@ const AdminCourseManagement = () => {
   const { toast } = useToast();
   const [courses, setCourses] = useState<Course[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [programs, setPrograms] = useState<Program[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -90,6 +96,7 @@ const AdminCourseManagement = () => {
   useEffect(() => {
     fetchCourses();
     fetchTeachers();
+    fetchPrograms();
   }, []);
 
   const fetchCourses = async () => {
@@ -136,6 +143,18 @@ const AdminCourseManagement = () => {
         description: "No se pudieron cargar los profesores",
         variant: "destructive",
       });
+    }
+  };
+
+  const fetchPrograms = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('programas')
+        .select('id, name')
+        .order('name');
+      if (!error) setPrograms(data || []);
+    } catch (error) {
+      console.error('Error fetching programs:', error);
     }
   };
 
@@ -389,6 +408,8 @@ const AdminCourseManagement = () => {
           code: formData.code,
           teacher_principal_id: formData.teacher_principal_id,
           academic_year: formData.academic_year,
+          semester: formData.semester,
+          program_id: formData.program_id,
           start_date: formData.start_date,
           end_date: formData.end_date,
         })
@@ -804,7 +825,7 @@ const AdminCourseManagement = () => {
               <Textarea placeholder="Descripción del curso..." value={formData.description} onChange={handleInputChange('description')} />
             </div>
             <div className="mt-2">
-              <Label>Profesor</Label>
+              <Label>Profesor Principal *</Label>
               <Select value={formData.teacher_principal_id} onValueChange={handleSelectChange('teacher_principal_id')}>
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar profesor" />
@@ -815,6 +836,29 @@ const AdminCourseManagement = () => {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+              <div>
+                <Label>Programa *</Label>
+                <Select value={formData.program_id} onValueChange={handleSelectChange('program_id')}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar programa" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {programs.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Semestre *</Label>
+                <Input placeholder="Ej: 2024-I" value={formData.semester} onChange={handleInputChange('semester')} />
+              </div>
+            </div>
+            <div className="mt-2">
+              <Label>Fecha de Inicio *</Label>
+              <Input type="date" value={formData.start_date} onChange={e => setFormData(prev => ({ ...prev, start_date: e.target.value }))} />
             </div>
           </DialogContent>
         </Dialog>
@@ -848,16 +892,34 @@ const AdminCourseManagement = () => {
             <Textarea id="edit-description" value={formData.description} onChange={handleInputChange('description')} rows={3} />
           </div>
 
-          <div className="grid grid-cols-1 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="edit-academic-year">Año Académico *</Label>
               <Input id="edit-academic-year" value={formData.academic_year} onChange={handleInputChange('academic_year')} required />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-semester">Semestre *</Label>
+              <Input id="edit-semester" placeholder="Ej: 2024-I" value={formData.semester} onChange={handleInputChange('semester')} required />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="edit-program">Programa *</Label>
+            <Select value={formData.program_id} onValueChange={handleSelectChange('program_id')}>
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar programa" />
+              </SelectTrigger>
+              <SelectContent>
+                {programs.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="edit-start-date">Fecha de Inicio</Label>
+              <Label htmlFor="edit-start-date">Fecha de Inicio *</Label>
               <Input id="edit-start-date" type="date" value={formData.start_date} onChange={e => setFormData(prev => ({ ...prev, start_date: e.target.value }))} />
             </div>
             <div className="space-y-2">

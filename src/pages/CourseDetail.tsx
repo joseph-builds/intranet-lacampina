@@ -32,11 +32,6 @@ interface Course {
     last_name: string;
     email: string;
   };
-  classroom?: {
-    name: string;
-    grade: string;
-    education_level: string;
-  };
 }
 
 interface Teacher {
@@ -85,16 +80,11 @@ export default function CourseDetail() {
         .from('courses')
         .select(`
           *,
-          teacher:profiles!courses_teacher_id_fkey(
+          teacher:profiles!courses_teacher_principal_id_fkey(
             id,
             first_name,
             last_name,
             email
-          ),
-          classroom:virtual_classrooms!courses_classroom_id_fkey(
-            name,
-            grade,
-            education_level
           )
         `)
         .eq('id', id)
@@ -133,7 +123,7 @@ export default function CourseDetail() {
             return null;
           }
           return {
-            ...enrollment.student,
+            ...(enrollment.student as any),
             enrolled_at: enrollment.enrolled_at
           };
         })
@@ -264,16 +254,6 @@ export default function CourseDetail() {
                   )}
                 </div>
               </div>
-              
-              {course.classroom && (
-                <div className="flex items-center gap-2">
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Aula Virtual</p>
-                    <p className="font-medium">{course.classroom.name}</p>
-                  </div>
-                </div>
-              )}
               
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-muted-foreground" />

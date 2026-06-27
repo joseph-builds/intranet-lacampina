@@ -35,16 +35,11 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
   const [attendance, setAttendance] = useState<Record<string, AttendanceRecord>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [courseSchedule, setCourseSchedule] = useState<Array<{
-    day: string;
-    start_time: string;
-    end_time: string;
-  }> | null>(null);
-  const [isWithinSchedule, setIsWithinSchedule] = useState(false);
+  // schedule will come from modulos in Categoría B — unrestricted until then
+  const isWithinSchedule = true;
 
   useEffect(() => {
     fetchStudents();
-    fetchCourseSchedule();
   }, [courseId]);
 
   useEffect(() => {
@@ -53,64 +48,6 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
     }
   }, [selectedDate, students]);
 
-  useEffect(() => {
-    checkSchedule();
-    const interval = setInterval(checkSchedule, 60000); // Check every minute
-    return () => clearInterval(interval);
-  }, [courseSchedule]);
-
-  const fetchCourseSchedule = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('courses')
-        .select('schedule')
-        .eq('id', courseId)
-        .single();
-
-      if (error) throw error;
-      
-      // Parse schedule from Json type to our expected format
-      if (data?.schedule && Array.isArray(data.schedule)) {
-        setCourseSchedule(data.schedule as Array<{ day: string; start_time: string; end_time: string; }>);
-      } else {
-        setCourseSchedule(null);
-      }
-    } catch (error) {
-      console.error('Error fetching course schedule:', error);
-    }
-  };
-
-  const checkSchedule = () => {
-    if (!courseSchedule || courseSchedule.length === 0) return;
-
-    const now = new Date();
-    const currentDay = now.toLocaleDateString('es-ES', { weekday: 'long' }).toLowerCase();
-    const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
-
-    const dayMap: Record<string, string> = {
-      'lunes': 'monday',
-      'martes': 'tuesday',
-      'miércoles': 'wednesday',
-      'jueves': 'thursday',
-      'viernes': 'friday',
-      'sábado': 'saturday',
-      'domingo': 'sunday'
-    };
-
-    const englishDay = dayMap[currentDay];
-    
-    // Find the schedule for the current day
-    const todaySchedule = courseSchedule.find(s => s.day === englishDay);
-    
-    if (!todaySchedule) {
-      setIsWithinSchedule(false);
-      return;
-    }
-
-    // Check if current time is within the schedule
-    const isTimeMatch = currentTime >= todaySchedule.start_time && currentTime <= todaySchedule.end_time;
-    setIsWithinSchedule(isTimeMatch);
-  };
 
   const fetchStudents = async () => {
     try {
@@ -132,7 +69,7 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
 
       const enrolledStudents = (data || [])
         .filter(e => e.student)
-        .map(e => e.student) as Student[];
+        .map(e => e.student) as unknown as Student[];
       
       setStudents(enrolledStudents);
     } catch (error) {
@@ -148,7 +85,8 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
 
     try {
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
-      const { data, error } = await supabase
+      // modulo_id → course_id pending Categoría B; cast breaks infinite TS inference loop
+      const { data, error } = await (supabase as any)
         .from('attendance')
         .select('student_id, status, notes')
         .eq('modulo_id', courseId)
@@ -270,37 +208,6 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
         </div>
       </CardHeader>
       <CardContent>
-        {!isWithinSchedule && courseSchedule && courseSchedule.length > 0 && (
-          <div className="mb-4 p-4 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-            <div className="flex items-center gap-2 text-yellow-800 dark:text-yellow-200">
-              <Clock className="h-5 w-5" />
-              <div>
-                <p className="font-medium">Fuera del horario de clase</p>
-                <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                  El registro de asistencia está disponible durante el horario del curso:
-                </p>
-                <ul className="mt-2 text-sm text-yellow-700 dark:text-yellow-300 space-y-1">
-                  {courseSchedule.map(schedule => {
-                    const dayNames: Record<string, string> = {
-                      'monday': 'Lunes',
-                      'tuesday': 'Martes',
-                      'wednesday': 'Miércoles',
-                      'thursday': 'Jueves',
-                      'friday': 'Viernes',
-                      'saturday': 'Sábado',
-                      'sunday': 'Domingo'
-                    };
-                    return (
-                      <li key={schedule.day}>
-                        • {dayNames[schedule.day]}: {schedule.start_time} - {schedule.end_time}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            </div>
-          </div>
-        )}
         {students.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             No hay estudiantes inscritos en este curso

@@ -105,7 +105,7 @@ serve(async (req: Request) => {
         education_level,
         academic_year,
         section,
-        teacher_id: finalTeacherId,
+        teacher_principal_id: finalTeacherId,
         tutor_id: tutor_id || null,
         is_active: true
       })
@@ -115,11 +115,11 @@ serve(async (req: Request) => {
         grade,
         education_level,
         academic_year,
-        teacher_id,
+        teacher_principal_id,
         tutor_id,
         is_active,
         created_at,
-        teacher:profiles!teacher_id(
+        teacher:profiles!teacher_principal_id(
           id,
           first_name,
           last_name,
@@ -180,11 +180,10 @@ serve(async (req: Request) => {
         name: courseName,
         code,
         classroom_id: newClassroom.id,
-        teacher_id: finalTeacherId,
+        teacher_principal_id: finalTeacherId,
         academic_year: academic_year,
         start_date: start_date,
         end_date: end_date,
-        schedule: null, // No default schedule - teachers will configure individually
         is_active: true
       };
     });

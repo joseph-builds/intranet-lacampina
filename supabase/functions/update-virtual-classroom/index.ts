@@ -58,7 +58,7 @@ serve(async (req: Request) => {
     // Get existing classroom
     const { data: existingClassroom, error: fetchError } = await supabaseClient
       .from('virtual_classrooms')
-      .select('teacher_id')
+      .select('teacher_principal_id')
       .eq('id', id)
       .single()
 
@@ -68,7 +68,7 @@ serve(async (req: Request) => {
     }
 
     // Check permissions: admin or the classroom teacher
-    if (profile.role !== 'admin' && existingClassroom.teacher_id !== profile.id) {
+    if (profile.role !== 'admin' && existingClassroom.teacher_principal_id !== profile.id) {
       throw new Error('No tienes permisos para modificar esta aula virtual')
     }
 
@@ -93,7 +93,7 @@ serve(async (req: Request) => {
     
     // Only allow admin to change teacher and tutor
     if (teacher_id !== undefined && profile.role === 'admin') {
-      updateData.teacher_id = teacher_id
+      updateData.teacher_principal_id = teacher_id
     }
     if (tutor_id !== undefined && profile.role === 'admin') {
       updateData.tutor_id = tutor_id || null  // Allow setting to null
@@ -111,12 +111,12 @@ serve(async (req: Request) => {
         education_level,
         academic_year,
         section,
-        teacher_id,
+        teacher_principal_id,
         tutor_id,
         is_active,
         created_at,
         updated_at,
-        teacher:profiles!teacher_id(
+        teacher:profiles!teacher_principal_id(
           id,
           first_name,
           last_name,

@@ -60,7 +60,7 @@ serve(async (req: Request) => {
     // Get existing classroom to check permissions
     const { data: existingClassroom, error: fetchError } = await supabaseClient
       .from('virtual_classrooms')
-      .select('teacher_id, name, is_active')
+      .select('teacher_principal_id, name, is_active')
       .eq('id', id)
       .single()
 
@@ -70,7 +70,7 @@ serve(async (req: Request) => {
     }
 
     // Check permissions: only admin or the classroom teacher
-    if (profile.role !== 'admin' && existingClassroom.teacher_id !== profile.id) {
+    if (profile.role !== 'admin' && existingClassroom.teacher_principal_id !== profile.id) {
       throw new Error('No tienes permisos para eliminar esta aula virtual')
     }
 

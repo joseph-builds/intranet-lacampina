@@ -83,7 +83,7 @@ serve(async (req: Request) => {
             academic_year,
             is_active,
             created_at,
-            teacher:profiles!courses_teacher_id_fkey (
+            teacher:profiles!courses_teacher_principal_id_fkey (
               id,
               first_name,
               last_name,
@@ -128,7 +128,7 @@ serve(async (req: Request) => {
         .from('courses')
         .select(`
           *,
-          teacher:profiles!courses_teacher_id_fkey (
+          teacher:profiles!courses_teacher_principal_id_fkey (
             id,
             first_name,
             last_name,
@@ -142,7 +142,7 @@ serve(async (req: Request) => {
           ),
           enrollments:course_enrollments (count)
         `)
-        .eq('teacher_id', profile.id)
+        .eq('teacher_principal_id', profile.id)
         .eq('is_active', true)
 
       if (primaryError) {
@@ -155,7 +155,7 @@ serve(async (req: Request) => {
         .select(`
           course:courses (
             *,
-            teacher:profiles!courses_teacher_id_fkey (
+            teacher:profiles!courses_teacher_principal_id_fkey (
               id,
               first_name,
               last_name,
@@ -202,7 +202,7 @@ serve(async (req: Request) => {
         .from('courses')
         .select(`
           *,
-          teacher:profiles!courses_teacher_id_fkey (
+          teacher:profiles!courses_teacher_principal_id_fkey (
             id,
             first_name,
             last_name,
@@ -239,7 +239,7 @@ serve(async (req: Request) => {
         .select(`
           courses (
             *,
-            teacher:profiles!courses_teacher_id_fkey (
+            teacher:profiles!courses_teacher_principal_id_fkey (
               id,
               first_name,
               last_name,

@@ -117,7 +117,7 @@ serve(async (req: Request) => {
     console.log(`🏫 Verificando aula virtual: ${classroom_id}`)
     const { data: classroom, error: classroomError } = await supabaseClient
       .from('virtual_classrooms')
-      .select('id, name, teacher_id')
+      .select('id, name, teacher_principal_id')
       .eq('id', classroom_id)
       .single()
 
@@ -131,8 +131,8 @@ serve(async (req: Request) => {
     console.log('✅ Aula virtual encontrada:', classroom.name)
 
     // Check if user has permission to create courses in this classroom
-    console.log(`🔐 Verificando permisos. Usuario role: ${profile.role}, classroom teacher_id: ${classroom.teacher_id}, user profile_id: ${profile.id}`)
-    if (profile.role === 'teacher' && classroom.teacher_id !== profile.id) {
+    console.log(`🔐 Verificando permisos. Usuario role: ${profile.role}, classroom teacher_principal_id: ${classroom.teacher_principal_id}, user profile_id: ${profile.id}`)
+    if (profile.role === 'teacher' && classroom.teacher_principal_id !== profile.id) {
       console.error('❌ Usuario no tiene permisos en este aula virtual')
       return new Response(
         JSON.stringify({ success: false, error: 'No tienes permisos para crear cursos en esta aula virtual' }),
@@ -216,11 +216,10 @@ serve(async (req: Request) => {
       code: code?.trim()?.toUpperCase() || 'DEFAULT001',
       academic_year: academic_year?.trim() || '2025',
       semester: semester?.trim() || 'primer-semestre',
-      teacher_id: teacher_id,
+      teacher_principal_id: teacher_id,
       classroom_id: classroom_id,
       start_date: courseStartDate,
       end_date: courseEndDate,
-      schedule: schedule || null,
       is_active: true
     }
 
@@ -230,7 +229,7 @@ serve(async (req: Request) => {
       .insert([courseData])
       .select(`
         *,
-        teacher:profiles!courses_teacher_id_fkey(first_name, last_name, email),
+        teacher:profiles!courses_teacher_principal_id_fkey(first_name, last_name, email),
         classroom:virtual_classrooms!courses_classroom_id_fkey(name, grade, education_level)
       `)
       .single()

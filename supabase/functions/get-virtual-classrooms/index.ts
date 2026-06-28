@@ -66,7 +66,7 @@ serve(async (req: Request) => {
         education_level,
         academic_year,
         section,
-        teacher_id,
+        teacher_principal_id,
         tutor_id,
         is_active,
         created_at
@@ -75,7 +75,7 @@ serve(async (req: Request) => {
 
     // If user is a teacher, only show their classrooms
     if (profile.role === 'teacher') {
-      query = query.eq('teacher_id', profile.id)
+      query = query.eq('teacher_principal_id', profile.id)
     }
 
     const { data: classrooms, error: classroomsError } = await query
@@ -88,7 +88,7 @@ serve(async (req: Request) => {
     console.log('📊 Optimizando consultas para mejor rendimiento...')
     
     // Get all unique teacher and tutor IDs
-    const teacherIds = [...new Set(classrooms.map(c => c.teacher_id).filter(Boolean))]
+    const teacherIds = [...new Set(classrooms.map(c => c.teacher_principal_id).filter(Boolean))]
     const tutorIds = [...new Set(classrooms.map(c => c.tutor_id).filter(Boolean))]
     const allProfileIds = [...new Set([...teacherIds, ...tutorIds])]
     
@@ -148,7 +148,7 @@ serve(async (req: Request) => {
 
     // Build final data structure
     const classroomsWithCounts = classrooms.map(classroom => {
-      const teacher = profilesMap.get(classroom.teacher_id) || null
+      const teacher = profilesMap.get(classroom.teacher_principal_id) || null
       const tutor = classroom.tutor_id ? profilesMap.get(classroom.tutor_id) || null : null
       const classroomCourses = coursesMap.get(classroom.id) || []
       const coursesCount = classroomCourses.length

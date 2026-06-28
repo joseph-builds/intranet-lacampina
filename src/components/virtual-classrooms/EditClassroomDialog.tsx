@@ -15,7 +15,7 @@ interface VirtualClassroom {
   education_level: 'primaria' | 'secundaria';
   academic_year: string;
   section: string;
-  teacher_id: string;
+  teacher_principal_id: string;
   tutor_id?: string | null;
   is_active: boolean;
   teacher?: {
@@ -70,7 +70,7 @@ export function EditClassroomDialog({
     grade: '',
     education_level: '' as 'primaria' | 'secundaria' | '',
     academic_year: '',
-    teacher_id: '',
+    teacher_principal_id: '',
     tutor_id: '',
     section: '',
     is_active: true
@@ -84,7 +84,7 @@ export function EditClassroomDialog({
         grade: classroom.grade,
         education_level: classroom.education_level,
         academic_year: classroom.academic_year,
-        teacher_id: classroom.teacher_id,
+        teacher_principal_id: classroom.teacher_principal_id,
         tutor_id: classroom.tutor_id || '',
         section: classroom.section,
         is_active: classroom.is_active
@@ -113,7 +113,7 @@ export function EditClassroomDialog({
           academic_year: formData.academic_year,
           section: formData.section,
           is_active: formData.is_active,
-          ...(isAdmin && { teacher_id: formData.teacher_id }),
+          ...(isAdmin && { teacher_principal_id: formData.teacher_principal_id }),
           ...(isAdmin && { tutor_id: formData.tutor_id || null })
         }
       });
@@ -227,8 +227,8 @@ export function EditClassroomDialog({
             <div>
               <Label htmlFor="edit-teacher">Profesor Responsable</Label>
               <Select 
-                value={formData.teacher_id} 
-                onValueChange={(value) => setFormData({ ...formData, teacher_id: value })}
+                value={formData.teacher_principal_id} 
+                onValueChange={(value) => setFormData({ ...formData, teacher_principal_id: value })}
               >
                 <SelectTrigger id="edit-teacher">
                   <SelectValue placeholder="Seleccionar profesor" />

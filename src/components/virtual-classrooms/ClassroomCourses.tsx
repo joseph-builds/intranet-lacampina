@@ -49,7 +49,7 @@ export function ClassroomCourses({ classroomId, canManage, onUpdate }: Classroom
     description: '',
     code: '',
     academic_year: new Date().getFullYear().toString(),
-    teacher_id: '',
+    teacher_principal_id: '',
     start_date: ''
   });
 
@@ -78,7 +78,7 @@ export function ClassroomCourses({ classroomId, canManage, onUpdate }: Classroom
         .from('courses')
         .select(`
           *,
-          teacher:profiles!courses_teacher_id_fkey(first_name, last_name),
+          teacher:profiles!courses_teacher_principal_id_fkey(first_name, last_name),
           enrollments:course_enrollments(count)
         `)
         .eq('classroom_id', classroomId)
@@ -111,7 +111,7 @@ export function ClassroomCourses({ classroomId, canManage, onUpdate }: Classroom
         toast.error('El año académico es requerido');
         return;
       }
-      if (!formData.teacher_id) {
+      if (!formData.teacher_principal_id) {
         toast.error('Debe seleccionar un profesor');
         return;
       }
@@ -129,7 +129,7 @@ export function ClassroomCourses({ classroomId, canManage, onUpdate }: Classroom
         description: formData.description,
         code: formData.code,
         academic_year: formData.academic_year,
-        teacher_id: formData.teacher_id,
+        teacher_principal_id: formData.teacher_principal_id,
         classroom_id: classroomId,
         start_date: formData.start_date || null
       };
@@ -205,7 +205,7 @@ export function ClassroomCourses({ classroomId, canManage, onUpdate }: Classroom
         description: '',
         code: '',
         academic_year: new Date().getFullYear().toString(),
-        teacher_id: '',
+        teacher_principal_id: '',
         start_date: ''
       });
       fetchCourses();
@@ -292,8 +292,8 @@ export function ClassroomCourses({ classroomId, canManage, onUpdate }: Classroom
                 <div>
                   <Label htmlFor="teacher">Profesor Asignado</Label>
                   <Select 
-                    value={formData.teacher_id} 
-                    onValueChange={(value) => setFormData({ ...formData, teacher_id: value })}
+                    value={formData.teacher_principal_id}
+                    onValueChange={(value) => setFormData({ ...formData, teacher_principal_id: value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar profesor" />

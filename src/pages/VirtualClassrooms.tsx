@@ -30,7 +30,7 @@ interface VirtualClassroom {
   education_level: 'primaria' | 'secundaria';
   academic_year: string;
   section: string;
-  teacher_id: string;
+  teacher_principal_id: string;
   tutor_id?: string | null;
   is_active: boolean;
   created_at: string;
@@ -84,7 +84,7 @@ export default function VirtualClassrooms() {
     grade: '',
     education_level: '' as 'primaria' | 'secundaria' | '',
     academic_year: new Date().getFullYear().toString(),
-    teacher_id: '',
+    teacher_principal_id: '',
     tutor_id: '',
     section: '',
     start_date: undefined as Date | undefined,
@@ -257,7 +257,7 @@ export default function VirtualClassrooms() {
           grade: formData.grade,
           education_level: formData.education_level as 'primaria' | 'secundaria',
           academic_year: formData.academic_year,
-          teacher_id: formData.teacher_id || profile.id,
+          teacher_principal_id: formData.teacher_principal_id || profile.id,
           tutor_id: formData.tutor_id && formData.tutor_id !== "none" ? formData.tutor_id : null,
           section: formData.section.toUpperCase(),
           start_date: format(formData.start_date, 'yyyy-MM-dd'),
@@ -283,7 +283,7 @@ export default function VirtualClassrooms() {
         grade: '',
         education_level: '',
         academic_year: new Date().getFullYear().toString(),
-        teacher_id: '',
+        teacher_principal_id: '',
         tutor_id: '',
         section: '',
         start_date: undefined,
@@ -448,9 +448,9 @@ export default function VirtualClassrooms() {
                               aria-expanded={teacherOpen}
                               className="w-full justify-between h-11"
                             >
-                              {formData.teacher_id
-                                ? teachers.find((teacher) => teacher.id === formData.teacher_id)
-                                    ? `${teachers.find((teacher) => teacher.id === formData.teacher_id)?.first_name} ${teachers.find((teacher) => teacher.id === formData.teacher_id)?.last_name}`
+                              {formData.teacher_principal_id
+                                ? teachers.find((teacher) => teacher.id === formData.teacher_principal_id)
+                                    ? `${teachers.find((teacher) => teacher.id === formData.teacher_principal_id)?.first_name} ${teachers.find((teacher) => teacher.id === formData.teacher_principal_id)?.last_name}`
                                     : "Seleccionar profesor"
                                 : "Seleccionar profesor"}
                               <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -471,14 +471,14 @@ export default function VirtualClassrooms() {
                                       key={teacher.id}
                                       value={`${teacher.first_name} ${teacher.last_name} ${teacher.email}`}
                                       onSelect={() => {
-                                        setFormData({ ...formData, teacher_id: teacher.id });
+                                        setFormData({ ...formData, teacher_principal_id: teacher.id });
                                         setTeacherOpen(false);
                                       }}
                                     >
                                       <Check
                                         className={cn(
                                           "mr-2 h-4 w-4",
-                                          formData.teacher_id === teacher.id ? "opacity-100" : "opacity-0"
+                                          formData.teacher_principal_id === teacher.id ? "opacity-100" : "opacity-0"
                                         )}
                                       />
                                       <div className="flex flex-col">

@@ -98,7 +98,7 @@ export function ExamForm({ courseId, onClose, onSuccess }: ExamFormProps) {
       const { data: examData, error: examError } = await supabase
         .from('exams')
         .insert({
-          modulo_id: courseId,
+          course_id: courseId,
           title: formData.title.trim(),
           description: formData.description.trim() || null,
           start_time: formData.start_time.toISOString(),
@@ -114,7 +114,7 @@ export function ExamForm({ courseId, onClose, onSuccess }: ExamFormProps) {
       const { data: quizData, error: quizError } = await supabase
         .from('quizzes')
         .insert({
-          modulo_id: courseId,
+          course_id: courseId,
           title: formData.title.trim(),
           description: formData.description.trim() || null,
           time_limit_minutes: formData.duration_minutes,
@@ -150,7 +150,7 @@ export function ExamForm({ courseId, onClose, onSuccess }: ExamFormProps) {
       const { error: eventError } = await supabase
         .from('course_events')
         .insert({
-          modulo_id: courseId,
+          course_id: courseId,
           title: `Examen: ${formData.title}`,
           description: formData.description || `Examen de ${formData.duration_minutes} minutos`,
           event_type: 'exam',

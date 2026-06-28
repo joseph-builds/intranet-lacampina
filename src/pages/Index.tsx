@@ -101,13 +101,13 @@ const Index = () => {
           supabase
             .from('assignments')
             .select('id')
-            .in('modulo_id', courseIds)
+            .in('course_id', courseIds)
             .eq('is_published', true)
             .gt('due_date', new Date().toISOString()),
           supabase
             .from('exams')
             .select('*', { count: 'exact', head: true })
-            .in('modulo_id', courseIds)
+            .in('course_id', courseIds)
             .eq('is_published', true)
             .gt('start_time', new Date().toISOString())
         ]);

@@ -85,11 +85,10 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
 
     try {
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
-      // modulo_id → course_id pending Categoría B; cast breaks infinite TS inference loop
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('attendance')
         .select('student_id, status, notes')
-        .eq('modulo_id', courseId)
+        .eq('course_id', courseId)
         .eq('date', dateStr);
 
       if (error) throw error;
@@ -139,7 +138,7 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
 
       const { error } = await supabase.functions.invoke('create-attendance-records', {
         body: {
-          modulo_id: courseId,
+          course_id: courseId,
           date: dateStr,
           attendance_records: attendanceRecords,
         },

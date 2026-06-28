@@ -92,7 +92,7 @@ export function RecentActivity() {
           due_date,
           courses!inner(name)
         `)
-        .in('modulo_id', courseIds)
+        .in('course_id', courseIds)
         .eq('is_published', true)
         .gt('due_date', new Date().toISOString())
         .order('due_date', { ascending: true })
@@ -134,7 +134,7 @@ export function RecentActivity() {
           start_time,
           courses!inner(name)
         `)
-        .in('modulo_id', courseIds)
+        .in('course_id', courseIds)
         .eq('is_published', true)
         .gt('start_time', new Date().toISOString())
         .order('start_time', { ascending: true })

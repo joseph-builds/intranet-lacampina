@@ -40,7 +40,7 @@ export function ExamsList({ courseId, canEdit }: ExamsListProps) {
       const { data, error } = await supabase
         .from('exams')
         .select('*')
-        .eq('modulo_id', courseId)
+        .eq('course_id', courseId)
         .order('start_time', { ascending: true });
 
       if (error) throw error;

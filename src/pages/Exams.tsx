@@ -28,7 +28,7 @@ interface Exam {
   start_time: string;
   duration_minutes: number;
   max_score: number;
-  modulo_id: string;
+  course_id: string;
   source: 'exam' | 'weekly_resource';
   course: {
     id: string;
@@ -67,7 +67,7 @@ const Exams = () => {
     const { data: quizData } = await supabase
       .from('quizzes')
       .select('id')
-      .eq('modulo_id', courseId)
+      .eq('course_id', courseId)
       .eq('title', quizTitle)
       .maybeSingle();
 
@@ -130,10 +130,10 @@ const Exams = () => {
       // Combine both sources and check submissions for students
       const combinedExams: Exam[] = await Promise.all([
         ...(examsData || []).map(async exam => {
-          const submission = profile?.role === 'student' 
-            ? await checkExamSubmission(exam.id, exam.title, exam.modulo_id)
+          const submission = profile?.role === 'student'
+            ? await checkExamSubmission(exam.id, exam.title, exam.course_id)
             : null;
-          
+
           return {
             id: exam.id,
             title: exam.title,
@@ -141,7 +141,7 @@ const Exams = () => {
             start_time: exam.start_time,
             duration_minutes: exam.duration_minutes,
             max_score: exam.max_score,
-            modulo_id: exam.modulo_id,
+            course_id: exam.course_id,
             source: 'exam' as const,
             course: exam.course,
             submission
@@ -159,7 +159,7 @@ const Exams = () => {
             start_time: resource.assignment_deadline || new Date().toISOString(),
             duration_minutes: 60, // Default duration
             max_score: resource.max_score || 100,
-            modulo_id: resource.section.course.id,
+            course_id: resource.section.course.id,
             source: 'weekly_resource' as const,
             course: resource.section.course,
             submission
@@ -337,7 +337,7 @@ const Exams = () => {
                         variant="outline"
                         asChild
                       >
-                        <Link to={`/courses/${exam.modulo_id}`}>
+                        <Link to={`/courses/${exam.course_id}`}>
                           Ver Curso
                         </Link>
                       </Button>

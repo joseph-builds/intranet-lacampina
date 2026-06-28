@@ -18,7 +18,7 @@ interface SubmitAssignmentDialogProps {
     description: string;
     due_date: string;
     max_score: number;
-    modulo_id: string;
+    course_id: string;
   };
   onSubmitSuccess: () => void;
 }
@@ -80,7 +80,7 @@ export const SubmitAssignmentDialog = ({
       const { data, error } = await supabase.functions.invoke('submit-assignment', {
         body: {
           assignmentTitle: assignment.title,
-          courseId: assignment.modulo_id,
+          courseId: assignment.course_id,
           content: content.trim(),
           fileUrl,
           filePath,

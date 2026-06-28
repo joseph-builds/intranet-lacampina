@@ -40,7 +40,7 @@ interface ExamData {
   start_time: string;
   duration_minutes: number;
   max_score: number;
-  modulo_id: string;
+  course_id: string;
   quiz_id: string;
 }
 
@@ -109,7 +109,7 @@ const ExamTaking = () => {
       const { data: quizData, error: quizError } = await supabase
         .from('quizzes')
         .select('id')
-        .eq('modulo_id', examData.modulo_id)
+        .eq('course_id', examData.course_id)
         .eq('title', examData.title)
         .single();
 
@@ -121,7 +121,7 @@ const ExamTaking = () => {
       const { data: enrollment } = await supabase
         .from('course_enrollments')
         .select('id')
-        .eq('modulo_id', examData.modulo_id)
+        .eq('modulo_id', examData.course_id)
         .eq('student_id', profile.id)
         .single();
 

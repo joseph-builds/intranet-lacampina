@@ -150,7 +150,7 @@ export default function CourseDetail() {
             email
           )
         `)
-        .eq('modulo_id', id);
+        .eq('course_id', id);
 
       if (error) throw error;
       setAdditionalTeachers(data?.map(item => item.teacher).filter(Boolean) || []);

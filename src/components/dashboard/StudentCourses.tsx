@@ -133,16 +133,16 @@ export function StudentCourses() {
       // Single query for all pending assignments across all courses
       const { data: allAssignments } = await supabase
         .from('assignments')
-        .select('id, modulo_id')
-        .in('modulo_id', courseIds)
+        .select('id, course_id')
+        .in('course_id', courseIds)
         .eq('is_published', true)
         .gt('due_date', new Date().toISOString());
 
       // Single query for all upcoming exams across all courses
       const { data: allExams } = await supabase
         .from('exams')
-        .select('id, modulo_id')
-        .in('modulo_id', courseIds)
+        .select('id, course_id')
+        .in('course_id', courseIds)
         .eq('is_published', true)
         .gt('start_time', new Date().toISOString());
 
@@ -152,14 +152,14 @@ export function StudentCourses() {
 
       allAssignments?.forEach(assignment => {
         if (!submittedIds.has(assignment.id)) {
-          const current = assignmentsByCourse.get(assignment.modulo_id) || 0;
-          assignmentsByCourse.set(assignment.modulo_id, current + 1);
+          const current = assignmentsByCourse.get(assignment.course_id) || 0;
+          assignmentsByCourse.set(assignment.course_id, current + 1);
         }
       });
 
       allExams?.forEach(exam => {
-        const current = examsByCourse.get(exam.modulo_id) || 0;
-        examsByCourse.set(exam.modulo_id, current + 1);
+        const current = examsByCourse.get(exam.course_id) || 0;
+        examsByCourse.set(exam.course_id, current + 1);
       });
 
       // Map to courses

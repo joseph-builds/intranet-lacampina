@@ -83,7 +83,7 @@ interface GradeRecord {
 }
 
 interface CourseGradeDetail {
-  modulo_id: string;
+  course_id: string;
   course_name: string;
   course_code: string;
   average: number;
@@ -242,7 +242,7 @@ export default function TutorDashboard() {
           .from('attendance')
           .select('student_id, status, date, recorded_at')
           .in('student_id', studentIds)
-          .or(`modulo_id.in.(${courseIds.join(',')}),classroom_id.eq.${classroomId}`)
+          .or(`course_id.in.(${courseIds.join(',')}),classroom_id.eq.${classroomId}`)
           .order('date', { ascending: false });
 
         if (attendanceError) throw attendanceError;
@@ -296,7 +296,7 @@ export default function TutorDashboard() {
             score, 
             assignment_id, 
             assignments!inner(
-              modulo_id,
+              course_id,
               courses!inner(
                 id,
                 name,
@@ -315,7 +315,7 @@ export default function TutorDashboard() {
         console.log('📝 Sample submission:', submissionsData?.[0]);
         console.log('📋 All submissions:', submissionsData?.map(s => ({
           student_id: s.student_id,
-          modulo_id: (s.assignments as any).courses.id,
+          course_id: (s.assignments as any).courses.id,
           course_name: (s.assignments as any).courses.name,
           score: s.score
         })));
@@ -385,7 +385,7 @@ export default function TutorDashboard() {
             const courseGradesMap = studentCourseGrades.get(record.student_id);
             if (courseGradesMap) {
               record.course_grades = Array.from(courseGradesMap.entries()).map(([courseId, data]) => ({
-                modulo_id: courseId,
+                course_id: courseId,
                 course_name: data.course_name,
                 course_code: data.course_code,
                 average: data.total / data.count,
@@ -837,7 +837,7 @@ export default function TutorDashboard() {
                               <p className="text-xs font-medium text-muted-foreground">Desempeño por Curso:</p>
                               <div className="grid grid-cols-1 gap-2">
                                 {grades.course_grades.map(cg => (
-                                  <div key={cg.modulo_id} className="flex items-center justify-between p-2 bg-muted/50 rounded">
+                                  <div key={cg.course_id} className="flex items-center justify-between p-2 bg-muted/50 rounded">
                                     <div className="flex-1">
                                       <p className="text-xs font-medium">{cg.course_name}</p>
                                       <p className="text-xs text-muted-foreground">{cg.course_code}</p>

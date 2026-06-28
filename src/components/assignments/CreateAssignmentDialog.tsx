@@ -54,7 +54,7 @@ export function CreateAssignmentDialog({ open, onOpenChange, onSuccess }: Create
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   
   const [formData, setFormData] = useState({
-    modulo_id: '',
+    course_id: '',
     week_id: '',
     title: '',
     description: '',
@@ -70,13 +70,13 @@ export function CreateAssignmentDialog({ open, onOpenChange, onSuccess }: Create
   }, [open, profile]);
 
   useEffect(() => {
-    if (formData.modulo_id) {
-      fetchCourseWeeks(formData.modulo_id);
+    if (formData.course_id) {
+      fetchCourseWeeks(formData.course_id);
     } else {
       setWeeks([]);
       setFormData(prev => ({ ...prev, week_id: '' }));
     }
-  }, [formData.modulo_id]);
+  }, [formData.course_id]);
 
   const fetchTeacherCourses = async () => {
     if (!profile?.id) return;
@@ -88,7 +88,7 @@ export function CreateAssignmentDialog({ open, onOpenChange, onSuccess }: Create
       const { data, error } = await supabase
         .from('courses')
         .select('id, name, code')
-        .eq('teacher_id', profile.id)
+        .eq('teacher_principal_id', profile.id)
         .eq('is_active', true)
         .order('name');
 
@@ -98,7 +98,7 @@ export function CreateAssignmentDialog({ open, onOpenChange, onSuccess }: Create
       
       // Auto-select if only one course
       if (data && data.length === 1) {
-        setFormData(prev => ({ ...prev, modulo_id: data[0].id }));
+        setFormData(prev => ({ ...prev, course_id: data[0].id }));
       }
     } catch (error) {
       console.error('Error fetching courses:', error);
@@ -115,7 +115,7 @@ export function CreateAssignmentDialog({ open, onOpenChange, onSuccess }: Create
       const { data, error } = await supabase
         .from('course_weekly_sections')
         .select('id, week_number, title, start_date, end_date')
-        .eq('modulo_id', courseId)
+        .eq('course_id', courseId)
         .order('week_number');
 
       if (error) throw error;
@@ -199,7 +199,7 @@ export function CreateAssignmentDialog({ open, onOpenChange, onSuccess }: Create
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.modulo_id) {
+    if (!formData.course_id) {
       toast.error('Debes seleccionar un curso');
       return;
     }
@@ -233,7 +233,7 @@ export function CreateAssignmentDialog({ open, onOpenChange, onSuccess }: Create
       const { data: assignmentData, error: assignmentError } = await supabase
         .from('assignments')
         .insert({
-          modulo_id: formData.modulo_id,
+          course_id: formData.course_id,
           title: formData.title.trim(),
           description: formData.description.trim() || null,
           due_date: formData.due_date.toISOString(),
@@ -266,7 +266,7 @@ export function CreateAssignmentDialog({ open, onOpenChange, onSuccess }: Create
       
       // Reset form
       setFormData({
-        modulo_id: '',
+        course_id: '',
         week_id: '',
         title: '',
         description: '',
@@ -307,7 +307,7 @@ export function CreateAssignmentDialog({ open, onOpenChange, onSuccess }: Create
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Course Selection */}
           <div className="space-y-2">
-            <Label htmlFor="modulo_id" className="required">Curso</Label>
+            <Label htmlFor="course_id" className="required">Curso</Label>
             {loadingCourses ? (
               <div className="h-10 bg-muted rounded animate-pulse" />
             ) : courses.length === 0 ? (
@@ -316,8 +316,8 @@ export function CreateAssignmentDialog({ open, onOpenChange, onSuccess }: Create
               </div>
             ) : (
               <Select
-                value={formData.modulo_id}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, modulo_id: value }))}
+                value={formData.course_id}
+                onValueChange={(value) => setFormData(prev => ({ ...prev, course_id: value }))}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona un curso" />
@@ -334,7 +334,7 @@ export function CreateAssignmentDialog({ open, onOpenChange, onSuccess }: Create
           </div>
 
           {/* Week Selection */}
-          {formData.modulo_id && (
+          {formData.course_id && (
             <div className="space-y-2">
               <Label htmlFor="week_id" className="required">Semana del Curso</Label>
               {loadingWeeks ? (

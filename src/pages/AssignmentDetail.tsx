@@ -43,7 +43,7 @@ interface Assignment {
   description: string;
   due_date: string;
   max_score: number;
-  modulo_id: string;
+  course_id: string;
   course: {
     id: string;
     name: string;
@@ -266,7 +266,7 @@ const AssignmentDetail = () => {
         const { error } = await supabase.functions.invoke('submit-assignment', {
           body: {
             assignmentTitle: assignment?.title,
-            courseId: assignment?.modulo_id,
+            courseId: assignment?.course_id,
             content: content.trim(),
             files: uploadedFiles,
           },
@@ -527,7 +527,7 @@ const AssignmentDetail = () => {
             <h1 className="text-3xl font-bold text-foreground">{assignment.title}</h1>
             <p className="text-sm text-muted-foreground mt-1">
               <Link 
-                to={`/courses/${assignment.modulo_id}`}
+                to={`/courses/${assignment.course_id}`}
                 className="hover:text-primary transition-colors"
               >
                 {assignment.course.code} - {assignment.course.name}

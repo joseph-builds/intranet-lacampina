@@ -145,7 +145,7 @@ const DirectivoDashboard = () => {
         const { data: assignments, error: assignmentsError } = await supabase
           .from("assignments")
           .select("id, is_published, created_at")
-          .in("modulo_id", courseIds)
+          .in("course_id", courseIds)
           .order("created_at", { ascending: false });
 
         if (assignmentsError) {
@@ -184,7 +184,7 @@ const DirectivoDashboard = () => {
         const { count: examsCount } = await supabase
           .from("exams")
           .select("*", { count: "exact", head: true })
-          .in("modulo_id", courseIds);
+          .in("course_id", courseIds);
 
         // Get attendance records
         const { count: attendanceCount } = await supabase

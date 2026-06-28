@@ -47,7 +47,7 @@ interface Student {
 }
 
 interface CourseGrade {
-  modulo_id: string;
+  course_id: string;
   course_name: string;
   course_code: string;
   assignment_title: string;
@@ -59,7 +59,7 @@ interface CourseGrade {
 }
 
 interface CourseAttendance {
-  modulo_id: string;
+  course_id: string;
   course_name: string;
   course_code: string;
   date: string;
@@ -69,7 +69,7 @@ interface CourseAttendance {
 }
 
 interface CourseStats {
-  modulo_id: string;
+  course_id: string;
   course_name: string;
   course_code: string;
   average_score: number;
@@ -122,7 +122,7 @@ export default function StudentDetailView() {
           assignments!inner(
             title,
             max_score,
-            modulo_id,
+            course_id,
             courses!inner(
               id,
               name,
@@ -137,7 +137,7 @@ export default function StudentDetailView() {
       if (gradesError) throw gradesError;
 
       const formattedGrades: CourseGrade[] = gradesData.map(g => ({
-        modulo_id: (g.assignments as any).courses.id,
+        course_id: (g.assignments as any).courses.id,
         course_name: (g.assignments as any).courses.name,
         course_code: (g.assignments as any).courses.code,
         assignment_title: (g.assignments as any).title,
@@ -158,7 +158,7 @@ export default function StudentDetailView() {
           status,
           notes,
           recorded_at,
-          modulo_id,
+          course_id,
           classroom_id,
           courses(id, name, code)
         `)
@@ -171,7 +171,7 @@ export default function StudentDetailView() {
       const formattedAttendance: CourseAttendance[] = attendanceData
         .filter(a => a.courses)
         .map(a => ({
-          modulo_id: (a.courses as any).id,
+          course_id: (a.courses as any).id,
           course_name: (a.courses as any).name,
           course_code: (a.courses as any).code,
           date: a.date,
@@ -186,9 +186,9 @@ export default function StudentDetailView() {
       const courseMap = new Map<string, CourseStats>();
 
       formattedGrades.forEach(grade => {
-        if (!courseMap.has(grade.modulo_id)) {
-          courseMap.set(grade.modulo_id, {
-            modulo_id: grade.modulo_id,
+        if (!courseMap.has(grade.course_id)) {
+          courseMap.set(grade.course_id, {
+            course_id: grade.course_id,
             course_name: grade.course_name,
             course_code: grade.course_code,
             average_score: 0,
@@ -202,7 +202,7 @@ export default function StudentDetailView() {
           });
         }
 
-        const stats = courseMap.get(grade.modulo_id)!;
+        const stats = courseMap.get(grade.course_id)!;
         stats.total_assignments++;
         stats.average_score += grade.score;
 
@@ -213,9 +213,9 @@ export default function StudentDetailView() {
       });
 
       formattedAttendance.forEach(att => {
-        if (!courseMap.has(att.modulo_id)) {
-          courseMap.set(att.modulo_id, {
-            modulo_id: att.modulo_id,
+        if (!courseMap.has(att.course_id)) {
+          courseMap.set(att.course_id, {
+            course_id: att.course_id,
             course_name: att.course_name,
             course_code: att.course_code,
             average_score: 0,
@@ -229,7 +229,7 @@ export default function StudentDetailView() {
           });
         }
 
-        const stats = courseMap.get(att.modulo_id)!;
+        const stats = courseMap.get(att.course_id)!;
         stats.total_attendance_records++;
         if (att.status === 'present' || att.status === 'late') {
           stats.attendance_rate++;
@@ -561,7 +561,7 @@ export default function StudentDetailView() {
               </TableHeader>
               <TableBody>
                 {courseStats.map(course => (
-                  <TableRow key={course.modulo_id}>
+                  <TableRow key={course.course_id}>
                     <TableCell>
                       <div>
                         <p className="font-medium">{course.course_name}</p>

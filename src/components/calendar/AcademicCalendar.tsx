@@ -28,7 +28,7 @@ interface CourseEvent {
   start_date: string;
   end_date: string;
   location: string | null;
-  modulo_id: string;
+  course_id: string;
   courses?: {
     name: string;
     code: string;
@@ -40,7 +40,7 @@ interface Assignment {
   title: string;
   description: string | null;
   due_date: string;
-  modulo_id: string;
+  course_id: string;
   courses?: {
     name: string;
     code: string;
@@ -77,7 +77,7 @@ export function AcademicCalendar() {
         .from('course_events')
         .select(`
           *,
-          courses:modulo_id (
+          courses:course_id (
             name,
             code
           )
@@ -95,8 +95,8 @@ export function AcademicCalendar() {
           title,
           description,
           due_date,
-          modulo_id,
-          courses:modulo_id (
+          course_id,
+          courses:course_id (
             name,
             code
           )
@@ -113,7 +113,7 @@ export function AcademicCalendar() {
         
         if (enrollments && enrollments.length > 0) {
           const courseIds = enrollments.map(e => e.modulo_id);
-          assignmentsQuery = assignmentsQuery.in('modulo_id', courseIds);
+          assignmentsQuery = assignmentsQuery.in('course_id', courseIds);
         }
       }
 

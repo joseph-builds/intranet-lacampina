@@ -113,7 +113,7 @@ const DirectivoDashboard = () => {
   const fetchTeacherData = async () => {
     setIsLoading(true);
     try {
-      // Fetch all teachers
+      // 1. Obtener todos los profesores
       const { data: teachersData, error: teachersError } = await supabase
         .from("profiles")
         .select("id, first_name, last_name, email, is_active")
@@ -123,28 +123,14 @@ const DirectivoDashboard = () => {
       if (teachersError) throw teachersError;
 
       const metricsPromises = teachersData.map(async (teacher) => {
-        // Get teacher's courses
-        const { data: courses, error: coursesError } = await supabase
-          .from("courses")
-          .select("id")
+        
+        // 2. Obtener los course_ids DIRECTAMENTE desde course_teachers (¡Aquí estaba el error!)
+        const { data: teacherCourses } = await supabase
+          .from("course_teachers")
+          .select("course_id")
           .eq("teacher_id", teacher.id);
 
-        if (coursesError) {
-          console.error(
-            `Error fetching courses for ${teacher.first_name}:`,
-            coursesError,
-          );
-        }
-
-        const courseIds = courses?.map((c) => c.id) || [];
-
-        // Debug: Log para ver si se están obteniendo los cursos
-        if (courseIds.length > 0) {
-          console.log(
-            `${teacher.first_name} ${teacher.last_name}: ${courseIds.length} cursos encontrados`,
-            courseIds,
-          );
-        }
+        const courseIds = teacherCourses?.map((tc) => tc.course_id) || [];
 
         const now = new Date();
         const weekAgo = new Date();
@@ -156,78 +142,63 @@ const DirectivoDashboard = () => {
         const quarterAgo = new Date();
         quarterAgo.setDate(now.getDate() - 90);
 
-        // Get ALL assignments metrics (including historical)
-        const { data: assignments, error: assignmentsError } = await supabase
-          .from("assignments")
-          .select("id, is_published, created_at")
-          .in("modulo_id", courseIds)
-          .order("created_at", { ascending: false });
+        let assignments: any[] = [];
+        let examsCount = 0;
 
-        if (assignmentsError) {
-          console.error(
-            `Error fetching assignments for ${teacher.first_name}:`,
-            assignmentsError,
-          );
+        // 3. Buscar tareas y exámenes usando course_id
+        if (courseIds.length > 0) {
+          const { data: assignmentsData } = await supabase
+            .from("assignments")
+            .select("id, is_published, created_at")
+            .in("course_id", courseIds)
+            .order("created_at", { ascending: false });
+          
+          if (assignmentsData) assignments = assignmentsData;
+
+          const { count } = await supabase
+            .from("exams")
+            .select("*", { count: "exact", head: true })
+            .in("course_id", courseIds);
+            
+          if (count) examsCount = count;
         }
 
-        // Debug: Log para ver las tareas encontradas
-        if (assignments && assignments.length > 0) {
-          console.log(
-            `${teacher.first_name} ${teacher.last_name}: ${assignments.length} tareas encontradas`,
-          );
+        const totalAssignments = assignments.length;
+        const publishedAssignments = assignments.filter((a) => a.is_published).length;
+        const assignmentsLastWeek = assignments.filter((a) => new Date(a.created_at) >= weekAgo).length;
+        const assignmentsLastMonth = assignments.filter((a) => new Date(a.created_at) >= monthAgo).length;
+        const assignmentsPreviousMonth = assignments.filter((a) => {
+          const createdDate = new Date(a.created_at);
+          return createdDate >= twoMonthsAgo && createdDate < monthAgo;
+        }).length;
+        const assignmentsLastQuarter = assignments.filter((a) => new Date(a.created_at) >= quarterAgo).length;
+
+        // 4. Obtener métricas de calificación
+        const assignmentIds = assignments.map((a) => a.id);
+        let submissions: any[] = [];
+        
+        if (assignmentIds.length > 0) {
+          const { data: submissionsData } = await supabase
+            .from("assignment_submissions")
+            .select("id, graded_at, submitted_at")
+            .in("assignment_id", assignmentIds);
+            
+          if (submissionsData) submissions = submissionsData;
         }
 
-        const totalAssignments = assignments?.length || 0;
-        const publishedAssignments =
-          assignments?.filter((a) => a.is_published).length || 0;
-        const assignmentsLastWeek =
-          assignments?.filter((a) => new Date(a.created_at) >= weekAgo)
-            .length || 0;
-        const assignmentsLastMonth =
-          assignments?.filter((a) => new Date(a.created_at) >= monthAgo)
-            .length || 0;
-        const assignmentsPreviousMonth =
-          assignments?.filter((a) => {
-            const createdDate = new Date(a.created_at);
-            return createdDate >= twoMonthsAgo && createdDate < monthAgo;
-          }).length || 0;
-        const assignmentsLastQuarter =
-          assignments?.filter((a) => new Date(a.created_at) >= quarterAgo)
-            .length || 0;
-
-        // Get submissions metrics
-        const assignmentIds = assignments?.map((a) => a.id) || [];
-        const { data: submissions } = await supabase
-          .from("assignment_submissions")
-          .select("id, graded_at, submitted_at")
-          .in("assignment_id", assignmentIds);
-
-        const pendingGrading =
-          submissions?.filter((s) => !s.graded_at && s.submitted_at).length ||
-          0;
-        const gradedSubmissions =
-          submissions?.filter((s) => s.graded_at).length || 0;
+        const pendingGrading = submissions.filter((s) => !s.graded_at && s.submitted_at).length;
+        const gradedSubmissions = submissions.filter((s) => s.graded_at).length;
         const lastGrading = submissions
-          ?.filter((s) => s.graded_at)
-          .sort(
-            (a, b) =>
-              new Date(b.graded_at!).getTime() -
-              new Date(a.graded_at!).getTime(),
-          )[0];
+          .filter((s) => s.graded_at)
+          .sort((a, b) => new Date(b.graded_at!).getTime() - new Date(a.graded_at!).getTime())[0];
 
-        // Get exams
-        const { count: examsCount } = await supabase
-          .from("exams")
-          .select("*", { count: "exact", head: true })
-          .in("modulo_id", courseIds);
-
-        // Get attendance records
+        // 5. Asistencias
         const { count: attendanceCount } = await supabase
           .from("attendance")
           .select("*", { count: "exact", head: true })
           .eq("recorded_by", teacher.id);
 
-        // Calculate alerts
+        // Calcular alertas
         const alertReasons: string[] = [];
         let alertLevel: "high" | "medium" | "low" | null = null;
 
@@ -239,15 +210,9 @@ const DirectivoDashboard = () => {
           alertLevel = "low";
         }
 
-        if (pendingGrading > 5) {
-          alertReasons.push(`${pendingGrading} tareas pendientes de calificar`);
-        }
-        if (assignmentsLastMonth === 0) {
-          alertReasons.push("Sin crear tareas este mes");
-        }
-        if (assignmentsLastWeek === 0 && totalAssignments > 0) {
-          alertReasons.push("Sin actividad esta semana");
-        }
+        if (pendingGrading > 5) alertReasons.push(`${pendingGrading} tareas pendientes de calificar`);
+        if (assignmentsLastMonth === 0) alertReasons.push("Sin crear tareas este mes");
+        if (assignmentsLastWeek === 0 && totalAssignments > 0) alertReasons.push("Sin actividad esta semana");
 
         return {
           teacher_id: teacher.id,
@@ -264,7 +229,7 @@ const DirectivoDashboard = () => {
           assignments_last_quarter: assignmentsLastQuarter,
           pending_grading: pendingGrading,
           graded_submissions: gradedSubmissions,
-          total_exams: examsCount || 0,
+          total_exams: examsCount,
           attendance_records: attendanceCount || 0,
           last_grading_date: lastGrading?.graded_at || null,
           alert_level: alertLevel,

@@ -20,6 +20,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import AdminUserManagement from "./pages/AdminUserManagement";
 import AdminCourseManagement from "./pages/AdminCourseManagement";
 import Index from "./pages/Index";
+
 // Parent imports
 import ParentAdminPanel from "./pages/ParentAdminPanel";
 import ParentStudentDetail from "./pages/ParentStudentDetail";
@@ -32,6 +33,8 @@ import VirtualClassroomCourses from "./pages/VirtualClassroomCourses";
 import TutorDashboard from "./pages/TutorDashboard";
 import DirectivoDashboard from "./pages/DirectivoDashboard";
 import Calendar from "./pages/Calendar";
+import Messages from "./pages/Messages"; 
+import Support from "./pages/Support";
 import NotFound from "./pages/NotFound";
 import AdminBulkStudentImport from "./pages/AdminBulkStudentImport";
 import AssignmentDetail from "./pages/AssignmentDetail";
@@ -40,6 +43,7 @@ import TeacherDetailView from "./pages/TeacherDetailView";
 import ParentStudentAssociation from "./pages/ParentStudentAssociation";
 import CreateExam from "./pages/CreateExam";
 import GradingView from "./pages/GradingView";
+
 
 const queryClient = new QueryClient();
 
@@ -147,6 +151,16 @@ const App = () => (
             <Route path="/calendar" element={
               <ProtectedRoute>
                 <Calendar />
+              </ProtectedRoute>
+            } />
+            <Route path="/messages" element={
+              <ProtectedRoute>
+                <Messages />
+              </ProtectedRoute>
+            } />
+            <Route path="/support" element={
+              <ProtectedRoute>
+                <Support />
               </ProtectedRoute>
             } />
             <Route path="/tutor-dashboard" element={

@@ -40,7 +40,7 @@ interface Course {
   start_date?: string;
   end_date?: string;
   is_active: boolean;
-  enrollments?: { count: number }[];
+  enrollments_count?: number; // Modificado para el join manual en JS
 }
 
 interface CourseFormData {
@@ -85,13 +85,11 @@ const AdminCourseManagement = () => {
   const [bulkSchedule, setBulkSchedule] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterYear, setFilterYear] = useState('all');
-  // Edición rápida: cambios temporales
   const [quickEditMode, setQuickEditMode] = useState(false);
   const [quickEditChanges, setQuickEditChanges] = useState<{ [id: string]: Partial<Course> }>({});
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [scheduleEditCourse, setScheduleEditCourse] = useState<Course | null>(null);
   const [scheduleForm, setScheduleForm] = useState<any[]>([]);
-  const [inlineSaving, setInlineSaving] = useState<{ [id: string]: boolean }>({});
 
   useEffect(() => {
     fetchCourses();
@@ -99,9 +97,13 @@ const AdminCourseManagement = () => {
     fetchPrograms();
   }, []);
 
+  // Función maestra corregida (Frontend Join para evitar PGRST200)
   const fetchCourses = async () => {
     try {
-      const { data, error } = await supabase
+      setLoading(true);
+      
+      // 1. Traer los cursos limpios con la relación del profesor principal
+      const { data: coursesData, error: coursesError } = await supabase
         .from('courses')
         .select(`
           *,
@@ -110,23 +112,47 @@ const AdminCourseManagement = () => {
             first_name,
             last_name,
             email
-          ),
-          enrollments:course_enrollments (count)
+          )
         `)
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching courses:', error);
-        toast({
-          title: "Error",
-          description: "No se pudieron cargar los cursos",
-          variant: "destructive",
+      if (coursesError) throw coursesError;
+
+      // 2. Traer el conteo de estudiantes inscritos usando la tabla intermedia 'modulos'
+      const { data: enrollmentsData, error: enrollmentsError } = await supabase
+        .from('course_enrollments')
+        .select(`
+          modulo_id,
+          modulos!course_enrollments_modulo_id_fkey (
+            course_id
+          )
+        `);
+
+      // 3. Agrupar y mapear los conteos por course_id en memoria de JS
+      const enrollmentsMap = new Map<string, number>();
+      if (!enrollmentsError && enrollmentsData) {
+        enrollmentsData.forEach((item: any) => {
+          const courseId = item.modulos?.course_id;
+          if (courseId) {
+            enrollmentsMap.set(courseId, (enrollmentsMap.get(courseId) || 0) + 1);
+          }
         });
-      } else {
-        setCourses((data as any) || []);
       }
-    } catch (error) {
-      console.error('Error:', error);
+
+      // 4. Cruzar los datos limpios en memoria
+      const finalCourses = (coursesData || []).map((course: any) => ({
+        ...course,
+        enrollments_count: enrollmentsMap.get(course.id) || 0
+      }));
+
+      setCourses(finalCourses);
+    } catch (error: any) {
+      console.error('Error fetching courses:', error);
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar los cursos correctamente",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
@@ -203,43 +229,15 @@ const AdminCourseManagement = () => {
     setIsDeleteModalOpen(true);
   };
 
-  const handleToggleCourseStatus = async (course: Course) => {
-    try {
-      const { error } = await supabase
-        .from('courses')
-        .update({ is_active: !course.is_active })
-        .eq('id', course.id);
-
-      if (error) {
-        console.error('Error toggling course status:', error);
-        toast({
-          title: "Error",
-          description: "No se pudo cambiar el estado del curso",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Éxito",
-          description: `Curso ${!course.is_active ? 'activado' : 'desactivado'} exitosamente`,
-        });
-        fetchCourses();
-      }
-    } catch (error) {
-      console.error('Error:', error);
-    }
-  };
-
-  // Filter courses based on search and filters
   const filteredCourses = courses.filter(course => {
     const matchesSearch = course.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         course.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         course.teacher?.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         course.teacher?.last_name?.toLowerCase().includes(searchTerm.toLowerCase());
+                          course.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          course.teacher?.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          course.teacher?.last_name?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesYear = filterYear === 'all' || course.academic_year === filterYear;
     return matchesSearch && matchesYear;
   });
 
-  // Edición rápida: guardar cambios en memoria
   const handleQuickEditChange = (courseId: string, field: keyof Course, value: any) => {
     setQuickEditChanges(prev => ({
       ...prev,
@@ -249,7 +247,6 @@ const AdminCourseManagement = () => {
 
   const clearQuickEditChanges = () => setQuickEditChanges({});
 
-  // Guardar todos los cambios pendientes en la base de datos
   const saveAllQuickEdits = async () => {
     const updates = Object.entries(quickEditChanges);
     if (updates.length === 0) return;
@@ -269,24 +266,12 @@ const AdminCourseManagement = () => {
     }
   };
 
-  // Horario: abrir modal y cargar datos
   const openScheduleModal = (course: Course) => {
     setScheduleEditCourse(course);
-    // courses.schedule removed in schema refactor — schedule managed via modulos (Categoría B)
     setScheduleForm([]);
     setShowScheduleModal(true);
   };
 
-  // Horario: guardar
-  const saveSchedule = async () => {
-    if (!scheduleEditCourse) return;
-    // courses.schedule removed in schema refactor — schedule managed via modulos (Categoría B)
-    toast({ title: 'Info', description: 'El horario se gestiona desde los módulos del curso.' });
-    setShowScheduleModal(false);
-    setScheduleEditCourse(null);
-  };
-
-  // Horario: helpers para UI
   const daysOfWeek = [
     { key: 'monday', label: 'Lunes' },
     { key: 'tuesday', label: 'Martes' },
@@ -296,17 +281,6 @@ const AdminCourseManagement = () => {
     { key: 'saturday', label: 'Sábado' },
     { key: 'sunday', label: 'Domingo' },
   ];
-  const getDayLabel = (key: string) => daysOfWeek.find(d => d.key === key)?.label || key;
-  const getScheduleSummary = (schedule: string | undefined) => {
-    if (!schedule) return 'Sin horario';
-    try {
-      const arr = typeof schedule === 'string' ? JSON.parse(schedule) : schedule;
-      if (!Array.isArray(arr) || arr.length === 0) return 'Sin horario';
-      return arr.map((d: any) => `${getDayLabel(d.day)} ${d.start_time}-${d.end_time}`).join(', ');
-    } catch {
-      return 'Sin horario';
-    }
-  };
 
   const handleDeleteCourse = async () => {
     if (!deletingCourse) return;
@@ -338,7 +312,6 @@ const AdminCourseManagement = () => {
     }
   };
 
-  // Crear curso
   const handleCreateCourse = async () => {
     if (!formData.name || !formData.code || !formData.teacher_principal_id || !formData.academic_year) {
       toast({
@@ -387,7 +360,6 @@ const AdminCourseManagement = () => {
     }
   };
 
-  // Editar curso
   const handleEditCourse = async () => {
     if (!editingCourse) return;
     if (!formData.name || !formData.code || !formData.teacher_principal_id || !formData.academic_year) {
@@ -455,8 +427,6 @@ const AdminCourseManagement = () => {
   return (
     <DashboardLayout>
       <div className="container mx-auto px-4 py-8">
-        {/* Fila de filtros y botones de acción se mueve debajo de los indicadores */}
-        {/* Panel resumen de cursos */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-1">Gestión de Cursos</h1>
           <p className="text-gray-600 mb-6">Administra los cursos del sistema</p>
@@ -503,10 +473,16 @@ const AdminCourseManagement = () => {
             </Card>
           </div>
         </div>
-        {/* Fila de filtros y botones de acción DEBAJO de los indicadores */}
+
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-          {/* Aquí iría el filtro/búsqueda si existe */}
-          <div className="flex-1">{/* ...filtros o búsqueda aquí... */}</div>
+          <div className="flex gap-2 flex-1 max-w-md">
+            <Input 
+              placeholder="Buscar curso por nombre o código..." 
+              value={searchTerm} 
+              onChange={(e) => setSearchTerm(e.target.value)} 
+              className="w-full"
+            />
+          </div>
           <div className="flex flex-wrap gap-2 items-center justify-end">
             {selectedIds.length > 0 && (
               <>
@@ -553,7 +529,7 @@ const AdminCourseManagement = () => {
             )}
           </div>
         </div>
-        {/* Tabla de cursos */}
+
         <Card className="bg-gradient-card shadow-card border-0">
           <CardHeader>
             <CardTitle>Lista de Cursos</CardTitle>
@@ -586,110 +562,6 @@ const AdminCourseManagement = () => {
                         />
                       </TableCell>
                       <TableCell>{course.code}</TableCell>
-                              {/* Modal Asignar Profesor Masivo */}
-                              <Dialog open={showBulkTeacherModal} onOpenChange={setShowBulkTeacherModal}>
-                                <DialogContent className="max-w-md">
-                                  <DialogHeader>
-                                    <DialogTitle>Asignar Profesor a Cursos Seleccionados</DialogTitle>
-                                  </DialogHeader>
-                                  <div className="mb-4">
-                                    <Label>Profesor</Label>
-                                    <Select value={bulkTeacherId} onValueChange={setBulkTeacherId}>
-                                      <SelectTrigger>
-                                        <SelectValue placeholder="Seleccionar profesor" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {teachers.map((t) => (
-                                          <SelectItem key={t.id} value={t.id}>{t.first_name} {t.last_name}</SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  <DialogFooter>
-                                    <Button
-                                      onClick={async () => {
-                                        if (!bulkTeacherId) return;
-                                        setSaving(true);
-                                        try {
-                                          for (const id of selectedIds) {
-                                            await supabase.from('courses').update({ teacher_principal_id: bulkTeacherId }).eq('id', id);
-                                          }
-                                          toast({ title: 'Profesor asignado', description: 'Profesor asignado a los cursos seleccionados.' });
-                                          setShowBulkTeacherModal(false);
-                                          setBulkTeacherId('');
-                                          setSelectedIds([]);
-                                          fetchCourses();
-                                        } catch {
-                                          toast({ title: 'Error', description: 'No se pudo asignar el profesor', variant: 'destructive' });
-                                        } finally {
-                                          setSaving(false);
-                                        }
-                                      }}
-                                      disabled={!bulkTeacherId || saving}
-                                      className="bg-purple-600 text-white"
-                                    >
-                                      Asignar
-                                    </Button>
-                                  </DialogFooter>
-                                </DialogContent>
-                              </Dialog>
-
-                              {/* Modal Asignar Horario Masivo */}
-                              <Dialog open={showBulkScheduleModal} onOpenChange={setShowBulkScheduleModal}>
-                                <DialogContent className="max-w-lg">
-                                  <DialogHeader>
-                                    <DialogTitle>Asignar Horario a Cursos Seleccionados</DialogTitle>
-                                  </DialogHeader>
-                                  <div className="mb-2 text-sm text-gray-600">Define el horario que se asignará a todos los cursos seleccionados</div>
-                                  <div className="space-y-2">
-                                    {daysOfWeek.map(day => {
-                                      const entry = bulkSchedule.find((d: any) => d.day === day.key);
-                                      return (
-                                        <div key={day.key} className="flex items-center gap-2">
-                                          <input type="checkbox" checked={!!entry} onChange={e => {
-                                            if (e.target.checked) {
-                                              setBulkSchedule((prev: any[]) => [...prev, { day: day.key, start_time: '', end_time: '' }]);
-                                            } else {
-                                              setBulkSchedule((prev: any[]) => prev.filter(d => d.day !== day.key));
-                                            }
-                                          }} />
-                                          <span className="w-24">{day.label}</span>
-                                          {entry && (
-                                            <>
-                                              <input type="time" value={entry.start_time} onChange={e => setBulkSchedule((prev: any[]) => prev.map(d => d.day === day.key ? { ...d, start_time: e.target.value } : d))} className="border rounded px-2 py-1" />
-                                              <span>a</span>
-                                              <input type="time" value={entry.end_time} onChange={e => setBulkSchedule((prev: any[]) => prev.map(d => d.day === day.key ? { ...d, end_time: e.target.value } : d))} className="border rounded px-2 py-1" />
-                                            </>
-                                          )}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                  <DialogFooter className="mt-4">
-                                    <Button
-                                      className="bg-blue-600 text-white"
-                                      onClick={async () => {
-                                        setSaving(true);
-                                        try {
-                                          // courses.schedule removed in schema refactor — managed via modulos (Categoría B)
-                                          toast({ title: 'Info', description: 'El horario se gestiona desde los módulos del curso.' });
-                                          setShowBulkScheduleModal(false);
-                                          setBulkSchedule([]);
-                                          setSelectedIds([]);
-                                          fetchCourses();
-                                        } catch {
-                                          toast({ title: 'Error', description: 'No se pudo asignar el horario', variant: 'destructive' });
-                                        } finally {
-                                          setSaving(false);
-                                        }
-                                      }}
-                                      disabled={bulkSchedule.length === 0 || saving}
-                                    >
-                                      Asignar Horario
-                                    </Button>
-                                  </DialogFooter>
-                                </DialogContent>
-                              </Dialog>
                       <TableCell className={quickEditMode ? "cursor-pointer group" : ""}>
                         {quickEditMode ? (
                           <Input
@@ -697,7 +569,7 @@ const AdminCourseManagement = () => {
                             onChange={e => handleQuickEditChange(course.id, 'name', e.target.value)}
                           />
                         ) : (
-                          <div className="font-bold group-hover:underline group-hover:text-blue-600 flex items-center">
+                          <div className="font-bold flex items-center">
                             {course.name}
                           </div>
                         )}
@@ -718,8 +590,8 @@ const AdminCourseManagement = () => {
                             </SelectContent>
                           </Select>
                         ) : (
-                          <span className="group-hover:underline group-hover:text-blue-600 flex items-center">
-                            {course.teacher ? `${course.teacher.first_name} ${course.teacher.last_name}` : ''}
+                          <span className="flex items-center">
+                            {course.teacher ? `${course.teacher.first_name} ${course.teacher.last_name}` : 'Sin asignar'}
                           </span>
                         )}
                       </TableCell>
@@ -739,53 +611,40 @@ const AdminCourseManagement = () => {
                             </SelectContent>
                           </Select>
                         ) : (
-                          <span className="group-hover:underline group-hover:text-blue-600 flex items-center">
+                          <span className="flex items-center">
                             {course.academic_year}
                           </span>
                         )}
                       </TableCell>
                       <TableCell className={quickEditMode ? "cursor-pointer group" : ""}>
-                        <span className="group-hover:underline group-hover:text-blue-600 flex items-center">
-                          <span className="text-gray-400">Gestionado por módulos</span>
-                          {quickEditMode && (
-                            <Button size="sm" variant="ghost" className="ml-1 p-1" onClick={e => { e.stopPropagation(); openScheduleModal(course); }}><Edit className="w-3 h-3" /></Button>
-                          )}
+                        <span className="flex items-center">
+                          <span className="text-gray-400 text-sm">Gestionado por módulos</span>
                         </span>
                       </TableCell>
                       <TableCell>
-                        {quickEditMode ? (
-                          <div className="flex items-center gap-2">
-                            <Switch
-                              checked={quickEditChanges[course.id]?.is_active ?? course.is_active}
-                              onCheckedChange={val => handleQuickEditChange(course.id, 'is_active', val)}
-                            />
-                            <span className={(quickEditChanges[course.id]?.is_active ?? course.is_active) ? "text-green-700" : "text-gray-500"}>
-                              {(quickEditChanges[course.id]?.is_active ?? course.is_active) ? 'Activo' : 'Inactivo'}
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <Switch checked={course.is_active} disabled />
-                            <span className={course.is_active ? "text-green-700" : "text-gray-500"}>
-                              {course.is_active ? 'Activo' : 'Inactivo'}
-                            </span>
-                          </div>
-                        )}
+                        <div className="flex items-center gap-2">
+                          <Switch 
+                            checked={quickEditChanges[course.id]?.is_active ?? course.is_active} 
+                            onCheckedChange={(val) => {
+                              if(quickEditMode) {
+                                handleQuickEditChange(course.id, 'is_active', val);
+                              } else {
+                                handleToggleCourseStatus(course);
+                              }
+                            }}
+                            disabled={!quickEditMode && saving}
+                          />
+                          <span className={(quickEditChanges[course.id]?.is_active ?? course.is_active) ? "text-green-700 text-sm" : "text-gray-500 text-sm"}>
+                            {(quickEditChanges[course.id]?.is_active ?? course.is_active) ? 'Activo' : 'Inactivo'}
+                          </span>
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openEditModal(course)}
-                          >
+                          <Button variant="outline" size="sm" onClick={() => openEditModal(course)}>
                             <Edit className="w-4 h-4" />
                           </Button>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => openDeleteModal(course)}
-                          >
+                          <Button variant="destructive" size="sm" onClick={() => openDeleteModal(course)}>
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
@@ -795,194 +654,243 @@ const AdminCourseManagement = () => {
                 </TableBody>
               </Table>
             </div>
-              {filteredCourses.length === 0 && (
-                <div className="text-center py-8">
-                  <BookOpen className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">No se encontraron cursos</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-        {/* Modal Crear Curso */}
-        <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
-          <DialogContent className="max-w-xl">
-            <DialogHeader>
-              <DialogTitle>Crear Nuevo Curso</DialogTitle>
-            </DialogHeader>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label>Nombre del Curso</Label>
-                <Input placeholder="Ej: Matemáticas Básicas" value={formData.name} onChange={handleInputChange('name')} />
+            {filteredCourses.length === 0 && (
+              <div className="text-center py-8">
+                <BookOpen className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">No se encontraron cursos</p>
               </div>
-              <div>
-                <Label>Código del Curso</Label>
-                <Input placeholder="Ej: MAT101" value={formData.code} onChange={handleInputChange('code')} />
-              </div>
-            </div>
-            <div className="mt-2">
-              <Label>Descripción</Label>
-              <Textarea placeholder="Descripción del curso..." value={formData.description} onChange={handleInputChange('description')} />
-            </div>
-            <div className="mt-2">
-              <Label>Profesor Principal *</Label>
-              <Select value={formData.teacher_principal_id} onValueChange={handleSelectChange('teacher_principal_id')}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar profesor" />
-                </SelectTrigger>
-                <SelectContent>
-                  {teachers.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>{t.first_name} {t.last_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-              <div>
-                <Label>Programa *</Label>
-                <Select value={formData.program_id} onValueChange={handleSelectChange('program_id')}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar programa" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {programs.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Semestre *</Label>
-                <Input placeholder="Ej: 2024-I" value={formData.semester} onChange={handleInputChange('semester')} />
-              </div>
-            </div>
-            <div className="mt-2">
-              <Label>Fecha de Inicio *</Label>
-              <Input type="date" value={formData.start_date} onChange={e => setFormData(prev => ({ ...prev, start_date: e.target.value }))} />
-            </div>
-          </DialogContent>
-        </Dialog>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
-    {/* Modal Editar Curso */}
-    <Dialog open={isEditModalOpen} onOpenChange={(open) => { setIsEditModalOpen(open); if (!open) setEditingCourse(null); }}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Editar Curso</DialogTitle>
-        </DialogHeader>
-        <form
-          onSubmit={e => {
-            e.preventDefault();
-            handleEditCourse();
-          }}
-          className="space-y-6"
-        >
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-name">Nombre del Curso *</Label>
-              <Input id="edit-name" value={formData.name} onChange={handleInputChange('name')} required autoFocus />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-code">Código *</Label>
-              <Input id="edit-code" value={formData.code} onChange={handleInputChange('code')} required />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="edit-description">Descripción</Label>
-            <Textarea id="edit-description" value={formData.description} onChange={handleInputChange('description')} rows={3} />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-academic-year">Año Académico *</Label>
-              <Input id="edit-academic-year" value={formData.academic_year} onChange={handleInputChange('academic_year')} required />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-semester">Semestre *</Label>
-              <Input id="edit-semester" placeholder="Ej: 2024-I" value={formData.semester} onChange={handleInputChange('semester')} required />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="edit-program">Programa *</Label>
-            <Select value={formData.program_id} onValueChange={handleSelectChange('program_id')}>
+      {/* Modal Asignar Profesor Masivo */}
+      <Dialog open={showBulkTeacherModal} onOpenChange={setShowBulkTeacherModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Asignar Profesor a Cursos Seleccionados</DialogTitle>
+          </DialogHeader>
+          <div className="mb-4">
+            <Label>Profesor</Label>
+            <Select value={bulkTeacherId} onValueChange={setBulkTeacherId}>
               <SelectTrigger>
-                <SelectValue placeholder="Seleccionar programa" />
+                <SelectValue placeholder="Seleccionar profesor" />
               </SelectTrigger>
               <SelectContent>
-                {programs.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                {teachers.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>{t.first_name} {t.last_name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
+          <DialogFooter>
+            <Button
+              onClick={async () => {
+                if (!bulkTeacherId) return;
+                setSaving(true);
+                try {
+                  for (const id of selectedIds) {
+                    await supabase.from('courses').update({ teacher_principal_id: bulkTeacherId }).eq('id', id);
+                  }
+                  toast({ title: 'Profesor asignado', description: 'Profesor asignado a los cursos seleccionados.' });
+                  setShowBulkTeacherModal(false);
+                  setBulkTeacherId('');
+                  setSelectedIds([]);
+                  fetchCourses();
+                } catch {
+                  toast({ title: 'Error', description: 'No se pudo asignar el profesor', variant: 'destructive' });
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              disabled={!bulkTeacherId || saving}
+              className="bg-purple-600 text-white"
+            >
+              Asignar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-start-date">Fecha de Inicio *</Label>
-              <Input id="edit-start-date" type="date" value={formData.start_date} onChange={e => setFormData(prev => ({ ...prev, start_date: e.target.value }))} />
+      {/* Modal Asignar Horario Masivo */}
+      <Dialog open={showBulkScheduleModal} onOpenChange={setShowBulkScheduleModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Asignar Horario a Cursos Seleccionados</DialogTitle>
+          </DialogHeader>
+          <div className="mb-2 text-sm text-gray-600">El horario se gestiona actualmente desde los módulos asociados de cada curso.</div>
+          <DialogFooter className="mt-4">
+            <Button className="bg-blue-600 text-white" onClick={() => { setShowBulkScheduleModal(false); setSelectedIds([]); }}>
+              Entendido
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Crear Curso */}
+      <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Crear Nuevo Curso</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label>Nombre del Curso</Label>
+              <Input placeholder="Ej: Matemáticas Básicas" value={formData.name} onChange={handleInputChange('name')} />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-end-date">Fecha de Fin</Label>
-              <Input id="edit-end-date" type="date" value={formData.end_date} onChange={e => setFormData(prev => ({ ...prev, end_date: e.target.value }))} />
+            <div>
+              <Label>Código del Curso</Label>
+              <Input placeholder="Ej: MAT101" value={formData.code} onChange={handleInputChange('code')} />
             </div>
           </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="edit-teacher">Profesor Principal *</Label>
+          <div className="mt-2">
+            <Label>Descripción</Label>
+            <Textarea placeholder="Descripción del curso..." value={formData.description} onChange={handleInputChange('description')} />
+          </div>
+          <div className="mt-2">
+            <Label>Profesor Principal *</Label>
             <Select value={formData.teacher_principal_id} onValueChange={handleSelectChange('teacher_principal_id')}>
               <SelectTrigger>
                 <SelectValue placeholder="Seleccionar profesor" />
               </SelectTrigger>
               <SelectContent>
-                {teachers.map((teacher) => (
-                  <SelectItem key={teacher.id} value={teacher.id}>
-                    {teacher.first_name} {teacher.last_name}
-                  </SelectItem>
+                {teachers.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>{t.first_name} {t.last_name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-
-          {/* Profesores adicionales se gestionan desde course_teachers (Categoría B) */}
-
-          <div className="p-4 bg-muted/50 rounded-lg">
-            <p className="text-sm text-muted-foreground">
-              <strong>Nota:</strong> El horario del curso (días y horas) se gestiona desde la sección "Horario del Curso" en la página del curso.
-            </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+            <div>
+              <Label>Programa *</Label>
+              <Select value={formData.program_id} onValueChange={handleSelectChange('program_id')}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar programa" />
+                </SelectTrigger>
+                <SelectContent>
+                  {programs.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Semestre *</Label>
+              <Input placeholder="Ej: 2024-I" value={formData.semester} onChange={handleInputChange('semester')} />
+            </div>
           </div>
-
-          <div className="flex justify-end gap-3">
-            <Button type="button" variant="outline" onClick={() => setIsEditModalOpen(false)} disabled={saving}>
-              Cancelar
-            </Button>
-            <Button type="submit" className="bg-blue-600 text-white hover:bg-blue-700" disabled={saving}>
-              Guardar Cambios
-            </Button>
+          <div className="mt-2">
+            <Label>Fecha de Inicio *</Label>
+            <Input type="date" value={formData.start_date} onChange={e => setFormData(prev => ({ ...prev, start_date: e.target.value }))} />
           </div>
-        </form>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter className="mt-4">
+            <Button onClick={handleCreateCourse} disabled={saving} className="bg-blue-600 text-white">
+              Crear Curso
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-    {/* Modal Eliminar Curso */}
-    <Dialog open={isDeleteModalOpen} onOpenChange={(open) => { setIsDeleteModalOpen(open); if (!open) setDeletingCourse(null); }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>¿Estás seguro?</DialogTitle>
-        </DialogHeader>
-        <div className="mb-4">
-          Esta acción no se puede deshacer. Se eliminará el curso "{deletingCourse?.name}" permanentemente.
-        </div>
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline" type="button" disabled={saving}>Cancelar</Button>
-          </DialogClose>
-          <Button variant="destructive" onClick={handleDeleteCourse} disabled={saving}>
-            Eliminar
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      {/* Modal Editar Curso */}
+      <Dialog open={isEditModalOpen} onOpenChange={(open) => { setIsEditModalOpen(open); if (!open) setEditingCourse(null); }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar Curso</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={e => { e.preventDefault(); handleEditCourse(); }} className="space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">Nombre del Curso *</Label>
+                <Input id="edit-name" value={formData.name} onChange={handleInputChange('name')} required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-code">Código *</Label>
+                <Input id="edit-code" value={formData.code} onChange={handleInputChange('code')} required />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-description">Descripción</Label>
+              <Textarea id="edit-description" value={formData.description} onChange={handleInputChange('description')} rows={3} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-academic-year">Año Académico *</Label>
+                <Input id="edit-academic-year" value={formData.academic_year} onChange={handleInputChange('academic_year')} required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-semester">Semestre *</Label>
+                <Input id="edit-semester" placeholder="Ej: 2024-I" value={formData.semester} onChange={handleInputChange('semester')} required />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-program">Programa *</Label>
+              <Select value={formData.program_id} onValueChange={handleSelectChange('program_id')}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar programa" />
+                </SelectTrigger>
+                <SelectContent>
+                  {programs.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-start-date">Fecha de Inicio *</Label>
+                <Input id="edit-start-date" type="date" value={formData.start_date} onChange={e => setFormData(prev => ({ ...prev, start_date: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-end-date">Fecha de Fin</Label>
+                <Input id="edit-end-date" type="date" value={formData.end_date} onChange={e => setFormData(prev => ({ ...prev, end_date: e.target.value }))} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-teacher">Profesor Principal *</Label>
+              <Select value={formData.teacher_principal_id} onValueChange={handleSelectChange('teacher_principal_id')}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar profesor" />
+                </SelectTrigger>
+                <SelectContent>
+                  {teachers.map((teacher) => (
+                    <SelectItem key={teacher.id} value={teacher.id}>
+                      {teacher.first_name} {teacher.last_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button type="button" variant="outline" onClick={() => setIsEditModalOpen(false)} disabled={saving}>
+                Cancelar
+              </Button>
+              <Button type="submit" className="bg-blue-600 text-white hover:bg-blue-700" disabled={saving}>
+                Guardar Cambios
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Eliminar Curso */}
+      <Dialog open={isDeleteModalOpen} onOpenChange={(open) => { setIsDeleteModalOpen(open); if (!open) setDeletingCourse(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>¿Estás seguro?</DialogTitle>
+          </DialogHeader>
+          <div className="mb-4">
+            Esta acción no se puede deshacer. Se eliminará el curso "{deletingCourse?.name}" permanentemente.
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" type="button" disabled={saving}>Cancelar</Button>
+            </DialogClose>
+            <Button variant="destructive" onClick={handleDeleteCourse} disabled={saving}>
+              Eliminar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 };

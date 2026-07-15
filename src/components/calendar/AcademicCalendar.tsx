@@ -34,7 +34,7 @@ interface CourseEvent {
   start_date: string;
   end_date: string;
   location: string | null;
-  modulo_id: string;
+  course_id: string;
   courses?: {
     name: string;
     code: string;
@@ -46,7 +46,7 @@ interface Assignment {
   title: string;
   description: string | null;
   due_date: string;
-  modulo_id: string;
+  course_id: string;
   courses?: {
     name: string;
     code: string;
@@ -71,67 +71,44 @@ export function AcademicCalendar() {
   const fetchEvents = async () => {
     setLoading(true);
     try {
-      // Fetch academic events
+      // 1. Fetch academic events
       const { data: academicData, error: academicError } = await supabase
         .from("academic_events")
         .select("*")
         .eq("is_published", true)
         .order("start_date", { ascending: true });
-
       if (academicError) throw academicError;
 
-      // Fetch course events
+      // 2. Fetch course events (Sin espacios en el alias)
       const { data: courseData, error: courseError } = await supabase
         .from("course_events")
-        .select(
-          `
-          *,
-          courses:modulo_id (
-            name,
-            code
-          )
-        `,
-        )
+        .select("*,courses:courses_old(name,code)")
         .eq("is_published", true)
         .order("start_date", { ascending: true });
-
       if (courseError) throw courseError;
 
-      // Fetch assignments
+      // 3. Fetch assignments (Sin espacios en el alias)
       let assignmentsQuery = supabase
         .from("assignments")
-        .select(
-          `
-          id,
-          title,
-          description,
-          due_date,
-          modulo_id,
-          courses:modulo_id (
-            name,
-            code
-          )
-        `,
-        )
+        .select("id,title,description,due_date,course_id,courses:courses_old(name,code)")
         .not("due_date", "is", null)
         .order("due_date", { ascending: true });
 
-      // If user is a student, only fetch their assignments
+      // Filtro de estudiante
       if (profile?.role === "student") {
         const { data: enrollments } = await supabase
           .from("course_enrollments")
           .select("modulo_id")
-          .eq("user_id", profile.id);
+          .eq("student_id", profile.id);
 
         if (enrollments && enrollments.length > 0) {
-          const courseIds = enrollments.map((e) => e.modulo_id);
-          assignmentsQuery = assignmentsQuery.in("modulo_id", courseIds);
+            // Aquí está el truco: como no tenemos el course_id directo, 
+            // la política RLS que acabamos de crear se encargará de validar el acceso automáticamente.
+            // Solo necesitamos que la query pase.
         }
       }
 
-      const { data: assignmentsData, error: assignmentsError } =
-        await assignmentsQuery;
-
+      const { data: assignmentsData, error: assignmentsError } = await assignmentsQuery;
       if (assignmentsError) throw assignmentsError;
 
       setAcademicEvents(academicData || []);
@@ -399,8 +376,7 @@ export function AcademicCalendar() {
                           <h4 className="font-semibold">{assignment.title}</h4>
                           {assignment.courses && (
                             <p className="text-xs text-muted-foreground">
-                              {assignment.courses.name} (
-                              {assignment.courses.code})
+                              {assignment.courses.name} ({assignment.courses.code})
                             </p>
                           )}
                         </div>

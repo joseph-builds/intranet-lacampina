@@ -142,7 +142,6 @@ export default function VirtualClassrooms() {
   const fetchClassrooms = async (forceRefresh = false) => {
     const now = Date.now();
     
-    // Verificar si necesitamos refrescar (cache expirado o forzado)
     if (!forceRefresh && classrooms.length > 0 && (now - lastFetch) < CACHE_TIMEOUT) {
       console.log('🔄 Usando datos en cache (válidos por', Math.round((CACHE_TIMEOUT - (now - lastFetch)) / 1000), 'segundos más)');
       return;
@@ -152,67 +151,53 @@ export default function VirtualClassrooms() {
     
     try {
       setLoading(true);
-      console.log('🔄 Iniciando carga optimizada de aulas virtuales...');
       
-      // Use Edge Function exclusively
-      console.log('📡 Llamando a Edge Function optimizada...');
-      
-      // Get the current session to include in the request
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        throw new Error('No estás autenticado. Por favor, inicia sesión.');
+      // 1. Pedir SOLO los módulos (sin forzar relaciones para evitar el error PGRST200)
+      const { data: modulosData, error } = await supabase
+        .from('modulos')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw new Error(error.message);
+
+      // 2. Recolectar todos los IDs de profesores y tutores para buscarlos de golpe
+      const profileIds = [...new Set([
+        ...(modulosData?.map(m => m.teacher_principal_id) || []),
+        ...(modulosData?.map(m => m.tutor_id) || [])
+      ])].filter(Boolean); // Limpiamos los nulos
+
+      // 3. Traer los nombres y correos de esos perfiles
+      let profilesMap = new Map();
+      if (profileIds.length > 0) {
+        const { data: profilesData } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name, email')
+          .in('id', profileIds);
+          
+        if (profilesData) {
+          profilesData.forEach(p => profilesMap.set(p.id, p));
+        }
       }
 
-      // Call the optimized Edge Function
-      const { data, error } = await supabase.functions.invoke('get-virtual-classrooms', {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json'
-        }
-      });
+      // 4. Cruzar los datos (Frontend Join)
+      const formattedClassrooms = modulosData?.map(modulo => {
+        const teacher = profilesMap.get(modulo.teacher_principal_id);
+        const tutor = profilesMap.get(modulo.tutor_id);
+        
+        return {
+          ...modulo,
+          teacher: teacher || null,
+          tutor: tutor || null
+        };
+      }) || [];
 
-      if (error) {
-        console.error('❌ Error calling Edge Function:', error);
-        // Check if it's an authentication error
-        if (error.message?.includes('UNAUTHORIZED') || error.message?.includes('Sesión expirada')) {
-          toast.error('Su sesión ha expirado. Por favor, inicie sesión nuevamente.');
-          // Redirect to auth page
-          setTimeout(() => {
-            window.location.href = '/auth';
-          }, 2000);
-          return;
-        }
-        throw new Error(`Error en Edge Function: ${error.message}`);
-      }
-
-      if (!data || !data.success) {
-        // Check if the error is an auth error
-        if (data?.code === 'UNAUTHORIZED' || data?.error?.includes('Sesión expirada')) {
-          toast.error('Su sesión ha expirado. Por favor, inicie sesión nuevamente.');
-          setTimeout(() => {
-            window.location.href = '/auth';
-          }, 2000);
-          return;
-        }
-        throw new Error(data?.error || 'Error en la respuesta del servidor');
-      }
-
-      const endTime = performance.now();
-      const loadTime = Math.round(endTime - startTime);
-      
-      console.log(`⚡ Aulas virtuales cargadas en ${loadTime}ms:`, data.data?.length || 0, 'aulas');
-      console.log('👤 Rol del usuario:', data.user_role);
-      console.log('📊 Rendimiento mejorado con consultas optimizadas');
-      
-      setClassrooms(data.data || []);
+      setClassrooms(formattedClassrooms as any);
       setLastFetch(now);
       
     } catch (error: any) {
       console.error('❌ Error general cargando aulas virtuales:', error);
       toast.error(`Error al cargar las aulas virtuales: ${error.message}`);
-      setClassrooms([]); // Set empty array on error
+      setClassrooms([]); 
     } finally {
       setLoading(false);
     }

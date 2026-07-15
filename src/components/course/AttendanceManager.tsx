@@ -1,16 +1,46 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { CalendarIcon, Save, CheckCircle, XCircle, Clock, FileCheck } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
+import React, { useState, useEffect } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  CalendarIcon,
+  Save,
+  CheckCircle,
+  XCircle,
+  Clock,
+  FileCheck,
+} from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 
 interface Student {
   id: string;
@@ -21,7 +51,7 @@ interface Student {
 
 interface AttendanceRecord {
   student_id: string;
-  status: 'present' | 'late' | 'absent' | 'justified';
+  status: "present" | "late" | "absent" | "justified";
   notes?: string;
 }
 
@@ -32,7 +62,9 @@ interface AttendanceManagerProps {
 export function AttendanceManager({ courseId }: AttendanceManagerProps) {
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [attendance, setAttendance] = useState<Record<string, AttendanceRecord>>({});
+  const [attendance, setAttendance] = useState<
+    Record<string, AttendanceRecord>
+  >({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   // schedule will come from modulos in Categoría B — unrestricted until then
@@ -48,13 +80,13 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
     }
   }, [selectedDate, students]);
 
-
   const fetchStudents = async () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
-        .from('course_enrollments')
-        .select(`
+        .from("course_enrollments")
+        .select(
+          `
           student_id,
           student:profiles!course_enrollments_student_id_fkey(
             id,
@@ -62,19 +94,20 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
             last_name,
             email
           )
-        `)
-        .eq('modulo_id', courseId);
+        `,
+        )
+        .eq("modulo_id", courseId);
 
       if (error) throw error;
 
       const enrolledStudents = (data || [])
-        .filter(e => e.student)
-        .map(e => e.student) as unknown as Student[];
-      
+        .filter((e) => e.student)
+        .map((e) => e.student) as unknown as Student[];
+
       setStudents(enrolledStudents);
     } catch (error) {
-      console.error('Error fetching students:', error);
-      toast.error('Error al cargar estudiantes');
+      console.error("Error fetching students:", error);
+      toast.error("Error al cargar estudiantes");
     } finally {
       setLoading(false);
     }
@@ -84,17 +117,17 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
     if (!students.length) return;
 
     try {
-      const dateStr = format(selectedDate, 'yyyy-MM-dd');
+      const dateStr = format(selectedDate, "yyyy-MM-dd");
       const { data, error } = await supabase
-        .from('attendance')
-        .select('student_id, status, notes')
-        .eq('course_id', courseId)
-        .eq('date', dateStr);
+        .from("attendance")
+        .select("student_id, status, notes")
+        .eq("modulo_id", courseId)
+        .eq("date", dateStr);
 
       if (error) throw error;
 
       const existingAttendance: Record<string, AttendanceRecord> = {};
-      data?.forEach(record => {
+      data?.forEach((record) => {
         existingAttendance[record.student_id] = {
           student_id: record.student_id,
           status: record.status as any,
@@ -104,12 +137,15 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
 
       setAttendance(existingAttendance);
     } catch (error) {
-      console.error('Error loading attendance:', error);
+      console.error("Error loading attendance:", error);
     }
   };
 
-  const handleStatusChange = (studentId: string, status: AttendanceRecord['status']) => {
-    setAttendance(prev => ({
+  const handleStatusChange = (
+    studentId: string,
+    status: AttendanceRecord["status"],
+  ) => {
+    setAttendance((prev) => ({
       ...prev,
       [studentId]: {
         student_id: studentId,
@@ -121,46 +157,71 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
 
   const handleSaveAttendance = async () => {
     if (!isWithinSchedule) {
-      toast.error('La asistencia solo puede registrarse durante el horario de clase');
+      toast.error(
+        "La asistencia solo puede registrarse durante el horario de clase",
+      );
       return;
     }
 
     try {
       setSaving(true);
 
-      const dateStr = format(selectedDate, 'yyyy-MM-dd');
+      const dateStr = format(selectedDate, "yyyy-MM-dd");
       const attendanceRecords = Object.values(attendance);
 
       if (attendanceRecords.length === 0) {
-        toast.error('Debe registrar al menos una asistencia');
+        toast.error("Debe registrar al menos una asistencia");
         return;
       }
 
-      const { error } = await supabase.functions.invoke('create-attendance-records', {
-        body: {
-          course_id: courseId,
-          date: dateStr,
-          attendance_records: attendanceRecords,
+      const { error } = await supabase.functions.invoke(
+        "create-attendance-records",
+        {
+          body: {
+            modulo_id: courseId,
+            date: dateStr,
+            attendance_records: attendanceRecords,
+          },
         },
-      });
+      );
 
       if (error) throw error;
 
-      toast.success('Asistencia registrada correctamente');
+      toast.success("Asistencia registrada correctamente");
     } catch (error) {
-      console.error('Error saving attendance:', error);
-      toast.error('Error al guardar la asistencia');
+      console.error("Error saving attendance:", error);
+      toast.error("Error al guardar la asistencia");
     } finally {
       setSaving(false);
     }
   };
 
-  const getStatusBadge = (status: AttendanceRecord['status']) => {
+  const getStatusBadge = (status: AttendanceRecord["status"]) => {
     const statusConfig = {
-      present: { label: 'Presente', variant: 'default' as const, icon: CheckCircle, color: 'text-green-600' },
-      late: { label: 'Tarde', variant: 'secondary' as const, icon: Clock, color: 'text-yellow-600' },
-      absent: { label: 'Ausente', variant: 'destructive' as const, icon: XCircle, color: 'text-red-600' },
-      justified: { label: 'Justificado', variant: 'outline' as const, icon: FileCheck, color: 'text-blue-600' },
+      present: {
+        label: "Presente",
+        variant: "default" as const,
+        icon: CheckCircle,
+        color: "text-green-600",
+      },
+      late: {
+        label: "Tarde",
+        variant: "secondary" as const,
+        icon: Clock,
+        color: "text-yellow-600",
+      },
+      absent: {
+        label: "Ausente",
+        variant: "destructive" as const,
+        icon: XCircle,
+        color: "text-red-600",
+      },
+      justified: {
+        label: "Justificado",
+        variant: "outline" as const,
+        icon: FileCheck,
+        color: "text-blue-600",
+      },
     };
 
     const config = statusConfig[status];
@@ -185,14 +246,15 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
           <div>
             <CardTitle>Registro de Asistencia</CardTitle>
             <CardDescription>
-              Registre la asistencia de los estudiantes para la fecha seleccionada
+              Registre la asistencia de los estudiantes para la fecha
+              seleccionada
             </CardDescription>
           </div>
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" className="gap-2">
                 <CalendarIcon className="h-4 w-4" />
-                {format(selectedDate, 'PPP', { locale: es })}
+                {format(selectedDate, "PPP", { locale: es })}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="end">
@@ -233,7 +295,9 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
                     <TableCell>
                       <Select
                         value={attendance[student.id]?.status || ""}
-                        onValueChange={(value) => handleStatusChange(student.id, value as any)}
+                        onValueChange={(value) =>
+                          handleStatusChange(student.id, value as any)
+                        }
                       >
                         <SelectTrigger className="w-[180px]">
                           <SelectValue placeholder="Seleccionar..." />
@@ -272,13 +336,13 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
             </Table>
 
             <div className="flex justify-end mt-4">
-              <Button 
-                onClick={handleSaveAttendance} 
-                disabled={saving || !isWithinSchedule} 
+              <Button
+                onClick={handleSaveAttendance}
+                disabled={saving || !isWithinSchedule}
                 className="gap-2"
               >
                 <Save className="h-4 w-4" />
-                {saving ? 'Guardando...' : 'Guardar Asistencia'}
+                {saving ? "Guardando..." : "Guardar Asistencia"}
               </Button>
             </div>
           </>

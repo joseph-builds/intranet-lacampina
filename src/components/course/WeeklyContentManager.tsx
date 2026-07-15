@@ -1,18 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Plus, Calendar } from 'lucide-react';
-import { useAuth } from '@/hooks/useAuth';
-import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
-import { CourseWeeklySection } from './CourseWeeklySection';
-import { SectionForm } from './SectionForm';
+import React, { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Plus, Calendar } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { CourseWeeklySection } from "./CourseWeeklySection";
+import { SectionForm } from "./SectionForm";
 
 interface WeeklyResource {
   id: string;
   title: string;
   description: string;
-  resource_type: 'material' | 'exam' | 'link' | 'assignment' | 'video' | 'document';
+  resource_type:
+    | "material"
+    | "exam"
+    | "link"
+    | "assignment"
+    | "video"
+    | "document";
   resource_url?: string;
   is_published: boolean;
   position: number;
@@ -37,7 +43,10 @@ interface WeeklyContentManagerProps {
   canEdit: boolean;
 }
 
-export function WeeklyContentManager({ courseId, canEdit }: WeeklyContentManagerProps) {
+export function WeeklyContentManager({
+  courseId,
+  canEdit,
+}: WeeklyContentManagerProps) {
   const [sections, setSections] = useState<WeeklySection[]>([]);
   const [loading, setLoading] = useState(true);
   const [showSectionForm, setShowSectionForm] = useState(false);
@@ -50,50 +59,69 @@ export function WeeklyContentManager({ courseId, canEdit }: WeeklyContentManager
     try {
       setLoading(true);
 
-      console.log('📚 Fetching weekly sections for course:', courseId, 'canEdit:', canEdit);
+      console.log(
+        "📚 Fetching weekly sections for course:",
+        courseId,
+        "canEdit:",
+        canEdit,
+      );
 
       // Fetch sections with their resources
       const { data: sectionsData, error: sectionsError } = await supabase
-        .from('course_weekly_sections')
-        .select(`
+        .from("course_weekly_sections")
+        .select(
+          `
           *,
           resources:course_weekly_resources(*)
-        `)
-        .eq('course_id', courseId)
-        .order('week_number', { ascending: true });
+        `,
+        )
+        .eq("modulo_id", courseId)
+        .order("week_number", { ascending: true });
 
       if (sectionsError) throw sectionsError;
 
-      console.log('📊 Raw sections data:', sectionsData);
+      console.log("📊 Raw sections data:", sectionsData);
 
       // Sort resources by position within each section
-      const sectionsWithSortedResources = sectionsData?.map(section => ({
-        ...section,
-        resources: section.resources?.sort((a: any, b: any) => a.position - b.position) || []
-      })) || [];
+      const sectionsWithSortedResources =
+        sectionsData?.map((section) => ({
+          ...section,
+          resources:
+            section.resources?.sort(
+              (a: any, b: any) => a.position - b.position,
+            ) || [],
+        })) || [];
 
-      console.log('📝 Sections with sorted resources:', sectionsWithSortedResources);
+      console.log(
+        "📝 Sections with sorted resources:",
+        sectionsWithSortedResources,
+      );
 
       // Filter to show only published sections for students
-      const filteredSections = canEdit 
-        ? sectionsWithSortedResources 
-        : sectionsWithSortedResources.filter(section => section.is_published);
+      const filteredSections = canEdit
+        ? sectionsWithSortedResources
+        : sectionsWithSortedResources.filter((section) => section.is_published);
 
-      console.log('✅ Filtered sections (canEdit=' + canEdit + '):', filteredSections);
+      console.log(
+        "✅ Filtered sections (canEdit=" + canEdit + "):",
+        filteredSections,
+      );
 
       setSections(filteredSections as WeeklySection[]);
     } catch (error) {
-      console.error('Error fetching sections:', error);
-      toast.error('Error al cargar las secciones semanales');
+      console.error("Error fetching sections:", error);
+      toast.error("Error al cargar las secciones semanales");
     } finally {
       setLoading(false);
     }
   };
 
   const handleSectionUpdate = (updatedSection: WeeklySection) => {
-    setSections(prev => prev.map(section => 
-      section.id === updatedSection.id ? updatedSection : section
-    ));
+    setSections((prev) =>
+      prev.map((section) =>
+        section.id === updatedSection.id ? updatedSection : section,
+      ),
+    );
     fetchSections(); // Refresh to get updated resources
   };
 
@@ -158,10 +186,9 @@ export function WeeklyContentManager({ courseId, canEdit }: WeeklyContentManager
               No hay contenido semanal
             </h3>
             <p className="text-muted-foreground mb-4">
-              {canEdit 
-                ? 'Organiza tu curso por semanas para facilitar el aprendizaje de los estudiantes.'
-                : 'El profesor aún no ha organizado el contenido por semanas.'
-              }
+              {canEdit
+                ? "Organiza tu curso por semanas para facilitar el aprendizaje de los estudiantes."
+                : "El profesor aún no ha organizado el contenido por semanas."}
             </p>
             {canEdit && (
               <Button

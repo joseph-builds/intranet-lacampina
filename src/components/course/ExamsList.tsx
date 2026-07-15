@@ -1,14 +1,21 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Calendar, Clock, AlertCircle, ClipboardList, Users, Pencil } from 'lucide-react';
-import { format, isAfter, isBefore, addMinutes } from 'date-fns';
-import { es } from 'date-fns/locale';
-import { toast } from 'sonner';
-import { EditExamDialog } from './EditExamDialog';
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Calendar,
+  Clock,
+  AlertCircle,
+  ClipboardList,
+  Users,
+  Pencil,
+} from "lucide-react";
+import { format, isAfter, isBefore, addMinutes } from "date-fns";
+import { es } from "date-fns/locale";
+import { toast } from "sonner";
+import { EditExamDialog } from "./EditExamDialog";
 
 interface Exam {
   id: string;
@@ -38,22 +45,22 @@ export function ExamsList({ courseId, canEdit }: ExamsListProps) {
   const fetchExams = async () => {
     try {
       const { data, error } = await supabase
-        .from('exams')
-        .select('*')
-        .eq('course_id', courseId)
-        .order('start_time', { ascending: true });
+        .from("exams")
+        .select("*")
+        .eq("modulo_id", courseId)
+        .order("start_time", { ascending: true });
 
       if (error) throw error;
 
       // Filter to show only published exams for students
-      const filteredExams = canEdit 
-        ? (data || [])
-        : (data || []).filter(exam => exam.is_published);
+      const filteredExams = canEdit
+        ? data || []
+        : (data || []).filter((exam) => exam.is_published);
 
       setExams(filteredExams);
     } catch (error) {
-      console.error('Error fetching exams:', error);
-      toast.error('Error al cargar los exámenes');
+      console.error("Error fetching exams:", error);
+      toast.error("Error al cargar los exámenes");
     } finally {
       setLoading(false);
     }
@@ -66,27 +73,27 @@ export function ExamsList({ courseId, canEdit }: ExamsListProps) {
 
     if (isAfter(now, endTime)) {
       return {
-        status: 'completed',
-        label: 'Finalizado',
-        variant: 'secondary' as const,
-        color: 'text-muted-foreground'
+        status: "completed",
+        label: "Finalizado",
+        variant: "secondary" as const,
+        color: "text-muted-foreground",
       };
     }
 
     if (isBefore(now, startTime)) {
       return {
-        status: 'upcoming',
-        label: 'Próximo',
-        variant: 'default' as const,
-        color: 'text-primary'
+        status: "upcoming",
+        label: "Próximo",
+        variant: "default" as const,
+        color: "text-primary",
       };
     }
 
     return {
-      status: 'in-progress',
-      label: 'En progreso',
-      variant: 'destructive' as const,
-      color: 'text-destructive'
+      status: "in-progress",
+      label: "En progreso",
+      variant: "destructive" as const,
+      color: "text-destructive",
     };
   };
 
@@ -116,10 +123,9 @@ export function ExamsList({ courseId, canEdit }: ExamsListProps) {
             No hay exámenes programados
           </h3>
           <p className="text-muted-foreground">
-            {canEdit 
+            {canEdit
               ? 'Haz clic en "Crear Examen" para agregar un nuevo examen.'
-              : 'El profesor aún no ha programado exámenes para este curso.'
-            }
+              : "El profesor aún no ha programado exámenes para este curso."}
           </p>
         </CardContent>
       </Card>
@@ -136,13 +142,16 @@ export function ExamsList({ courseId, canEdit }: ExamsListProps) {
           onEditSuccess={fetchExams}
         />
       )}
-      
+
       <div className="space-y-4">
         {exams.map((exam) => {
           const status = getExamStatus(exam);
-          
+
           return (
-            <Card key={exam.id} className="bg-gradient-card shadow-card border-0 hover:shadow-glow transition-all duration-300">
+            <Card
+              key={exam.id}
+              className="bg-gradient-card shadow-card border-0 hover:shadow-glow transition-all duration-300"
+            >
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -160,35 +169,45 @@ export function ExamsList({ courseId, canEdit }: ExamsListProps) {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
-                  {exam.description || 'Sin descripción disponible'}
+                  {exam.description || "Sin descripción disponible"}
                 </p>
-                
+
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <div className="flex items-center gap-1">
                       <Calendar className="w-4 h-4" />
                       <span>
-                        {format(new Date(exam.start_time), "d 'de' MMMM, yyyy", { locale: es })}
+                        {format(
+                          new Date(exam.start_time),
+                          "d 'de' MMMM, yyyy",
+                          { locale: es },
+                        )}
                       </span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Clock className="w-4 h-4" />
                       <span>
-                        {format(new Date(exam.start_time), "HH:mm")} ({exam.duration_minutes} min)
+                        {format(new Date(exam.start_time), "HH:mm")} (
+                        {exam.duration_minutes} min)
                       </span>
                     </div>
                   </div>
-                  
+
                   <div className="text-sm font-medium text-foreground">
                     {exam.max_score} pts
                   </div>
                 </div>
 
-                {status.status === 'upcoming' && canEdit && (
+                {status.status === "upcoming" && canEdit && (
                   <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20 mb-4">
                     <AlertCircle className="w-4 h-4 text-primary" />
                     <span className="text-sm text-primary font-medium">
-                      Programado para {format(new Date(exam.start_time), "d 'de' MMMM 'a las' HH:mm", { locale: es })}
+                      Programado para{" "}
+                      {format(
+                        new Date(exam.start_time),
+                        "d 'de' MMMM 'a las' HH:mm",
+                        { locale: es },
+                      )}
                     </span>
                   </div>
                 )}
@@ -213,7 +232,11 @@ export function ExamsList({ courseId, canEdit }: ExamsListProps) {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => navigate(`/exam-submissions/${exam.id}?courseId=${courseId}`)}
+                      onClick={() =>
+                        navigate(
+                          `/exam-submissions/${exam.id}?courseId=${courseId}`,
+                        )
+                      }
                       className="flex-1"
                     >
                       <Users className="w-4 h-4 mr-2" />

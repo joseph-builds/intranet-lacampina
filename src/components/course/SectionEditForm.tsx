@@ -1,12 +1,18 @@
-import React, { useState } from 'react';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
-import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
+import React, { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface WeeklySection {
   id: string;
@@ -25,26 +31,31 @@ interface SectionEditFormProps {
   onSuccess: () => void;
 }
 
-export function SectionEditForm({ section, courseId, onClose, onSuccess }: SectionEditFormProps) {
+export function SectionEditForm({
+  section,
+  courseId,
+  onClose,
+  onSuccess,
+}: SectionEditFormProps) {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     week_number: section.week_number,
     title: section.title,
-    description: section.description || '',
-    start_date: section.start_date || '',
-    end_date: section.end_date || '',
-    is_published: section.is_published
+    description: section.description || "",
+    start_date: section.start_date || "",
+    end_date: section.end_date || "",
+    is_published: section.is_published,
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title.trim()) {
-      toast.error('El título de la semana es requerido');
+      toast.error("El título de la semana es requerido");
       return;
     }
 
     if (formData.week_number < 1) {
-      toast.error('El número de semana debe ser mayor a 0');
+      toast.error("El número de semana debe ser mayor a 0");
       return;
     }
 
@@ -52,21 +63,21 @@ export function SectionEditForm({ section, courseId, onClose, onSuccess }: Secti
     try {
       // Check if week number already exists (excluding current section)
       const { data: existingWeek } = await supabase
-        .from('course_weekly_sections')
-        .select('id')
-        .eq('course_id', courseId)
-        .eq('week_number', formData.week_number)
-        .neq('id', section.id)
+        .from("course_weekly_sections")
+        .select("id")
+        .eq("modulo_id", courseId)
+        .eq("week_number", formData.week_number)
+        .neq("id", section.id)
         .single();
 
       if (existingWeek) {
-        toast.error('Ya existe una semana con ese número');
+        toast.error("Ya existe una semana con ese número");
         setLoading(false);
         return;
       }
 
       const { error } = await supabase
-        .from('course_weekly_sections')
+        .from("course_weekly_sections")
         .update({
           week_number: formData.week_number,
           title: formData.title.trim(),
@@ -74,17 +85,17 @@ export function SectionEditForm({ section, courseId, onClose, onSuccess }: Secti
           start_date: formData.start_date || null,
           end_date: formData.end_date || null,
           is_published: formData.is_published,
-          position: formData.week_number
+          position: formData.week_number,
         })
-        .eq('id', section.id);
+        .eq("id", section.id);
 
       if (error) throw error;
 
-      toast.success('Semana actualizada exitosamente');
+      toast.success("Semana actualizada exitosamente");
       onSuccess();
     } catch (error) {
-      console.error('Error updating section:', error);
-      toast.error('Error al actualizar la semana');
+      console.error("Error updating section:", error);
+      toast.error("Error al actualizar la semana");
     } finally {
       setLoading(false);
     }
@@ -99,7 +110,7 @@ export function SectionEditForm({ section, courseId, onClose, onSuccess }: Secti
             Modifica los detalles de esta semana del curso.
           </DialogDescription>
         </DialogHeader>
-        
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -109,7 +120,12 @@ export function SectionEditForm({ section, courseId, onClose, onSuccess }: Secti
                 type="number"
                 min="1"
                 value={formData.week_number}
-                onChange={(e) => setFormData(prev => ({ ...prev, week_number: parseInt(e.target.value) || 1 }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    week_number: parseInt(e.target.value) || 1,
+                  }))
+                }
                 required
               />
             </div>
@@ -118,7 +134,9 @@ export function SectionEditForm({ section, courseId, onClose, onSuccess }: Secti
               <Input
                 id="title"
                 value={formData.title}
-                onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, title: e.target.value }))
+                }
                 placeholder="Ej: Introducción al tema"
                 required
               />
@@ -130,7 +148,12 @@ export function SectionEditForm({ section, courseId, onClose, onSuccess }: Secti
             <Textarea
               id="description"
               value={formData.description}
-              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  description: e.target.value,
+                }))
+              }
               placeholder="Describe el contenido de esta semana..."
               rows={3}
             />
@@ -143,7 +166,12 @@ export function SectionEditForm({ section, courseId, onClose, onSuccess }: Secti
                 id="start_date"
                 type="date"
                 value={formData.start_date}
-                onChange={(e) => setFormData(prev => ({ ...prev, start_date: e.target.value }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    start_date: e.target.value,
+                  }))
+                }
               />
             </div>
             <div className="space-y-2">
@@ -152,7 +180,9 @@ export function SectionEditForm({ section, courseId, onClose, onSuccess }: Secti
                 id="end_date"
                 type="date"
                 value={formData.end_date}
-                onChange={(e) => setFormData(prev => ({ ...prev, end_date: e.target.value }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, end_date: e.target.value }))
+                }
               />
             </div>
           </div>
@@ -161,7 +191,9 @@ export function SectionEditForm({ section, courseId, onClose, onSuccess }: Secti
             <Switch
               id="is_published"
               checked={formData.is_published}
-              onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_published: checked }))}
+              onCheckedChange={(checked) =>
+                setFormData((prev) => ({ ...prev, is_published: checked }))
+              }
             />
             <Label htmlFor="is_published">Publicar semana</Label>
           </div>
@@ -171,7 +203,7 @@ export function SectionEditForm({ section, courseId, onClose, onSuccess }: Secti
               Cancelar
             </Button>
             <Button type="submit" disabled={loading}>
-              {loading ? 'Guardando...' : 'Guardar Cambios'}
+              {loading ? "Guardando..." : "Guardar Cambios"}
             </Button>
           </div>
         </form>

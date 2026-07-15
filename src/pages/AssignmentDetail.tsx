@@ -1,31 +1,31 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
-import { supabase } from '@/integrations/supabase/client';
-import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { FileUpload } from '@/components/ui/file-upload';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { useToast } from '@/hooks/use-toast';
-import { format, isAfter } from 'date-fns';
-import { es } from 'date-fns/locale';
-import { 
-  FileText, 
-  Calendar, 
-  Clock, 
-  Target, 
-  AlertCircle, 
-  CheckCircle2, 
+import { useState, useEffect } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { FileUpload } from "@/components/ui/file-upload";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { useToast } from "@/hooks/use-toast";
+import { format, isAfter } from "date-fns";
+import { es } from "date-fns/locale";
+import {
+  FileText,
+  Calendar,
+  Clock,
+  Target,
+  AlertCircle,
+  CheckCircle2,
   ArrowLeft,
   Loader2,
   Download,
   Edit,
-  Trash2
-} from 'lucide-react';
-import { EditAssignmentDialog } from '@/components/assignments/EditAssignmentDialog';
+  Trash2,
+} from "lucide-react";
+import { EditAssignmentDialog } from "@/components/assignments/EditAssignmentDialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,7 +35,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from "@/components/ui/alert-dialog";
 
 interface Assignment {
   id: string;
@@ -43,7 +43,7 @@ interface Assignment {
   description: string;
   due_date: string;
   max_score: number;
-  course_id: string;
+  modulo_id: string;
   course: {
     id: string;
     name: string;
@@ -64,7 +64,7 @@ interface Submission {
   file_name: string | null;
   file_path: string | null;
   submitted_at: string;
-  score: string | null;  // Ahora es texto (AD, A, B, C)
+  score: string | null; // Ahora es texto (AD, A, B, C)
   feedback: string | null;
   feedback_files?: Array<{
     file_path: string;
@@ -89,15 +89,17 @@ const AssignmentDetail = () => {
   const [assignment, setAssignment] = useState<Assignment | null>(null);
   const [submission, setSubmission] = useState<Submission | null>(null);
   const [loading, setLoading] = useState(true);
-  const [content, setContent] = useState('');
+  const [content, setContent] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [existingFiles, setExistingFiles] = useState<Array<{
-    file_path: string;
-    file_name: string;
-    file_size: number;
-    mime_type: string;
-    file_url: string;
-  }>>([]);
+  const [existingFiles, setExistingFiles] = useState<
+    Array<{
+      file_path: string;
+      file_name: string;
+      file_size: number;
+      mime_type: string;
+      file_url: string;
+    }>
+  >([]);
   const [filesToDelete, setFilesToDelete] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -116,51 +118,63 @@ const AssignmentDetail = () => {
     try {
       // Fetch assignment details
       const { data: assignmentData, error: assignmentError } = await supabase
-        .from('assignments')
-        .select(`
+        .from("assignments")
+        .select(
+          `
           *,
           course:courses (
             id,
             name,
             code
           )
-        `)
-        .eq('id', id)
+        `,
+        )
+        .eq("id", id)
         .single();
 
       if (assignmentError) throw assignmentError;
 
       // Fetch teacher's files if this assignment is linked to a course_weekly_resource
       const { data: resourceData } = await supabase
-        .from('course_weekly_resources')
-        .select('teacher_files')
-        .eq('assignment_id', id)
+        .from("course_weekly_resources")
+        .select("teacher_files")
+        .eq("assignment_id", id)
         .maybeSingle();
 
       setAssignment({
         ...assignmentData,
-        teacher_files: Array.isArray(resourceData?.teacher_files) ? resourceData.teacher_files as any : []
+        teacher_files: Array.isArray(resourceData?.teacher_files)
+          ? (resourceData.teacher_files as any)
+          : [],
       });
 
       // Fetch student's submission if exists
       const { data: submissionData, error: submissionError } = await supabase
-        .from('assignment_submissions')
-        .select('*')
-        .eq('assignment_id', id)
-        .eq('student_id', profile.id)
+        .from("assignment_submissions")
+        .select("*")
+        .eq("assignment_id", id)
+        .eq("student_id", profile.id)
         .maybeSingle();
 
-      if (submissionError && submissionError.code !== 'PGRST116') {
+      if (submissionError && submissionError.code !== "PGRST116") {
         throw submissionError;
       }
 
-      setSubmission(submissionData ? {
-        ...submissionData,
-        student_files: Array.isArray(submissionData.student_files) ? submissionData.student_files as any : [],
-        feedback_files: Array.isArray(submissionData.feedback_files) ? submissionData.feedback_files as any : []
-      } : null);
+      setSubmission(
+        submissionData
+          ? {
+              ...submissionData,
+              student_files: Array.isArray(submissionData.student_files)
+                ? (submissionData.student_files as any)
+                : [],
+              feedback_files: Array.isArray(submissionData.feedback_files)
+                ? (submissionData.feedback_files as any)
+                : [],
+            }
+          : null,
+      );
     } catch (error) {
-      console.error('Error fetching assignment details:', error);
+      console.error("Error fetching assignment details:", error);
       toast({
         title: "Error",
         description: "No se pudieron cargar los detalles de la tarea",
@@ -175,7 +189,8 @@ const AssignmentDetail = () => {
     if (!content.trim() && selectedFiles.length === 0) {
       toast({
         title: "Error",
-        description: "Debes escribir una respuesta o adjuntar al menos un archivo",
+        description:
+          "Debes escribir una respuesta o adjuntar al menos un archivo",
         variant: "destructive",
       });
       return;
@@ -188,7 +203,8 @@ const AssignmentDetail = () => {
     if (totalSize > maxTotalSize) {
       toast({
         title: "Archivos muy pesados",
-        description: "El tamaño total de los archivos supera los 5MB. Por favor, comprime tus archivos antes de subirlos.",
+        description:
+          "El tamaño total de los archivos supera los 5MB. Por favor, comprime tus archivos antes de subirlos.",
         variant: "destructive",
       });
       return;
@@ -202,19 +218,21 @@ const AssignmentDetail = () => {
       // Upload multiple files if selected
       if (selectedFiles.length > 0) {
         for (const file of selectedFiles) {
-          const fileExt = file.name.split('.').pop();
+          const fileExt = file.name.split(".").pop();
           const timestamp = new Date().getTime();
           const randomId = Math.random().toString(36).substring(7);
           const newFilePath = `${profile?.id}/${id}/${timestamp}_${randomId}.${fileExt}`;
-          
+
           const { error: uploadError } = await supabase.storage
-            .from('student-submissions')
+            .from("student-submissions")
             .upload(newFilePath, file);
 
           if (uploadError) throw uploadError;
 
-          const { data: { publicUrl } } = supabase.storage
-            .from('student-submissions')
+          const {
+            data: { publicUrl },
+          } = supabase.storage
+            .from("student-submissions")
             .getPublicUrl(newFilePath);
 
           uploadedFiles.push({
@@ -231,29 +249,29 @@ const AssignmentDetail = () => {
         // Delete files marked for deletion from storage
         for (const filePath of filesToDelete) {
           const { error: deleteError } = await supabase.storage
-            .from('student-submissions')
+            .from("student-submissions")
             .remove([filePath]);
-          
+
           if (deleteError) {
-            console.error('Error deleting file:', deleteError);
+            console.error("Error deleting file:", deleteError);
           }
         }
 
         // Combine existing files (not deleted) with new uploaded files
         const remainingExistingFiles = existingFiles.filter(
-          file => !filesToDelete.includes(file.file_path)
+          (file) => !filesToDelete.includes(file.file_path),
         );
         const updatedFiles = [...remainingExistingFiles, ...uploadedFiles];
 
         // Update existing submission
         const { error } = await supabase
-          .from('assignment_submissions')
+          .from("assignment_submissions")
           .update({
             content: content.trim(),
             student_files: updatedFiles,
             submitted_at: new Date().toISOString(),
           })
-          .eq('id', submission.id);
+          .eq("id", submission.id);
 
         if (error) throw error;
 
@@ -263,10 +281,10 @@ const AssignmentDetail = () => {
         });
       } else {
         // Call the edge function to create new submission
-        const { error } = await supabase.functions.invoke('submit-assignment', {
+        const { error } = await supabase.functions.invoke("submit-assignment", {
           body: {
             assignmentTitle: assignment?.title,
-            courseId: assignment?.course_id,
+            courseId: assignment?.modulo_id,
             content: content.trim(),
             files: uploadedFiles,
           },
@@ -282,13 +300,13 @@ const AssignmentDetail = () => {
 
       // Refresh to show submission
       fetchAssignmentDetails();
-      setContent('');
+      setContent("");
       setSelectedFiles([]);
       setExistingFiles([]);
       setFilesToDelete([]);
       setIsEditingSubmission(false);
     } catch (error: any) {
-      console.error('Error submitting assignment:', error);
+      console.error("Error submitting assignment:", error);
       toast({
         title: "Error",
         description: error.message || "No se pudo entregar la tarea",
@@ -308,7 +326,7 @@ const AssignmentDetail = () => {
       });
       return;
     }
-    setContent(submission.content || '');
+    setContent(submission.content || "");
     setSelectedFiles([]);
     setExistingFiles(submission.student_files || []);
     setFilesToDelete([]);
@@ -316,7 +334,7 @@ const AssignmentDetail = () => {
   };
 
   const handleCancelEdit = () => {
-    setContent('');
+    setContent("");
     setSelectedFiles([]);
     setExistingFiles([]);
     setFilesToDelete([]);
@@ -324,23 +342,23 @@ const AssignmentDetail = () => {
   };
 
   const handleDeleteExistingFile = (filePath: string) => {
-    setFilesToDelete(prev => [...prev, filePath]);
+    setFilesToDelete((prev) => [...prev, filePath]);
   };
 
   const handleUndoDeleteFile = (filePath: string) => {
-    setFilesToDelete(prev => prev.filter(path => path !== filePath));
+    setFilesToDelete((prev) => prev.filter((path) => path !== filePath));
   };
 
   const handleDelete = async () => {
     if (!assignment) return;
-    
+
     setIsDeleting(true);
-    
+
     try {
       const { error } = await supabase
-        .from('assignments')
+        .from("assignments")
         .delete()
-        .eq('id', assignment.id);
+        .eq("id", assignment.id);
 
       if (error) throw error;
 
@@ -349,9 +367,9 @@ const AssignmentDetail = () => {
         description: "La tarea ha sido eliminada correctamente",
       });
 
-      navigate('/assignments');
+      navigate("/assignments");
     } catch (error: any) {
-      console.error('Error deleting assignment:', error);
+      console.error("Error deleting assignment:", error);
       toast({
         title: "Error",
         description: error.message || "No se pudo eliminar la tarea",
@@ -363,21 +381,24 @@ const AssignmentDetail = () => {
     }
   };
 
-  const handleDownloadTeacherFile = async (filePath: string, fileName: string) => {
+  const handleDownloadTeacherFile = async (
+    filePath: string,
+    fileName: string,
+  ) => {
     setIsDownloading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('download-file', {
+      const { data, error } = await supabase.functions.invoke("download-file", {
         body: {
-          bucket: 'course-documents',
+          bucket: "course-documents",
           filePath: filePath,
-          fileName: fileName
-        }
+          fileName: fileName,
+        },
       });
 
       if (error) throw error;
 
       // Download the file using the signed URL
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = data.signedUrl;
       link.download = data.fileName || fileName;
       document.body.appendChild(link);
@@ -389,7 +410,7 @@ const AssignmentDetail = () => {
         description: "El archivo se está descargando",
       });
     } catch (error) {
-      console.error('Error downloading file:', error);
+      console.error("Error downloading file:", error);
       toast({
         title: "Error",
         description: "No se pudo descargar el archivo",
@@ -400,21 +421,24 @@ const AssignmentDetail = () => {
     }
   };
 
-  const handleDownloadStudentFile = async (filePath: string, fileName: string) => {
+  const handleDownloadStudentFile = async (
+    filePath: string,
+    fileName: string,
+  ) => {
     setIsDownloading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('download-file', {
+      const { data, error } = await supabase.functions.invoke("download-file", {
         body: {
-          bucket: 'student-submissions',
+          bucket: "student-submissions",
           filePath: filePath,
-          fileName: fileName
-        }
+          fileName: fileName,
+        },
       });
 
       if (error) throw error;
 
       // Download the file using the signed URL
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = data.signedUrl;
       link.download = data.fileName || fileName;
       document.body.appendChild(link);
@@ -426,7 +450,7 @@ const AssignmentDetail = () => {
         description: "El archivo se está descargando",
       });
     } catch (error) {
-      console.error('Error downloading file:', error);
+      console.error("Error downloading file:", error);
       toast({
         title: "Error",
         description: "No se pudo descargar el archivo",
@@ -437,49 +461,58 @@ const AssignmentDetail = () => {
     }
   };
 
-  const handleDownloadFeedbackFile = async (filePath: string, fileName: string) => {
-    setIsDownloading(true);
-    try {
+  const handleDownloadFeedbackFile = async (
+    filePath: string,
+    fileName: string,
+  ) => {
+    setIsDownloading(true);
+    try {
       // 1. Validación de seguridad
       if (!filePath) {
         throw new Error("La ruta del archivo no es válida.");
       }
 
       // 2. Usamos Storage Directo (createSignedUrl) en lugar de invoke
-      const { data, error } = await supabase.storage
-        .from('student-submissions') // Asegúrate que este sea el bucket correcto
+      const { data, error } = await supabase.storage
+        .from("student-submissions") // Asegúrate que este sea el bucket correcto
         .createSignedUrl(filePath, 60);
 
-      if (error) throw error;
+      if (error) throw error;
 
       // 3. Forzar la descarga
-      const link = document.createElement('a');
-      link.href = data.signedUrl;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const link = document.createElement("a");
+      link.href = data.signedUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
 
-      toast({
-        title: "Descarga iniciada",
-        description: "El archivo se está descargando...",
-      });
-    } catch (error: any) {
-      console.error('Error downloading feedback file:', error);
-      toast({
-        title: "Error",
-        description: "No se pudo descargar: " + (error.message || "Error desconocido"),
-        variant: "destructive",
-      });
-    } finally {
-      setIsDownloading(false);
-    }
-  };
+      toast({
+        title: "Descarga iniciada",
+        description: "El archivo se está descargando...",
+      });
+    } catch (error: any) {
+      console.error("Error downloading feedback file:", error);
+      toast({
+        title: "Error",
+        description:
+          "No se pudo descargar: " + (error.message || "Error desconocido"),
+        variant: "destructive",
+      });
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
-  const isOverdue = assignment ? isAfter(new Date(), new Date(assignment.due_date)) : false;
-  const canSubmit = (!submission && !isOverdue) || (isEditingSubmission && !isOverdue);
-  const isTeacherOrAdmin = profile?.role === 'teacher' || profile?.role === 'admin';
-  const canEditSubmission = submission && submission.score === null && !isOverdue;
+  const isOverdue = assignment
+    ? isAfter(new Date(), new Date(assignment.due_date))
+    : false;
+  const canSubmit =
+    (!submission && !isOverdue) || (isEditingSubmission && !isOverdue);
+  const isTeacherOrAdmin =
+    profile?.role === "teacher" || profile?.role === "admin";
+  const canEditSubmission =
+    submission && submission.score === null && !isOverdue;
 
   if (loading) {
     return (
@@ -501,7 +534,7 @@ const AssignmentDetail = () => {
               <h3 className="text-lg font-semibold text-foreground mb-2">
                 Tarea no encontrada
               </h3>
-              <Button onClick={() => navigate('/assignments')} className="mt-4">
+              <Button onClick={() => navigate("/assignments")} className="mt-4">
                 Volver a Tareas
               </Button>
             </CardContent>
@@ -519,22 +552,24 @@ const AssignmentDetail = () => {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate('/assignments')}
+            onClick={() => navigate("/assignments")}
           >
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div className="flex-1">
-            <h1 className="text-3xl font-bold text-foreground">{assignment.title}</h1>
+            <h1 className="text-3xl font-bold text-foreground">
+              {assignment.title}
+            </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              <Link 
-                to={`/courses/${assignment.course_id}`}
+              <Link
+                to={`/courses/${assignment.modulo_id}`}
                 className="hover:text-primary transition-colors"
               >
                 {assignment.course.code} - {assignment.course.name}
               </Link>
             </p>
           </div>
-          
+
           {/* Teacher/Admin Actions */}
           {isTeacherOrAdmin && (
             <div className="flex gap-2">
@@ -568,9 +603,11 @@ const AssignmentDetail = () => {
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <h3 className="text-sm font-medium text-muted-foreground mb-2">Descripción</h3>
+              <h3 className="text-sm font-medium text-muted-foreground mb-2">
+                Descripción
+              </h3>
               <p className="text-foreground whitespace-pre-wrap">
-                {assignment.description || 'Sin descripción'}
+                {assignment.description || "Sin descripción"}
               </p>
             </div>
 
@@ -580,9 +617,15 @@ const AssignmentDetail = () => {
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-muted-foreground" />
                 <div>
-                  <p className="text-xs text-muted-foreground">Fecha de entrega</p>
+                  <p className="text-xs text-muted-foreground">
+                    Fecha de entrega
+                  </p>
                   <p className="text-sm font-medium text-foreground">
-                    {format(new Date(assignment.due_date), "d 'de' MMMM, yyyy", { locale: es })}
+                    {format(
+                      new Date(assignment.due_date),
+                      "d 'de' MMMM, yyyy",
+                      { locale: es },
+                    )}
                   </p>
                 </div>
               </div>
@@ -609,45 +652,58 @@ const AssignmentDetail = () => {
             </div>
 
             {/* Archivos adjuntos del profesor */}
-            {assignment.teacher_files && assignment.teacher_files.length > 0 && (
-              <>
-                <Separator />
-                <div>
-                  <h3 className="text-sm font-medium text-muted-foreground mb-3">
-                    Archivos de instrucciones del profesor ({assignment.teacher_files.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {assignment.teacher_files.map((file, index) => (
-                      <div key={index} className="p-4 rounded-lg bg-muted/50 border border-border">
-                        <div className="flex items-center justify-between gap-4">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <FileText className="w-5 h-5 text-primary flex-shrink-0" />
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-foreground truncate">
-                                {file.file_name}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {file.file_size ? (file.file_size / 1024).toFixed(2) : '0.00'} KB
-                              </p>
+            {assignment.teacher_files &&
+              assignment.teacher_files.length > 0 && (
+                <>
+                  <Separator />
+                  <div>
+                    <h3 className="text-sm font-medium text-muted-foreground mb-3">
+                      Archivos de instrucciones del profesor (
+                      {assignment.teacher_files.length})
+                    </h3>
+                    <div className="space-y-2">
+                      {assignment.teacher_files.map((file, index) => (
+                        <div
+                          key={index}
+                          className="p-4 rounded-lg bg-muted/50 border border-border"
+                        >
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <FileText className="w-5 h-5 text-primary flex-shrink-0" />
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-foreground truncate">
+                                  {file.file_name}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {file.file_size
+                                    ? (file.file_size / 1024).toFixed(2)
+                                    : "0.00"}{" "}
+                                  KB
+                                </p>
+                              </div>
                             </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                handleDownloadTeacherFile(
+                                  file.file_path,
+                                  file.file_name,
+                                )
+                              }
+                              disabled={isDownloading}
+                              className="flex-shrink-0"
+                            >
+                              <Download className="w-4 h-4 mr-2" />
+                              {isDownloading ? "Descargando..." : "Descargar"}
+                            </Button>
                           </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleDownloadTeacherFile(file.file_path, file.file_name)}
-                            disabled={isDownloading}
-                            className="flex-shrink-0"
-                          >
-                            <Download className="w-4 h-4 mr-2" />
-                            {isDownloading ? 'Descargando...' : 'Descargar'}
-                          </Button>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              </>
-            )}
+                </>
+              )}
 
             {isOverdue && !submission && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
@@ -688,15 +744,23 @@ const AssignmentDetail = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <p className="text-xs text-muted-foreground mb-1">Fecha de entrega</p>
+                <p className="text-xs text-muted-foreground mb-1">
+                  Fecha de entrega
+                </p>
                 <p className="text-sm font-medium text-foreground">
-                  {format(new Date(submission.submitted_at), "d 'de' MMMM, yyyy 'a las' HH:mm", { locale: es })}
+                  {format(
+                    new Date(submission.submitted_at),
+                    "d 'de' MMMM, yyyy 'a las' HH:mm",
+                    { locale: es },
+                  )}
                 </p>
               </div>
 
               {submission.content && (
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1">Respuesta</p>
+                  <p className="text-xs text-muted-foreground mb-1">
+                    Respuesta
+                  </p>
                   <p className="text-sm text-foreground whitespace-pre-wrap">
                     {submission.content}
                   </p>
@@ -704,67 +768,89 @@ const AssignmentDetail = () => {
               )}
 
               {/* Mostrar múltiples archivos adjuntos del estudiante */}
-              {submission.student_files && submission.student_files.length > 0 && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    Archivos adjuntos ({submission.student_files.length})
-                  </p>
-                  <div className="space-y-2">
-                    {submission.student_files.map((file, index) => (
-                      <div key={index} className="p-3 rounded-lg bg-muted/50 border border-border">
-                        <div className="flex items-center justify-between gap-4">
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <FileText className="w-5 h-5 text-primary flex-shrink-0" />
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-foreground truncate">
-                                {file.file_name}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {file.file_size ? (file.file_size / 1024).toFixed(2) : '0.00'} KB
-                              </p>
+              {submission.student_files &&
+                submission.student_files.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Archivos adjuntos ({submission.student_files.length})
+                    </p>
+                    <div className="space-y-2">
+                      {submission.student_files.map((file, index) => (
+                        <div
+                          key={index}
+                          className="p-3 rounded-lg bg-muted/50 border border-border"
+                        >
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <FileText className="w-5 h-5 text-primary flex-shrink-0" />
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-foreground truncate">
+                                  {file.file_name}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {file.file_size
+                                    ? (file.file_size / 1024).toFixed(2)
+                                    : "0.00"}{" "}
+                                  KB
+                                </p>
+                              </div>
                             </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                handleDownloadStudentFile(
+                                  file.file_path,
+                                  file.file_name,
+                                )
+                              }
+                              disabled={isDownloading}
+                              className="flex-shrink-0"
+                            >
+                              <Download className="w-4 h-4 mr-2" />
+                              {isDownloading ? "Descargando..." : "Descargar"}
+                            </Button>
                           </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleDownloadStudentFile(file.file_path, file.file_name)}
-                            disabled={isDownloading}
-                            className="flex-shrink-0"
-                          >
-                            <Download className="w-4 h-4 mr-2" />
-                            {isDownloading ? 'Descargando...' : 'Descargar'}
-                          </Button>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {/* Fallback para entregas antiguas con un solo archivo */}
-              {(!submission.student_files || submission.student_files.length === 0) && 
-               submission.file_url && submission.file_name && submission.file_path && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-2">Archivo adjunto</p>
-                  <div className="flex items-center gap-3">
-                    <FileText className="w-5 h-5 text-primary flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">
-                        {submission.file_name}
-                      </p>
+                      ))}
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDownloadStudentFile(submission.file_path!, submission.file_name!)}
-                      disabled={isDownloading}
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      {isDownloading ? 'Descargando...' : 'Descargar'}
-                    </Button>
                   </div>
-                </div>
-              )}
+                )}
+
+              {/* Fallback para entregas antiguas con un solo archivo */}
+              {(!submission.student_files ||
+                submission.student_files.length === 0) &&
+                submission.file_url &&
+                submission.file_name &&
+                submission.file_path && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Archivo adjunto
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <FileText className="w-5 h-5 text-primary flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {submission.file_name}
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          handleDownloadStudentFile(
+                            submission.file_path!,
+                            submission.file_name!,
+                          )
+                        }
+                        disabled={isDownloading}
+                      >
+                        <Download className="w-4 h-4 mr-2" />
+                        {isDownloading ? "Descargando..." : "Descargar"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
               <Separator />
 
@@ -772,7 +858,9 @@ const AssignmentDetail = () => {
               {submission.score !== null ? (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-foreground">Calificación</p>
+                    <p className="text-sm font-medium text-foreground">
+                      Calificación
+                    </p>
                     <Badge variant="default" className="text-lg px-4 py-1">
                       {submission.score}
                     </Badge>
@@ -790,51 +878,66 @@ const AssignmentDetail = () => {
                   )}
 
                   {/* Archivos de feedback del profesor */}
-                  {submission.feedback_files && submission.feedback_files.length > 0 && (
-                    <div className="mt-4 space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">
-                        Archivos adjuntos del profesor ({submission.feedback_files.length})
-                      </p>
-                      <div className="space-y-2">
-                        {submission.feedback_files.map((file: any, index: number) => {
-                          // 🔥 ESTA ES LA CLAVE: Detectamos cualquier nombre de variable
-                          const filePath = file.path || file.file_path || file.filePath;
-                          const fileName = file.name || file.file_name || file.fileName;
-                          const fileSize = file.size || file.fileSize || file.file_size;
+                  {submission.feedback_files &&
+                    submission.feedback_files.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Archivos adjuntos del profesor (
+                          {submission.feedback_files.length})
+                        </p>
+                        <div className="space-y-2">
+                          {submission.feedback_files.map(
+                            (file: any, index: number) => {
+                              // 🔥 ESTA ES LA CLAVE: Detectamos cualquier nombre de variable
+                              const filePath =
+                                file.path || file.file_path || file.filePath;
+                              const fileName =
+                                file.name || file.file_name || file.fileName;
+                              const fileSize =
+                                file.size || file.fileSize || file.file_size;
 
-                          return (
-                            <div 
-                              key={index} 
-                              className="flex items-center justify-between p-3 rounded-lg border bg-muted/50 border-border"
-                            >
-                              <div className="flex items-center gap-3 flex-1 min-w-0">
-                                <FileText className="w-4 h-4 flex-shrink-0 text-primary" />
-                                <div className="min-w-0">
-                                  <p className="text-xs font-medium truncate text-foreground">
-                                    {fileName || "Archivo sin nombre"}
-                                  </p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {fileSize ? (fileSize / 1024).toFixed(2) : '0.00'} KB
-                                  </p>
+                              return (
+                                <div
+                                  key={index}
+                                  className="flex items-center justify-between p-3 rounded-lg border bg-muted/50 border-border"
+                                >
+                                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                                    <FileText className="w-4 h-4 flex-shrink-0 text-primary" />
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-medium truncate text-foreground">
+                                        {fileName || "Archivo sin nombre"}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {fileSize
+                                          ? (fileSize / 1024).toFixed(2)
+                                          : "0.00"}{" "}
+                                        KB
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    // Llamamos a la función con los datos detectados
+                                    onClick={() =>
+                                      handleDownloadFeedbackFile(
+                                        filePath,
+                                        fileName,
+                                      )
+                                    }
+                                    disabled={isDownloading}
+                                    className="flex-shrink-0"
+                                  >
+                                    <Download className="w-4 h-4 mr-2" />
+                                    {isDownloading ? "..." : "Descargar"}
+                                  </Button>
                                 </div>
-                              </div>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                // Llamamos a la función con los datos detectados
-                                onClick={() => handleDownloadFeedbackFile(filePath, fileName)}
-                                disabled={isDownloading}
-                                className="flex-shrink-0"
-                              >
-                                <Download className="w-4 h-4 mr-2" />
-                                {isDownloading ? '...' : 'Descargar'}
-                              </Button>
-                            </div>
-                          );
-                        })}
+                              );
+                            },
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
                 </div>
               ) : (
                 <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
@@ -852,7 +955,7 @@ const AssignmentDetail = () => {
           <Card className="bg-gradient-card shadow-card border-0">
             <CardHeader>
               <CardTitle>
-                {isEditingSubmission ? 'Editar Entrega' : 'Entregar Tarea'}
+                {isEditingSubmission ? "Editar Entrega" : "Entregar Tarea"}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -872,32 +975,47 @@ const AssignmentDetail = () => {
                 <label className="text-sm font-medium text-foreground">
                   Archivos adjuntos (opcional)
                 </label>
-                
+
                 {/* Archivos existentes en modo edición */}
                 {isEditingSubmission && existingFiles.length > 0 && (
                   <div className="mb-4 space-y-2">
                     <p className="text-xs font-medium text-muted-foreground">
-                      Archivos actuales ({existingFiles.filter(f => !filesToDelete.includes(f.file_path)).length}):
+                      Archivos actuales (
+                      {
+                        existingFiles.filter(
+                          (f) => !filesToDelete.includes(f.file_path),
+                        ).length
+                      }
+                      ):
                     </p>
                     {existingFiles.map((file, index) => {
-                      const isMarkedForDeletion = filesToDelete.includes(file.file_path);
+                      const isMarkedForDeletion = filesToDelete.includes(
+                        file.file_path,
+                      );
                       return (
-                        <div 
-                          key={index} 
+                        <div
+                          key={index}
                           className={`flex items-center justify-between p-3 rounded-lg border ${
-                            isMarkedForDeletion 
-                              ? 'bg-destructive/10 border-destructive/30 opacity-50' 
-                              : 'bg-muted/50 border-border'
+                            isMarkedForDeletion
+                              ? "bg-destructive/10 border-destructive/30 opacity-50"
+                              : "bg-muted/50 border-border"
                           }`}
                         >
                           <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <FileText className={`w-4 h-4 flex-shrink-0 ${isMarkedForDeletion ? 'text-destructive' : 'text-primary'}`} />
+                            <FileText
+                              className={`w-4 h-4 flex-shrink-0 ${isMarkedForDeletion ? "text-destructive" : "text-primary"}`}
+                            />
                             <div className="min-w-0">
-                              <p className={`text-xs font-medium truncate ${isMarkedForDeletion ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
+                              <p
+                                className={`text-xs font-medium truncate ${isMarkedForDeletion ? "line-through text-muted-foreground" : "text-foreground"}`}
+                              >
                                 {file.file_name}
                               </p>
                               <p className="text-xs text-muted-foreground">
-                                {file.file_size ? (file.file_size / 1024).toFixed(2) : '0.00'} KB
+                                {file.file_size
+                                  ? (file.file_size / 1024).toFixed(2)
+                                  : "0.00"}{" "}
+                                KB
                               </p>
                             </div>
                           </div>
@@ -905,7 +1023,9 @@ const AssignmentDetail = () => {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleUndoDeleteFile(file.file_path)}
+                              onClick={() =>
+                                handleUndoDeleteFile(file.file_path)
+                              }
                               className="flex-shrink-0"
                             >
                               Restaurar
@@ -914,7 +1034,9 @@ const AssignmentDetail = () => {
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => handleDeleteExistingFile(file.file_path)}
+                              onClick={() =>
+                                handleDeleteExistingFile(file.file_path)
+                              }
                               className="flex-shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -935,10 +1057,16 @@ const AssignmentDetail = () => {
                 {selectedFiles.length > 0 && (
                   <div className="space-y-2 mt-3">
                     <p className="text-xs font-medium text-foreground">
-                      {isEditingSubmission ? 'Nuevos archivos a agregar' : 'Archivos a entregar'} ({selectedFiles.length}):
+                      {isEditingSubmission
+                        ? "Nuevos archivos a agregar"
+                        : "Archivos a entregar"}{" "}
+                      ({selectedFiles.length}):
                     </p>
                     {selectedFiles.map((file, index) => (
-                      <div key={index} className="flex items-center justify-between p-2 rounded-md bg-muted/50 border border-border">
+                      <div
+                        key={index}
+                        className="flex items-center justify-between p-2 rounded-md bg-muted/50 border border-border"
+                      >
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-medium text-foreground truncate">
                             {file.name}
@@ -951,14 +1079,25 @@ const AssignmentDetail = () => {
                     ))}
                     <div className="pt-2 border-t border-border">
                       <p className="text-xs font-medium text-foreground">
-                        Tamaño total de nuevos archivos: {(selectedFiles.reduce((sum, f) => sum + f.size, 0) / 1024).toFixed(2)} KB
+                        Tamaño total de nuevos archivos:{" "}
+                        {(
+                          selectedFiles.reduce((sum, f) => sum + f.size, 0) /
+                          1024
+                        ).toFixed(2)}{" "}
+                        KB
                       </p>
                       {isEditingSubmission && (
                         <p className="text-xs text-muted-foreground mt-1">
-                          Archivos existentes que se mantendrán: {existingFiles.filter(f => !filesToDelete.includes(f.file_path)).length}
+                          Archivos existentes que se mantendrán:{" "}
+                          {
+                            existingFiles.filter(
+                              (f) => !filesToDelete.includes(f.file_path),
+                            ).length
+                          }
                         </p>
                       )}
-                      {selectedFiles.reduce((sum, f) => sum + f.size, 0) > 5 * 1024 * 1024 && (
+                      {selectedFiles.reduce((sum, f) => sum + f.size, 0) >
+                        5 * 1024 * 1024 && (
                         <p className="text-xs text-destructive mt-1">
                           (Supera los 5MB - Por favor comprime los archivos)
                         </p>
@@ -971,24 +1110,33 @@ const AssignmentDetail = () => {
               <div className="flex gap-3 pt-4">
                 <Button
                   onClick={handleSubmit}
-                  disabled={isSubmitting || (!content.trim() && selectedFiles.length === 0)}
+                  disabled={
+                    isSubmitting ||
+                    (!content.trim() && selectedFiles.length === 0)
+                  }
                   className="bg-gradient-primary shadow-glow"
                 >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      {isEditingSubmission ? 'Actualizando...' : 'Enviando...'}
+                      {isEditingSubmission ? "Actualizando..." : "Enviando..."}
                     </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4 mr-2" />
-                      {isEditingSubmission ? 'Actualizar Entrega' : 'Entregar Tarea'}
+                      {isEditingSubmission
+                        ? "Actualizar Entrega"
+                        : "Entregar Tarea"}
                     </>
                   )}
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={isEditingSubmission ? handleCancelEdit : () => navigate('/assignments')}
+                  onClick={
+                    isEditingSubmission
+                      ? handleCancelEdit
+                      : () => navigate("/assignments")
+                  }
                 >
                   Cancelar
                 </Button>
@@ -1020,12 +1168,14 @@ const AssignmentDetail = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción no se puede deshacer. Se eliminará permanentemente esta tarea
-              y todas las entregas asociadas.
+              Esta acción no se puede deshacer. Se eliminará permanentemente
+              esta tarea y todas las entregas asociadas.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>
+              Cancelar
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               disabled={isDeleting}
@@ -1037,7 +1187,7 @@ const AssignmentDetail = () => {
                   Eliminando...
                 </>
               ) : (
-                'Eliminar'
+                "Eliminar"
               )}
             </AlertDialogAction>
           </AlertDialogFooter>

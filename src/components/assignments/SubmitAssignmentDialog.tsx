@@ -1,13 +1,19 @@
-import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { FileUpload } from '@/components/ui/file-upload';
-import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
-import { Loader2, Calendar, Clock, Target } from 'lucide-react';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
+import { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { FileUpload } from "@/components/ui/file-upload";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { Loader2, Calendar, Clock, Target } from "lucide-react";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 
 interface SubmitAssignmentDialogProps {
   open: boolean;
@@ -18,19 +24,19 @@ interface SubmitAssignmentDialogProps {
     description: string;
     due_date: string;
     max_score: number;
-    course_id: string;
+    modulo_id: string;
   };
   onSubmitSuccess: () => void;
 }
 
-export const SubmitAssignmentDialog = ({ 
-  open, 
-  onOpenChange, 
+export const SubmitAssignmentDialog = ({
+  open,
+  onOpenChange,
   assignment,
-  onSubmitSuccess 
+  onSubmitSuccess,
 }: SubmitAssignmentDialogProps) => {
   const { toast } = useToast();
-  const [content, setContent] = useState('');
+  const [content, setContent] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -55,19 +61,19 @@ export const SubmitAssignmentDialog = ({
 
       // Upload file if selected
       if (selectedFile) {
-        const fileExt = selectedFile.name.split('.').pop();
+        const fileExt = selectedFile.name.split(".").pop();
         const timestamp = new Date().getTime();
         const newFilePath = `assignment-submissions/${assignment.id}/${timestamp}.${fileExt}`;
-        
+
         const { error: uploadError } = await supabase.storage
-          .from('course-files')
+          .from("course-files")
           .upload(newFilePath, selectedFile);
 
         if (uploadError) throw uploadError;
 
-        const { data: { publicUrl } } = supabase.storage
-          .from('course-files')
-          .getPublicUrl(newFilePath);
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("course-files").getPublicUrl(newFilePath);
 
         fileUrl = publicUrl;
         filePath = newFilePath;
@@ -77,18 +83,21 @@ export const SubmitAssignmentDialog = ({
       }
 
       // Call the edge function to create submission
-      const { data, error } = await supabase.functions.invoke('submit-assignment', {
-        body: {
-          assignmentTitle: assignment.title,
-          courseId: assignment.course_id,
-          content: content.trim(),
-          fileUrl,
-          filePath,
-          fileName,
-          fileSize,
-          mimeType,
+      const { data, error } = await supabase.functions.invoke(
+        "submit-assignment",
+        {
+          body: {
+            assignmentTitle: assignment.title,
+            courseId: assignment.modulo_id,
+            content: content.trim(),
+            fileUrl,
+            filePath,
+            fileName,
+            fileSize,
+            mimeType,
+          },
         },
-      });
+      );
 
       if (error) throw error;
 
@@ -99,10 +108,10 @@ export const SubmitAssignmentDialog = ({
 
       onSubmitSuccess();
       onOpenChange(false);
-      setContent('');
+      setContent("");
       setSelectedFile(null);
     } catch (error: any) {
-      console.error('Error submitting assignment:', error);
+      console.error("Error submitting assignment:", error);
       toast({
         title: "Error",
         description: error.message || "No se pudo entregar la tarea",
@@ -118,28 +127,26 @@ export const SubmitAssignmentDialog = ({
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle>Entregar Tarea</DialogTitle>
-          <DialogDescription>
-            {assignment.title}
-          </DialogDescription>
+          <DialogDescription>{assignment.title}</DialogDescription>
         </DialogHeader>
 
         {/* Assignment Details */}
         <div className="space-y-3 py-4 px-1 border-b border-border">
           <p className="text-sm text-muted-foreground">
-            {assignment.description || 'Sin descripción'}
+            {assignment.description || "Sin descripción"}
           </p>
           <div className="flex items-center gap-4 text-sm">
             <div className="flex items-center gap-1 text-muted-foreground">
               <Calendar className="w-4 h-4" />
               <span>
-                {format(new Date(assignment.due_date), "d 'de' MMMM, yyyy", { locale: es })}
+                {format(new Date(assignment.due_date), "d 'de' MMMM, yyyy", {
+                  locale: es,
+                })}
               </span>
             </div>
             <div className="flex items-center gap-1 text-muted-foreground">
               <Clock className="w-4 h-4" />
-              <span>
-                {format(new Date(assignment.due_date), "HH:mm")}
-              </span>
+              <span>{format(new Date(assignment.due_date), "HH:mm")}</span>
             </div>
             <div className="flex items-center gap-1 text-muted-foreground">
               <Target className="w-4 h-4" />
@@ -198,7 +205,7 @@ export const SubmitAssignmentDialog = ({
                 Entregando...
               </>
             ) : (
-              'Entregar'
+              "Entregar"
             )}
           </Button>
         </div>

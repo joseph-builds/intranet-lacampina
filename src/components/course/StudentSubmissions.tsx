@@ -1,15 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { FileUpload } from '@/components/ui/file-upload';
-import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { Upload, Download, Check, X, Clock } from 'lucide-react';
-import { format } from 'date-fns';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
-import { toast } from 'sonner';
+import React, { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { FileUpload } from "@/components/ui/file-upload";
+import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Upload, Download, Check, X, Clock } from "lucide-react";
+import { format } from "date-fns";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "sonner";
 
 interface StudentSubmissionsProps {
   resourceId: string;
@@ -30,18 +30,18 @@ interface Submission {
   graded_at?: string;
 }
 
-export function StudentSubmissions({ 
-  resourceId, 
-  assignmentTitle, 
-  deadline, 
+export function StudentSubmissions({
+  resourceId,
+  assignmentTitle,
+  deadline,
   maxScore,
-  canSubmit 
+  canSubmit,
 }: StudentSubmissionsProps) {
   const { profile } = useAuth();
   const [submission, setSubmission] = useState<Submission | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [content, setContent] = useState('');
+  const [content, setContent] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
   const isDeadlinePassed = deadline ? new Date() > new Date(deadline) : false;
@@ -53,23 +53,24 @@ export function StudentSubmissions({
 
   const fetchSubmission = async () => {
     if (!profile) return;
-    
+
     try {
       setLoading(true);
-      
+
       // First get assignment from resource
       const { data: resource, error: resourceError } = await supabase
-        .from('course_weekly_resources')
-        .select('*')
-        .eq('id', resourceId)
+        .from("course_weekly_resources")
+        .select("*")
+        .eq("id", resourceId)
         .single();
 
       if (resourceError) throw resourceError;
 
       // Look for existing assignment and submission
       const { data: assignment } = await supabase
-        .from('assignments')
-        .select(`
+        .from("assignments")
+        .select(
+          `
           id,
           assignment_submissions (
             id,
@@ -82,16 +83,17 @@ export function StudentSubmissions({
             submitted_at,
             graded_at
           )
-        `)
-        .eq('title', assignmentTitle)
+        `,
+        )
+        .eq("title", assignmentTitle)
         .maybeSingle();
 
       if (assignment?.assignment_submissions?.[0]) {
         setSubmission(assignment.assignment_submissions[0] as any);
       }
     } catch (error) {
-      console.error('Error fetching submission:', error);
-      toast.error('Error al cargar la entrega');
+      console.error("Error fetching submission:", error);
+      toast.error("Error al cargar la entrega");
     } finally {
       setLoading(false);
     }
@@ -99,7 +101,7 @@ export function StudentSubmissions({
 
   const handleSubmit = async () => {
     if (!profile || (!content.trim() && selectedFiles.length === 0)) {
-      toast.error('Debes escribir contenido o subir un archivo');
+      toast.error("Debes escribir contenido o subir un archivo");
       return;
     }
 
@@ -114,12 +116,12 @@ export function StudentSubmissions({
       // Upload file if selected
       if (selectedFiles.length > 0) {
         const file = selectedFiles[0];
-        const fileExt = file.name.split('.').pop();
+        const fileExt = file.name.split(".").pop();
         const uploadFileName = `${Math.random()}.${fileExt}`;
         const uploadPath = `${profile.user_id}/${uploadFileName}`;
 
         const { error: uploadError } = await supabase.storage
-          .from('student-submissions')
+          .from("student-submissions")
           .upload(uploadPath, file);
 
         if (uploadError) throw uploadError;
@@ -132,40 +134,43 @@ export function StudentSubmissions({
 
       // Get modulo_id from resource
       const { data: resource, error: resourceError } = await supabase
-        .from('course_weekly_resources')
-        .select('section:course_weekly_sections!inner(course_id)')
-        .eq('id', resourceId)
+        .from("course_weekly_resources")
+        .select("section:course_weekly_sections!inner(modulo_id)")
+        .eq("id", resourceId)
         .single();
 
       if (resourceError) throw resourceError;
 
-      const courseId = (resource.section as any).course_id;
+      const courseId = (resource.section as any).modulo_id;
 
       // Use edge function to handle assignment creation and submission
-      const { data, error } = await supabase.functions.invoke('submit-assignment', {
-        body: {
-          resourceId,
-          assignmentTitle,
-          deadline,
-          maxScore,
-          content: content.trim(),
-          filePath,
-          fileName,
-          fileSize,
-          mimeType,
-          courseId
-        }
-      });
+      const { data, error } = await supabase.functions.invoke(
+        "submit-assignment",
+        {
+          body: {
+            resourceId,
+            assignmentTitle,
+            deadline,
+            maxScore,
+            content: content.trim(),
+            filePath,
+            fileName,
+            fileSize,
+            mimeType,
+            courseId,
+          },
+        },
+      );
 
       if (error) throw error;
 
-      toast.success('Entrega realizada exitosamente');
+      toast.success("Entrega realizada exitosamente");
       fetchSubmission();
-      setContent('');
+      setContent("");
       setSelectedFiles([]);
     } catch (error) {
-      console.error('Error submitting assignment:', error);
-      toast.error('Error al realizar la entrega');
+      console.error("Error submitting assignment:", error);
+      toast.error("Error al realizar la entrega");
     } finally {
       setSubmitting(false);
     }
@@ -173,41 +178,42 @@ export function StudentSubmissions({
 
   const getSubmissionStatus = () => {
     if (!submission) {
-      if (isDeadlinePassed) return { label: 'No entregado', color: 'destructive' };
-      return { label: 'Pendiente', color: 'secondary' };
+      if (isDeadlinePassed)
+        return { label: "No entregado", color: "destructive" };
+      return { label: "Pendiente", color: "secondary" };
     }
-    
+
     if (submission.score !== null && submission.score !== undefined) {
-      return { label: 'Calificado', color: 'default' };
+      return { label: "Calificado", color: "default" };
     }
-    
-    return { label: 'Entregado', color: 'secondary' };
+
+    return { label: "Entregado", color: "secondary" };
   };
 
   const handleDownloadSubmission = async () => {
     if (!submission?.file_path) return;
 
     try {
-      const { data, error } = await supabase.functions.invoke('download-file', {
+      const { data, error } = await supabase.functions.invoke("download-file", {
         body: {
-          bucket: 'student-submissions',
+          bucket: "student-submissions",
           filePath: submission.file_path,
-          fileName: submission.file_name
-        }
+          fileName: submission.file_name,
+        },
       });
 
       if (error) throw error;
 
       // Download the file using the signed URL
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = data.signedUrl;
-      link.download = data.fileName || submission.file_name || 'download';
+      link.download = data.fileName || submission.file_name || "download";
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
     } catch (error) {
-      console.error('Error downloading file:', error);
-      toast.error('Error al descargar el archivo');
+      console.error("Error downloading file:", error);
+      toast.error("Error al descargar el archivo");
     }
   };
 
@@ -231,14 +237,12 @@ export function StudentSubmissions({
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg">{assignmentTitle}</CardTitle>
-          <Badge variant={status.color as any}>
-            {status.label}
-          </Badge>
+          <Badge variant={status.color as any}>{status.label}</Badge>
         </div>
         {deadline && (
           <p className="text-sm text-muted-foreground">
             <Clock className="h-4 w-4 inline mr-1" />
-            Fecha límite: {format(new Date(deadline), 'dd/MM/yyyy HH:mm')}
+            Fecha límite: {format(new Date(deadline), "dd/MM/yyyy HH:mm")}
           </p>
         )}
         {maxScore && (
@@ -247,7 +251,7 @@ export function StudentSubmissions({
           </p>
         )}
       </CardHeader>
-      
+
       <CardContent className="space-y-4">
         {submission ? (
           <div className="space-y-4">
@@ -271,7 +275,11 @@ export function StudentSubmissions({
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground mt-2">
-                  Entregado el: {format(new Date(submission.submitted_at), 'dd/MM/yyyy HH:mm')}
+                  Entregado el:{" "}
+                  {format(
+                    new Date(submission.submitted_at),
+                    "dd/MM/yyyy HH:mm",
+                  )}
                 </p>
               </div>
             </div>
@@ -287,64 +295,68 @@ export function StudentSubmissions({
                     </span>
                   </div>
                   {submission.feedback && (
-                    <p className="text-sm text-green-700">{submission.feedback}</p>
+                    <p className="text-sm text-green-700">
+                      {submission.feedback}
+                    </p>
                   )}
                   {submission.graded_at && (
                     <p className="text-xs text-green-600 mt-2">
-                      Calificado el: {format(new Date(submission.graded_at), 'dd/MM/yyyy HH:mm')}
+                      Calificado el:{" "}
+                      {format(
+                        new Date(submission.graded_at),
+                        "dd/MM/yyyy HH:mm",
+                      )}
                     </p>
                   )}
                 </div>
               </div>
             )}
           </div>
+        ) : canMakeSubmission ? (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="content">Contenido de la entrega</Label>
+              <Textarea
+                id="content"
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="Escribe tu respuesta o explicación aquí..."
+                rows={4}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Subir archivo (opcional)</Label>
+              <FileUpload
+                onFileSelect={setSelectedFiles}
+                maxSize={10}
+                multiple={false}
+              />
+            </div>
+
+            <Button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="bg-gradient-primary shadow-glow"
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              {submitting ? "Entregando..." : "Realizar Entrega"}
+            </Button>
+          </div>
         ) : (
-          canMakeSubmission ? (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="content">Contenido de la entrega</Label>
-                <Textarea
-                  id="content"
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  placeholder="Escribe tu respuesta o explicación aquí..."
-                  rows={4}
-                />
+          <div className="text-center py-8">
+            {isDeadlinePassed ? (
+              <div className="text-muted-foreground">
+                <X className="h-12 w-12 mx-auto mb-2 text-red-500" />
+                <p>La fecha límite para esta tarea ha pasado</p>
               </div>
-
-              <div className="space-y-2">
-                <Label>Subir archivo (opcional)</Label>
-                <FileUpload
-                  onFileSelect={setSelectedFiles}
-                  maxSize={10}
-                  multiple={false}
-                />
+            ) : (
+              <div className="text-muted-foreground">
+                <Clock className="h-12 w-12 mx-auto mb-2" />
+                <p>No puedes realizar entregas para esta tarea</p>
               </div>
-
-              <Button 
-                onClick={handleSubmit} 
-                disabled={submitting}
-                className="bg-gradient-primary shadow-glow"
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                {submitting ? 'Entregando...' : 'Realizar Entrega'}
-              </Button>
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              {isDeadlinePassed ? (
-                <div className="text-muted-foreground">
-                  <X className="h-12 w-12 mx-auto mb-2 text-red-500" />
-                  <p>La fecha límite para esta tarea ha pasado</p>
-                </div>
-              ) : (
-                <div className="text-muted-foreground">
-                  <Clock className="h-12 w-12 mx-auto mb-2" />
-                  <p>No puedes realizar entregas para esta tarea</p>
-                </div>
-              )}
-            </div>
-          )
+            )}
+          </div>
         )}
       </CardContent>
     </Card>

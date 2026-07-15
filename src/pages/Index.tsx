@@ -8,7 +8,14 @@ import { StudentCourses } from "@/components/dashboard/StudentCourses";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Notifications } from "@/components/Notifications";
 import { AcademicCalendar } from "@/components/calendar/AcademicCalendar";
-import { BookOpen, FileText, GraduationCap, TrendingUp, User, Users } from "lucide-react";
+import {
+  BookOpen,
+  FileText,
+  GraduationCap,
+  TrendingUp,
+  User,
+  Users,
+} from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import heroImage from "@/assets/hero-education.jpg";
@@ -21,12 +28,11 @@ interface DashboardStats {
   attendanceRate: number;
 }
 
-
 const Index = () => {
   const { profile } = useAuth();
   const [stats, setStats] = useState<DashboardStats>(() => {
     // Try to load cached stats
-    const cached = sessionStorage.getItem('dashboardStats');
+    const cached = sessionStorage.getItem("dashboardStats");
     if (cached) {
       try {
         return JSON.parse(cached);
@@ -62,29 +68,29 @@ const Index = () => {
       const [
         { count: coursesCount },
         { data: enrollments },
-        { data: attendance }
+        { data: attendance },
       ] = await Promise.all([
         supabase
-          .from('course_enrollments')
-          .select('*', { count: 'exact', head: true })
-          .eq('student_id', profile!.id),
+          .from("course_enrollments")
+          .select("*", { count: "exact", head: true })
+          .eq("student_id", profile!.id),
         supabase
-          .from('course_enrollments')
-          .select('modulo_id')
-          .eq('student_id', profile!.id),
+          .from("course_enrollments")
+          .select("modulo_id")
+          .eq("student_id", profile!.id),
         supabase
-          .from('attendance')
-          .select('status')
-          .eq('student_id', profile!.id)
+          .from("attendance")
+          .select("status")
+          .eq("student_id", profile!.id),
       ]);
 
-      const courseIds = enrollments?.map(e => e.modulo_id) || [];
+      const courseIds = enrollments?.map((e) => e.modulo_id) || [];
 
       // Calculate attendance rate
       let attendanceRate = 0;
       if (attendance && attendance.length > 0) {
-        const presentCount = attendance.filter(a => 
-          a.status === 'present' || a.status === 'late'
+        const presentCount = attendance.filter(
+          (a) => a.status === "present" || a.status === "late",
         ).length;
         attendanceRate = Math.round((presentCount / attendance.length) * 100);
       }
@@ -94,37 +100,39 @@ const Index = () => {
       let upcomingExams = 0;
 
       if (courseIds.length > 0) {
-        const [
-          { data: assignments },
-          { count: examsCount }
-        ] = await Promise.all([
-          supabase
-            .from('assignments')
-            .select('id')
-            .in('course_id', courseIds)
-            .eq('is_published', true)
-            .gt('due_date', new Date().toISOString()),
-          supabase
-            .from('exams')
-            .select('*', { count: 'exact', head: true })
-            .in('course_id', courseIds)
-            .eq('is_published', true)
-            .gt('start_time', new Date().toISOString())
-        ]);
+        const [{ data: assignments }, { count: examsCount }] =
+          await Promise.all([
+            supabase
+              .from("assignments")
+              .select("id")
+              .in("modulo_id", courseIds)
+              .eq("is_published", true)
+              .gt("due_date", new Date().toISOString()),
+            supabase
+              .from("exams")
+              .select("*", { count: "exact", head: true })
+              .in("modulo_id", courseIds)
+              .eq("is_published", true)
+              .gt("start_time", new Date().toISOString()),
+          ]);
 
         upcomingExams = examsCount || 0;
 
-        const assignmentIds = assignments?.map(a => a.id) || [];
+        const assignmentIds = assignments?.map((a) => a.id) || [];
 
         if (assignmentIds.length > 0) {
           const { data: submissions } = await supabase
-            .from('assignment_submissions')
-            .select('assignment_id')
-            .eq('student_id', profile!.id)
-            .in('assignment_id', assignmentIds);
+            .from("assignment_submissions")
+            .select("assignment_id")
+            .eq("student_id", profile!.id)
+            .in("assignment_id", assignmentIds);
 
-          const submittedIds = new Set(submissions?.map(s => s.assignment_id) || []);
-          pendingAssignments = assignmentIds.filter(id => !submittedIds.has(id)).length;
+          const submittedIds = new Set(
+            submissions?.map((s) => s.assignment_id) || [],
+          );
+          pendingAssignments = assignmentIds.filter(
+            (id) => !submittedIds.has(id),
+          ).length;
         }
       }
 
@@ -134,16 +142,19 @@ const Index = () => {
         upcomingExams,
         attendanceRate,
       });
-      
+
       // Cache the stats for faster subsequent loads
-      sessionStorage.setItem('dashboardStats', JSON.stringify({
-        coursesCount: coursesCount || 0,
-        pendingAssignments,
-        upcomingExams,
-        attendanceRate,
-      }));
+      sessionStorage.setItem(
+        "dashboardStats",
+        JSON.stringify({
+          coursesCount: coursesCount || 0,
+          pendingAssignments,
+          upcomingExams,
+          attendanceRate,
+        }),
+      );
     } catch (error) {
-      console.error('Error fetching dashboard stats:', error);
+      console.error("Error fetching dashboard stats:", error);
     } finally {
       setLoadingStats(false);
     }
@@ -151,28 +162,28 @@ const Index = () => {
 
   // Helpers para mensaje de bienvenida y subtítulo (dentro del componente para acceso a profile)
   const getWelcomeMessage = () => {
-    const name = profile ? profile.first_name : 'Usuario';
+    const name = profile ? profile.first_name : "Usuario";
     return `¡Bienvenido, ${name}!`;
   };
 
   const getSubtitle = () => {
-    return 'Plataforma Educativa - IE La Campiña';
+    return "Plataforma Educativa - IE La Campiña";
   };
 
   // Redirigir a dashboards específicos según el rol
-  if (profile?.role === 'parent') {
+  if (profile?.role === "parent") {
     return <Navigate to="/parent/admin" replace />;
   }
 
-  if (profile?.role === 'admin') {
+  if (profile?.role === "admin") {
     return <Navigate to="/admin/dashboard" replace />;
   }
 
-  if (profile?.role === 'directivo') {
+  if (profile?.role === "directivo") {
     return <Navigate to="/directivo-dashboard" replace />;
   }
 
-  if (profile?.role === 'tutor') {
+  if (profile?.role === "tutor") {
     return <Navigate to="/tutor-dashboard" replace />;
   }
 
@@ -183,9 +194,9 @@ const Index = () => {
         {/* Hero Section */}
         <div className="relative overflow-hidden rounded-2xl bg-gradient-hero p-8 text-white shadow-glow">
           <div className="absolute inset-0 opacity-20">
-            <img 
-              src={heroImage} 
-              alt="Educación virtual IE La Campiña" 
+            <img
+              src={heroImage}
+              alt="Educación virtual IE La Campiña"
               className="w-full h-full object-cover"
             />
           </div>
@@ -198,14 +209,13 @@ const Index = () => {
               </div>
             </div>
             <p className="text-lg text-white/90 max-w-2xl">
-              {(profile?.role as string) === 'teacher'
-                ? 'Gestiona tus cursos, evalúa a tus estudiantes y mantente conectado con la comunidad educativa.'
-                : (profile?.role as string) === 'admin'
-                ? 'Administra la plataforma educativa y supervisa el progreso académico institucional.'
-                : (profile?.role as string) === 'parent'
-                ? 'Mantente informado sobre el progreso académico de tus hijos y la vida escolar.'
-                : 'Accede a tus cursos, completa tus tareas y mantente conectado con tu educación desde cualquier lugar.'
-              }
+              {(profile?.role as string) === "teacher"
+                ? "Gestiona tus cursos, evalúa a tus estudiantes y mantente conectado con la comunidad educativa."
+                : (profile?.role as string) === "admin"
+                  ? "Administra la plataforma educativa y supervisa el progreso académico institucional."
+                  : (profile?.role as string) === "parent"
+                    ? "Mantente informado sobre el progreso académico de tus hijos y la vida escolar."
+                    : "Accede a tus cursos, completa tus tareas y mantente conectado con tu educación desde cualquier lugar."}
             </p>
           </div>
         </div>
@@ -249,11 +259,11 @@ const Index = () => {
             <StudentCourses />
             <RecentActivity />
           </div>
-          
+
           {/* Right Column */}
           <div className="space-y-6">
             <QuickActions />
-            
+
             {/* Calendar Section */}
             <div>
               <AcademicCalendar />
@@ -263,6 +273,6 @@ const Index = () => {
       </div>
     </DashboardLayout>
   );
-}
+};
 
 export default Index;

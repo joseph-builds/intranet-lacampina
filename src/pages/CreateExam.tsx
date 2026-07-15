@@ -1,24 +1,34 @@
-import React, { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import { Plus, Trash2, CalendarIcon, ArrowLeft } from 'lucide-react';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { format } from 'date-fns';
-import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
-import { useAuth } from '@/hooks/useAuth';
+import React, { useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Plus, Trash2, CalendarIcon, ArrowLeft } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { format } from "date-fns";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Question {
   question_text: string;
-  question_type: 'multiple_choice' | 'true_false' | 'short_answer' | 'essay';
+  question_type: "multiple_choice" | "true_false" | "short_answer" | "essay";
   options?: string[];
   correct_answer?: string;
 }
@@ -29,62 +39,73 @@ export default function CreateExam() {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    title: '',
-    description: '',
+    title: "",
+    description: "",
     start_time: null as Date | null,
     duration_minutes: 60,
-    is_published: false
+    is_published: false,
   });
   const [questions, setQuestions] = useState<Question[]>([]);
 
   const addQuestion = () => {
-    setQuestions(prev => [...prev, {
-      question_text: '',
-      question_type: 'multiple_choice',
-      options: ['', '', '', ''],
-      correct_answer: ''
-    }]);
+    setQuestions((prev) => [
+      ...prev,
+      {
+        question_text: "",
+        question_type: "multiple_choice",
+        options: ["", "", "", ""],
+        correct_answer: "",
+      },
+    ]);
   };
 
   const removeQuestion = (index: number) => {
-    setQuestions(prev => prev.filter((_, i) => i !== index));
+    setQuestions((prev) => prev.filter((_, i) => i !== index));
   };
 
   const updateQuestion = (index: number, field: keyof Question, value: any) => {
-    setQuestions(prev => prev.map((q, i) => i === index ? { ...q, [field]: value } : q));
+    setQuestions((prev) =>
+      prev.map((q, i) => (i === index ? { ...q, [field]: value } : q)),
+    );
   };
 
-  const updateQuestionOption = (questionIndex: number, optionIndex: number, value: string) => {
-    setQuestions(prev => prev.map((q, i) => {
-      if (i === questionIndex && q.options) {
-        const newOptions = [...q.options];
-        newOptions[optionIndex] = value;
-        return { ...q, options: newOptions };
-      }
-      return q;
-    }));
+  const updateQuestionOption = (
+    questionIndex: number,
+    optionIndex: number,
+    value: string,
+  ) => {
+    setQuestions((prev) =>
+      prev.map((q, i) => {
+        if (i === questionIndex && q.options) {
+          const newOptions = [...q.options];
+          newOptions[optionIndex] = value;
+          return { ...q, options: newOptions };
+        }
+        return q;
+      }),
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!profile?.id || !courseId) {
-      toast.error('No se pudo obtener la información necesaria');
+      toast.error("No se pudo obtener la información necesaria");
       return;
     }
 
     if (!formData.title.trim()) {
-      toast.error('El título es requerido');
+      toast.error("El título es requerido");
       return;
     }
 
     if (!formData.start_time) {
-      toast.error('Debes seleccionar la fecha y hora del examen');
+      toast.error("Debes seleccionar la fecha y hora del examen");
       return;
     }
 
     if (questions.length === 0) {
-      toast.error('Debes agregar al menos una pregunta');
+      toast.error("Debes agregar al menos una pregunta");
       return;
     }
 
@@ -93,14 +114,14 @@ export default function CreateExam() {
 
       // Create the exam
       const { data: examData, error: examError } = await supabase
-        .from('exams')
+        .from("exams")
         .insert({
-          course_id: courseId,
+          modulo_id: courseId,
           title: formData.title.trim(),
           description: formData.description.trim() || null,
           start_time: formData.start_time.toISOString(),
           duration_minutes: formData.duration_minutes,
-          is_published: formData.is_published
+          is_published: formData.is_published,
         })
         .select()
         .single();
@@ -109,16 +130,16 @@ export default function CreateExam() {
 
       // Create the quiz for the exam
       const { data: quizData, error: quizError } = await supabase
-        .from('quizzes')
+        .from("quizzes")
         .insert({
-          course_id: courseId,
+          modulo_id: courseId,
           title: formData.title.trim(),
           description: formData.description.trim() || null,
           time_limit_minutes: formData.duration_minutes,
           max_attempts: 1,
           exam_id: examData.id,
           is_published: formData.is_published,
-          due_date: formData.start_time.toISOString()
+          due_date: formData.start_time.toISOString(),
         })
         .select()
         .single();
@@ -132,11 +153,11 @@ export default function CreateExam() {
         question_type: q.question_type,
         options: q.options || null,
         correct_answer: q.correct_answer || null,
-        position: index
+        position: index,
       }));
 
       const { error: questionsError } = await supabase
-        .from('quiz_questions')
+        .from("quiz_questions")
         .insert(questionsToInsert);
 
       if (questionsError) throw questionsError;
@@ -146,28 +167,32 @@ export default function CreateExam() {
       endTime.setMinutes(endTime.getMinutes() + formData.duration_minutes);
 
       const { error: eventError } = await supabase
-        .from('course_events')
+        .from("course_events")
         .insert({
-          course_id: courseId,
+          modulo_id: courseId,
           title: `Examen: ${formData.title}`,
-          description: formData.description || `Examen de ${formData.duration_minutes} minutos`,
-          event_type: 'exam',
+          description:
+            formData.description ||
+            `Examen de ${formData.duration_minutes} minutos`,
+          event_type: "exam",
           start_date: formData.start_time.toISOString(),
           end_date: endTime.toISOString(),
           is_published: formData.is_published,
-          created_by: profile?.id
+          created_by: profile?.id,
         });
 
       if (eventError) {
-        console.error('Error creating event:', eventError);
-        toast.error('Examen creado pero hubo un problema al crear el evento en el calendario');
+        console.error("Error creating event:", eventError);
+        toast.error(
+          "Examen creado pero hubo un problema al crear el evento en el calendario",
+        );
       }
 
-      toast.success('Examen creado exitosamente');
+      toast.success("Examen creado exitosamente");
       navigate(`/courses/${courseId}`);
     } catch (error) {
-      console.error('Error creating exam:', error);
-      toast.error('Error al crear el examen');
+      console.error("Error creating exam:", error);
+      toast.error("Error al crear el examen");
     } finally {
       setLoading(false);
     }
@@ -186,7 +211,9 @@ export default function CreateExam() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold">Crear Examen</h1>
-            <p className="text-muted-foreground">Define las preguntas y configuración del examen</p>
+            <p className="text-muted-foreground">
+              Define las preguntas y configuración del examen
+            </p>
           </div>
         </div>
 
@@ -202,7 +229,12 @@ export default function CreateExam() {
                   <Input
                     id="title"
                     value={formData.title}
-                    onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        title: e.target.value,
+                      }))
+                    }
                     placeholder="Ej: Examen Final de Matemáticas"
                     required
                   />
@@ -215,7 +247,12 @@ export default function CreateExam() {
                     type="number"
                     min="5"
                     value={formData.duration_minutes}
-                    onChange={(e) => setFormData(prev => ({ ...prev, duration_minutes: parseInt(e.target.value) || 60 }))}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        duration_minutes: parseInt(e.target.value) || 60,
+                      }))
+                    }
                   />
                 </div>
               </div>
@@ -225,7 +262,12 @@ export default function CreateExam() {
                 <Textarea
                   id="description"
                   value={formData.description}
-                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      description: e.target.value,
+                    }))
+                  }
                   placeholder="Instrucciones y detalles del examen..."
                   rows={3}
                 />
@@ -240,7 +282,11 @@ export default function CreateExam() {
                       className="w-full justify-start text-left font-normal"
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
-                      {formData.start_time ? format(formData.start_time, 'PPP p') : <span>Seleccionar fecha y hora</span>}
+                      {formData.start_time ? (
+                        format(formData.start_time, "PPP p")
+                      ) : (
+                        <span>Seleccionar fecha y hora</span>
+                      )}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0">
@@ -249,9 +295,17 @@ export default function CreateExam() {
                       selected={formData.start_time || undefined}
                       onSelect={(date) => {
                         if (date) {
-                          const newDate = formData.start_time ? new Date(formData.start_time) : new Date();
-                          date.setHours(newDate.getHours(), newDate.getMinutes());
-                          setFormData(prev => ({ ...prev, start_time: date }));
+                          const newDate = formData.start_time
+                            ? new Date(formData.start_time)
+                            : new Date();
+                          date.setHours(
+                            newDate.getHours(),
+                            newDate.getMinutes(),
+                          );
+                          setFormData((prev) => ({
+                            ...prev,
+                            start_time: date,
+                          }));
                         }
                       }}
                       initialFocus
@@ -261,13 +315,24 @@ export default function CreateExam() {
                       <div className="flex gap-2 mt-1">
                         <Input
                           type="time"
-                          value={formData.start_time ? format(formData.start_time, 'HH:mm') : ''}
+                          value={
+                            formData.start_time
+                              ? format(formData.start_time, "HH:mm")
+                              : ""
+                          }
                           onChange={(e) => {
                             if (formData.start_time && e.target.value) {
-                              const [hours, minutes] = e.target.value.split(':');
+                              const [hours, minutes] =
+                                e.target.value.split(":");
                               const newDate = new Date(formData.start_time);
-                              newDate.setHours(parseInt(hours), parseInt(minutes));
-                              setFormData(prev => ({ ...prev, start_time: newDate }));
+                              newDate.setHours(
+                                parseInt(hours),
+                                parseInt(minutes),
+                              );
+                              setFormData((prev) => ({
+                                ...prev,
+                                start_time: newDate,
+                              }));
                             }
                           }}
                         />
@@ -281,9 +346,13 @@ export default function CreateExam() {
                 <Switch
                   id="is_published"
                   checked={formData.is_published}
-                  onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_published: checked }))}
+                  onCheckedChange={(checked) =>
+                    setFormData((prev) => ({ ...prev, is_published: checked }))
+                  }
                 />
-                <Label htmlFor="is_published">Publicar inmediatamente (visible para estudiantes)</Label>
+                <Label htmlFor="is_published">
+                  Publicar inmediatamente (visible para estudiantes)
+                </Label>
               </div>
             </CardContent>
           </Card>
@@ -302,7 +371,8 @@ export default function CreateExam() {
               {questions.length === 0 && (
                 <div className="text-center py-8 border-2 border-dashed rounded-lg">
                   <p className="text-muted-foreground">
-                    No hay preguntas aún. Haz clic en "Agregar Pregunta" para comenzar.
+                    No hay preguntas aún. Haz clic en "Agregar Pregunta" para
+                    comenzar.
                   </p>
                 </div>
               )}
@@ -311,7 +381,9 @@ export default function CreateExam() {
                 <Card key={questionIndex}>
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-base">Pregunta {questionIndex + 1}</CardTitle>
+                      <CardTitle className="text-base">
+                        Pregunta {questionIndex + 1}
+                      </CardTitle>
                       <Button
                         type="button"
                         variant="ghost"
@@ -327,7 +399,13 @@ export default function CreateExam() {
                       <Label>Texto de la pregunta *</Label>
                       <Textarea
                         value={question.question_text}
-                        onChange={(e) => updateQuestion(questionIndex, 'question_text', e.target.value)}
+                        onChange={(e) =>
+                          updateQuestion(
+                            questionIndex,
+                            "question_text",
+                            e.target.value,
+                          )
+                        }
                         placeholder="Escribe tu pregunta aquí..."
                         rows={2}
                         required
@@ -338,29 +416,48 @@ export default function CreateExam() {
                       <Label>Tipo de pregunta</Label>
                       <Select
                         value={question.question_type}
-                        onValueChange={(value) => updateQuestion(questionIndex, 'question_type', value)}
+                        onValueChange={(value) =>
+                          updateQuestion(questionIndex, "question_type", value)
+                        }
                       >
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="multiple_choice">Opción múltiple</SelectItem>
-                          <SelectItem value="true_false">Verdadero/Falso</SelectItem>
-                          <SelectItem value="short_answer">Respuesta corta</SelectItem>
+                          <SelectItem value="multiple_choice">
+                            Opción múltiple
+                          </SelectItem>
+                          <SelectItem value="true_false">
+                            Verdadero/Falso
+                          </SelectItem>
+                          <SelectItem value="short_answer">
+                            Respuesta corta
+                          </SelectItem>
                           <SelectItem value="essay">Ensayo</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
 
-                    {question.question_type === 'multiple_choice' && (
+                    {question.question_type === "multiple_choice" && (
                       <div className="space-y-3">
                         <Label>Opciones de respuesta</Label>
                         {question.options?.map((option, optionIndex) => (
-                          <div key={optionIndex} className="flex items-center gap-2">
-                            <span className="text-sm font-medium min-w-[20px]">{String.fromCharCode(65 + optionIndex)}.</span>
+                          <div
+                            key={optionIndex}
+                            className="flex items-center gap-2"
+                          >
+                            <span className="text-sm font-medium min-w-[20px]">
+                              {String.fromCharCode(65 + optionIndex)}.
+                            </span>
                             <Input
                               value={option}
-                              onChange={(e) => updateQuestionOption(questionIndex, optionIndex, e.target.value)}
+                              onChange={(e) =>
+                                updateQuestionOption(
+                                  questionIndex,
+                                  optionIndex,
+                                  e.target.value,
+                                )
+                              }
                               placeholder={`Opción ${String.fromCharCode(65 + optionIndex)}`}
                             />
                           </div>
@@ -369,14 +466,23 @@ export default function CreateExam() {
                           <Label>Respuesta correcta</Label>
                           <Select
                             value={question.correct_answer}
-                            onValueChange={(value) => updateQuestion(questionIndex, 'correct_answer', value)}
+                            onValueChange={(value) =>
+                              updateQuestion(
+                                questionIndex,
+                                "correct_answer",
+                                value,
+                              )
+                            }
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="Seleccionar respuesta correcta" />
                             </SelectTrigger>
                             <SelectContent>
                               {question.options?.map((_, optionIndex) => (
-                                <SelectItem key={optionIndex} value={String.fromCharCode(65 + optionIndex)}>
+                                <SelectItem
+                                  key={optionIndex}
+                                  value={String.fromCharCode(65 + optionIndex)}
+                                >
                                   Opción {String.fromCharCode(65 + optionIndex)}
                                 </SelectItem>
                               ))}
@@ -386,12 +492,18 @@ export default function CreateExam() {
                       </div>
                     )}
 
-                    {question.question_type === 'true_false' && (
+                    {question.question_type === "true_false" && (
                       <div className="space-y-2">
                         <Label>Respuesta correcta</Label>
                         <Select
                           value={question.correct_answer}
-                          onValueChange={(value) => updateQuestion(questionIndex, 'correct_answer', value)}
+                          onValueChange={(value) =>
+                            updateQuestion(
+                              questionIndex,
+                              "correct_answer",
+                              value,
+                            )
+                          }
                         >
                           <SelectTrigger>
                             <SelectValue placeholder="Seleccionar respuesta correcta" />
@@ -404,21 +516,32 @@ export default function CreateExam() {
                       </div>
                     )}
 
-                    {question.question_type === 'short_answer' && (
+                    {question.question_type === "short_answer" && (
                       <div className="space-y-2">
-                        <Label>Respuesta esperada (opcional, para referencia del profesor)</Label>
+                        <Label>
+                          Respuesta esperada (opcional, para referencia del
+                          profesor)
+                        </Label>
                         <Input
-                          value={question.correct_answer || ''}
-                          onChange={(e) => updateQuestion(questionIndex, 'correct_answer', e.target.value)}
+                          value={question.correct_answer || ""}
+                          onChange={(e) =>
+                            updateQuestion(
+                              questionIndex,
+                              "correct_answer",
+                              e.target.value,
+                            )
+                          }
                           placeholder="Escribe la respuesta esperada..."
                         />
                       </div>
                     )}
 
-                    {question.question_type === 'essay' && (
+                    {question.question_type === "essay" && (
                       <div className="p-3 bg-muted rounded-md">
                         <p className="text-sm text-muted-foreground">
-                          Las preguntas de ensayo se califican manualmente. Los estudiantes tendrán un cuadro de texto para escribir su respuesta.
+                          Las preguntas de ensayo se califican manualmente. Los
+                          estudiantes tendrán un cuadro de texto para escribir
+                          su respuesta.
                         </p>
                       </div>
                     )}
@@ -429,11 +552,19 @@ export default function CreateExam() {
           </Card>
 
           <div className="flex gap-2 justify-end">
-            <Button type="button" variant="outline" onClick={() => navigate(`/courses/${courseId}`)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => navigate(`/courses/${courseId}`)}
+            >
               Cancelar
             </Button>
-            <Button type="submit" disabled={loading} className="bg-gradient-primary shadow-glow">
-              {loading ? 'Creando...' : 'Crear Examen'}
+            <Button
+              type="submit"
+              disabled={loading}
+              className="bg-gradient-primary shadow-glow"
+            >
+              {loading ? "Creando..." : "Crear Examen"}
             </Button>
           </div>
         </form>

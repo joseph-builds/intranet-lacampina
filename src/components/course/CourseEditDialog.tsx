@@ -1,15 +1,26 @@
-import { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
-import { X, UserCheck } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { fetchAllTeachers, Teacher } from '@/utils/teacherUtils';
+import { useState, useEffect } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { X, UserCheck } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { fetchAllTeachers, Teacher } from "@/utils/teacherUtils";
 
 interface CourseEditDialogProps {
   courseId: string;
@@ -18,18 +29,23 @@ interface CourseEditDialogProps {
   onSuccess: () => void;
 }
 
-export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: CourseEditDialogProps) {
+export function CourseEditDialog({
+  courseId,
+  open,
+  onOpenChange,
+  onSuccess,
+}: CourseEditDialogProps) {
   const [loading, setLoading] = useState(false);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [courseTeachers, setCourseTeachers] = useState<Teacher[]>([]);
   const [formData, setFormData] = useState({
-    name: '',
-    code: '',
-    description: '',
-    academic_year: '',
-    teacher_principal_id: '',
-    start_date: '',
-    end_date: ''
+    name: "",
+    code: "",
+    description: "",
+    academic_year: "",
+    teacher_principal_id: "",
+    start_date: "",
+    end_date: "",
   });
 
   useEffect(() => {
@@ -43,25 +59,25 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
   const fetchCourseData = async () => {
     try {
       const { data, error } = await supabase
-        .from('courses')
-        .select('*')
-        .eq('id', courseId)
+        .from("courses")
+        .select("*")
+        .eq("id", courseId)
         .single();
 
       if (error) throw error;
 
       setFormData({
-        name: data.name || '',
-        code: data.code || '',
-        description: data.description || '',
-        academic_year: data.academic_year || '',
-        teacher_principal_id: data.teacher_principal_id || '',
-        start_date: data.start_date || '',
-        end_date: data.end_date || ''
+        name: data.name || "",
+        code: data.code || "",
+        description: data.description || "",
+        academic_year: data.academic_year || "",
+        teacher_principal_id: data.teacher_principal_id || "",
+        start_date: data.start_date || "",
+        end_date: data.end_date || "",
       });
     } catch (error) {
-      console.error('Error fetching course:', error);
-      toast.error('Error al cargar los datos del curso');
+      console.error("Error fetching course:", error);
+      toast.error("Error al cargar los datos del curso");
     }
   };
 
@@ -70,72 +86,74 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
       const teachers = await fetchAllTeachers();
       setTeachers(teachers);
     } catch (error) {
-      console.error('Error fetching teachers:', error);
-      toast.error('Error al cargar profesores');
+      console.error("Error fetching teachers:", error);
+      toast.error("Error al cargar profesores");
     }
   };
 
   const fetchCourseTeachers = async () => {
     try {
       const { data, error } = await supabase
-        .from('course_teachers')
-        .select(`
+        .from("course_teachers")
+        .select(
+          `
           teacher:profiles!course_teachers_teacher_id_fkey(
             id,
             first_name,
             last_name,
             email
           )
-        `)
-        .eq('course_id', courseId);
+        `,
+        )
+        .eq("modulo_id", courseId);
 
       if (error) throw error;
-      setCourseTeachers(data?.map(item => item.teacher).filter(Boolean) || []);
+      setCourseTeachers(
+        data?.map((item) => item.teacher).filter(Boolean) || [],
+      );
     } catch (error) {
-      console.error('Error fetching course teachers:', error);
+      console.error("Error fetching course teachers:", error);
     }
   };
 
   const handleAddTeacher = async (teacherId: string) => {
-    if (courseTeachers.some(t => t.id === teacherId)) {
-      toast.error('Este profesor ya está asignado al curso');
+    if (courseTeachers.some((t) => t.id === teacherId)) {
+      toast.error("Este profesor ya está asignado al curso");
       return;
     }
 
     try {
-      const { error } = await supabase
-        .from('course_teachers')
-        .insert({
-          course_id: courseId,
-          teacher_id: teacherId,
-          is_primary: false
-        });
+      const { error } = await supabase.from("course_teachers").insert({
+        modulo_id: courseId,
+        teacher_id: teacherId,
+        is_primary: false,
+      });
 
       if (error) throw error;
 
-      toast.success('Profesor agregado exitosamente');
+      toast.success("Profesor agregado exitosamente");
       fetchCourseTeachers();
     } catch (error) {
-      console.error('Error adding teacher:', error);
-      toast.error('Error al agregar profesor');
+      console.error("Error adding teacher:", error);
+      toast.error("Error al agregar profesor");
     }
   };
 
   const handleRemoveTeacher = async (teacherId: string) => {
     try {
       const { error } = await supabase
-        .from('course_teachers')
+        .from("course_teachers")
         .delete()
-        .eq('course_id', courseId)
-        .eq('teacher_id', teacherId);
+        .eq("modulo_id", courseId)
+        .eq("teacher_id", teacherId);
 
       if (error) throw error;
 
-      toast.success('Profesor removido exitosamente');
+      toast.success("Profesor removido exitosamente");
       fetchCourseTeachers();
     } catch (error) {
-      console.error('Error removing teacher:', error);
-      toast.error('Error al remover profesor');
+      console.error("Error removing teacher:", error);
+      toast.error("Error al remover profesor");
     }
   };
 
@@ -145,7 +163,7 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
 
     try {
       const { error } = await supabase
-        .from('courses')
+        .from("courses")
         .update({
           name: formData.name,
           code: formData.code,
@@ -153,18 +171,18 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
           academic_year: formData.academic_year,
           teacher_principal_id: formData.teacher_principal_id,
           start_date: formData.start_date || null,
-          end_date: formData.end_date || null
+          end_date: formData.end_date || null,
         })
-        .eq('id', courseId);
+        .eq("id", courseId);
 
       if (error) throw error;
 
-      toast.success('Curso actualizado exitosamente');
+      toast.success("Curso actualizado exitosamente");
       onSuccess();
       onOpenChange(false);
     } catch (error) {
-      console.error('Error updating course:', error);
-      toast.error('Error al actualizar el curso');
+      console.error("Error updating course:", error);
+      toast.error("Error al actualizar el curso");
     } finally {
       setLoading(false);
     }
@@ -185,7 +203,9 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
               <Input
                 id="name"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, name: e.target.value })
+                }
                 required
               />
             </div>
@@ -195,7 +215,9 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
               <Input
                 id="code"
                 value={formData.code}
-                onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, code: e.target.value })
+                }
                 required
               />
             </div>
@@ -206,7 +228,9 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
             <Textarea
               id="description"
               value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, description: e.target.value })
+              }
               rows={3}
             />
           </div>
@@ -218,7 +242,9 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
               <Input
                 id="academic_year"
                 value={formData.academic_year}
-                onChange={(e) => setFormData({ ...formData, academic_year: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, academic_year: e.target.value })
+                }
                 required
               />
             </div>
@@ -232,7 +258,9 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
                 id="start_date"
                 type="date"
                 value={formData.start_date}
-                onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, start_date: e.target.value })
+                }
               />
             </div>
 
@@ -242,7 +270,9 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
                 id="end_date"
                 type="date"
                 value={formData.end_date}
-                onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, end_date: e.target.value })
+                }
               />
             </div>
           </div>
@@ -252,7 +282,9 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
             <Label htmlFor="teacher">Profesor Principal *</Label>
             <Select
               value={formData.teacher_principal_id}
-              onValueChange={(value) => setFormData({ ...formData, teacher_principal_id: value })}
+              onValueChange={(value) =>
+                setFormData({ ...formData, teacher_principal_id: value })
+              }
             >
               <SelectTrigger>
                 <SelectValue placeholder="Seleccionar profesor" />
@@ -270,7 +302,7 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
           {/* Additional Teachers */}
           <div className="space-y-3">
             <Label>Profesores Adicionales</Label>
-            
+
             <div className="flex gap-2">
               <Select onValueChange={handleAddTeacher}>
                 <SelectTrigger className="flex-1">
@@ -278,7 +310,11 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
                 </SelectTrigger>
                 <SelectContent>
                   {teachers
-                    .filter(t => t.id !== formData.teacher_principal_id && !courseTeachers.some(ct => ct.id === t.id))
+                    .filter(
+                      (t) =>
+                        t.id !== formData.teacher_principal_id &&
+                        !courseTeachers.some((ct) => ct.id === t.id),
+                    )
                     .map((teacher) => (
                       <SelectItem key={teacher.id} value={teacher.id}>
                         {teacher.first_name} {teacher.last_name}
@@ -310,7 +346,9 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
           {/* Note about schedule management */}
           <div className="p-4 bg-muted/50 rounded-lg">
             <p className="text-sm text-muted-foreground">
-              <strong>Nota:</strong> El horario del curso (días y horas) se gestiona desde la sección "Horario del Curso" en la página del curso.
+              <strong>Nota:</strong> El horario del curso (días y horas) se
+              gestiona desde la sección "Horario del Curso" en la página del
+              curso.
             </p>
           </div>
 
@@ -324,7 +362,7 @@ export function CourseEditDialog({ courseId, open, onOpenChange, onSuccess }: Co
               Cancelar
             </Button>
             <Button type="submit" disabled={loading}>
-              {loading ? 'Guardando...' : 'Guardar Cambios'}
+              {loading ? "Guardando..." : "Guardar Cambios"}
             </Button>
           </div>
         </form>

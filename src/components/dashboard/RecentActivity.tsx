@@ -1,5 +1,14 @@
 import { useState, useEffect } from "react";
-import { CheckCircle, Clock, AlertCircle, FileText, ClipboardList, BookOpen, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  CheckCircle,
+  Clock,
+  AlertCircle,
+  FileText,
+  ClipboardList,
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,9 +23,9 @@ interface Activity {
   title: string;
   subject: string;
   time: string;
-  status: 'completed' | 'pending' | 'new' | 'graded';
+  status: "completed" | "pending" | "new" | "graded";
   icon: any;
-  type: 'assignment' | 'exam' | 'grade';
+  type: "assignment" | "exam" | "grade";
 }
 
 const ITEMS_PER_PAGE = 8;
@@ -41,11 +50,11 @@ export function RecentActivity() {
 
       // Get enrolled courses
       const { data: enrollments } = await supabase
-        .from('course_enrollments')
-        .select('modulo_id, courses!inner(name)')
-        .eq('student_id', profile!.id);
+        .from("course_enrollments")
+        .select("modulo_id, modulos!inner(course_id, courses(name))")
+        .eq("student_id", profile!.id);
 
-      const courseIds = enrollments?.map(e => e.modulo_id) || [];
+      const courseIds = enrollments?.map((e) => e.modulo_id) || [];
 
       if (courseIds.length === 0) {
         setActivities([]);
@@ -55,89 +64,107 @@ export function RecentActivity() {
 
       // Get recent assignment submissions (completed)
       const { data: submissions } = await supabase
-        .from('assignment_submissions')
-        .select(`
+        .from("assignment_submissions")
+        .select(
+          `
           id,
           submitted_at,
           score,
           assignments!inner(
             title,
-            courses!inner(name)
+            modulos!inner(
+              courses(name)
+            )
           )
-        `)
-        .eq('student_id', profile!.id)
-        .order('submitted_at', { ascending: false })
+        `,
+        )
+        .eq("student_id", profile!.id)
+        .order("submitted_at", { ascending: false })
         .limit(5);
 
       submissions?.forEach((sub: any) => {
         activities.push({
           id: `sub-${sub.id}`,
-          title: sub.score !== null 
-            ? `Tarea calificada: ${sub.assignments.title}`
-            : `Tarea entregada: ${sub.assignments.title}`,
-          subject: sub.assignments.courses.name,
-          time: formatDistanceToNow(new Date(sub.submitted_at), { addSuffix: true, locale: es }),
-          status: sub.score !== null ? 'graded' : 'completed',
+          title:
+            sub.score !== null
+              ? `Tarea calificada: ${sub.assignments.title}`
+              : `Tarea entregada: ${sub.assignments.title}`,
+          subject: sub.assignments.modulos?.courses?.name || "Curso sin nombre",
+          time: formatDistanceToNow(new Date(sub.submitted_at), {
+            addSuffix: true,
+            locale: es,
+          }),
+          status: sub.score !== null ? "graded" : "completed",
           icon: sub.score !== null ? CheckCircle : FileText,
-          type: 'assignment'
+          type: "assignment",
         });
       });
 
       // Get upcoming assignments (pending)
       const { data: upcomingAssignments } = await supabase
-        .from('assignments')
-        .select(`
+        .from("assignments")
+        .select(
+          `
           id,
           title,
           due_date,
-          courses!inner(name)
-        `)
-        .in('course_id', courseIds)
-        .eq('is_published', true)
-        .gt('due_date', new Date().toISOString())
-        .order('due_date', { ascending: true })
+          modulos!inner(
+            courses(name)
+          )
+        `,
+        )
+        .in("modulo_id", courseIds)
+        .eq("is_published", true)
+        .gt("due_date", new Date().toISOString())
+        .order("due_date", { ascending: true })
         .limit(3);
 
       // Check which ones are not submitted
-      const assignmentIds = upcomingAssignments?.map(a => a.id) || [];
+      const assignmentIds = upcomingAssignments?.map((a) => a.id) || [];
       const { data: existingSubmissions } = await supabase
-        .from('assignment_submissions')
-        .select('assignment_id')
-        .eq('student_id', profile!.id)
-        .in('assignment_id', assignmentIds);
+        .from("assignment_submissions")
+        .select("assignment_id")
+        .eq("student_id", profile!.id)
+        .in("assignment_id", assignmentIds);
 
-      const submittedSet = new Set(existingSubmissions?.map(s => s.assignment_id) || []);
+      const submittedSet = new Set(
+        existingSubmissions?.map((s) => s.assignment_id) || [],
+      );
 
       upcomingAssignments?.forEach((assignment: any) => {
         if (!submittedSet.has(assignment.id)) {
           const dueDate = new Date(assignment.due_date);
-          const isUrgent = (dueDate.getTime() - Date.now()) < 24 * 60 * 60 * 1000; // Less than 24 hours
+          const isUrgent = dueDate.getTime() - Date.now() < 24 * 60 * 60 * 1000; // Less than 24 hours
 
           activities.push({
             id: `assign-${assignment.id}`,
             title: `Tarea pendiente: ${assignment.title}`,
-            subject: assignment.courses.name,
+            subject: assignment.modulos?.courses?.name || "Curso sin nombre",
             time: format(dueDate, "d 'de' MMMM, HH:mm", { locale: es }),
-            status: isUrgent ? 'pending' : 'new',
+            status: isUrgent ? "pending" : "new",
             icon: AlertCircle,
-            type: 'assignment'
+            type: "assignment",
           });
         }
       });
 
       // Get upcoming exams
       const { data: upcomingExams } = await supabase
-        .from('exams')
-        .select(`
+        .from("exams")
+        .select(
+          `
           id,
           title,
           start_time,
-          courses!inner(name)
-        `)
-        .in('course_id', courseIds)
-        .eq('is_published', true)
-        .gt('start_time', new Date().toISOString())
-        .order('start_time', { ascending: true })
+          modulos!inner(
+            courses(name)
+          )
+        `,
+        )
+        .in("modulo_id", courseIds)
+        .eq("is_published", true)
+        .gt("start_time", new Date().toISOString())
+        .order("start_time", { ascending: true })
         .limit(3);
 
       upcomingExams?.forEach((exam: any) => {
@@ -145,27 +172,30 @@ export function RecentActivity() {
         activities.push({
           id: `exam-${exam.id}`,
           title: `Examen próximo: ${exam.title}`,
-          subject: exam.courses.name,
+          subject: exam.modulos?.courses?.name || "Curso sin nombre",
           time: format(examDate, "d 'de' MMMM, HH:mm", { locale: es }),
-          status: 'new',
+          status: "new",
           icon: ClipboardList,
-          type: 'exam'
+          type: "exam",
         });
       });
 
       // Sort by most recent/urgent
       activities.sort((a, b) => {
-        if (a.status === 'pending' && b.status !== 'pending') return -1;
-        if (b.status === 'pending' && a.status !== 'pending') return 1;
+        if (a.status === "pending" && b.status !== "pending") return -1;
+        if (b.status === "pending" && a.status !== "pending") return 1;
         return 0;
       });
 
       setTotalActivities(activities.length);
       const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-      const paginatedActivities = activities.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+      const paginatedActivities = activities.slice(
+        startIndex,
+        startIndex + ITEMS_PER_PAGE,
+      );
       setActivities(paginatedActivities);
     } catch (error) {
-      console.error('Error fetching recent activity:', error);
+      console.error("Error fetching recent activity:", error);
     } finally {
       setLoading(false);
     }
@@ -176,34 +206,34 @@ export function RecentActivity() {
   const getStatusConfig = (status: string) => {
     switch (status) {
       case "completed":
-        return { 
-          variant: "secondary" as const, 
+        return {
+          variant: "secondary" as const,
           label: "Completado",
-          iconColor: "text-green-500"
+          iconColor: "text-green-500",
         };
       case "graded":
-        return { 
-          variant: "default" as const, 
+        return {
+          variant: "default" as const,
           label: "Calificado",
-          iconColor: "text-blue-500"
+          iconColor: "text-blue-500",
         };
       case "pending":
-        return { 
-          variant: "destructive" as const, 
+        return {
+          variant: "destructive" as const,
           label: "Urgente",
-          iconColor: "text-destructive"
+          iconColor: "text-destructive",
         };
       case "new":
-        return { 
-          variant: "outline" as const, 
+        return {
+          variant: "outline" as const,
           label: "Próximo",
-          iconColor: "text-accent"
+          iconColor: "text-accent",
         };
       default:
-        return { 
-          variant: "outline" as const, 
+        return {
+          variant: "outline" as const,
           label: "Desconocido",
-          iconColor: "text-muted-foreground"
+          iconColor: "text-muted-foreground",
         };
     }
   };
@@ -257,9 +287,12 @@ export function RecentActivity() {
           {activities.map((activity) => {
             const Icon = activity.icon;
             const statusConfig = getStatusConfig(activity.status);
-            
+
             return (
-              <div key={activity.id} className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors">
+              <div
+                key={activity.id}
+                className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors"
+              >
                 <div className={`mt-0.5 ${statusConfig.iconColor}`}>
                   <Icon className="w-4 h-4" />
                 </div>
@@ -292,7 +325,7 @@ export function RecentActivity() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
                 disabled={currentPage === 1 || loading}
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -303,7 +336,9 @@ export function RecentActivity() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                onClick={() =>
+                  setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+                }
                 disabled={currentPage === totalPages || loading}
               >
                 <ChevronRight className="w-4 h-4" />

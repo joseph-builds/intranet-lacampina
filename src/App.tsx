@@ -35,6 +35,7 @@ import DirectivoDashboard from "./pages/DirectivoDashboard";
 import Calendar from "./pages/Calendar";
 import Messages from "./pages/Messages"; 
 import Support from "./pages/Support";
+import Library from "./pages/Library";
 import NotFound from "./pages/NotFound";
 import AdminBulkStudentImport from "./pages/AdminBulkStudentImport";
 import AssignmentDetail from "./pages/AssignmentDetail";
@@ -171,6 +172,11 @@ const App = () => (
             <Route path="/directivo-dashboard" element={
               <ProtectedRoute>
                 <DirectivoDashboard />
+              </ProtectedRoute>
+            } />
+            <Route path="/library" element={
+              <ProtectedRoute>
+                <Library />
               </ProtectedRoute>
             } />
             <Route path="/student/:studentId" element={

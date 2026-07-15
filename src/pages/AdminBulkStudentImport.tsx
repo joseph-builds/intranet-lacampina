@@ -58,58 +58,72 @@ const AdminBulkStudentImport = () => {
   const fetchClassrooms = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('virtual_classrooms')
-        .select(`
-          *,
-          profiles!virtual_classrooms_teacher_id_fkey (first_name, last_name),
-          courses (count)
-        `)
+      // 1. Traer solo los campos core que sí existen 100% en la tabla 'modulos'
+      const { data: modulosData, error } = await supabase
+        .from('modulos')
+        .select('id, name, teacher_principal_id, is_active, academic_year')
         .eq('is_active', true)
-        .order('academic_year', { ascending: false })
-        .order('grade', { ascending: true });
+        .order('name', { ascending: true }); // Ordenamos por name que es seguro
 
-      if (error) {
-        console.error('Error fetching classrooms:', error);
-        toast({
-          title: "Error",
-          description: "No se pudieron cargar las aulas virtuales",
-          variant: "destructive",
-        });
-      } else {
-        // Fetch unique student counts separately
-        const classroomsWithEnrollments = await Promise.all(
-          (data || []).map(async (classroom) => {
-            const { data: courses } = await supabase
-              .from('courses')
-              .select('id')
-              .eq('classroom_id', classroom.id);
-            
-            const courseIds = courses?.map(c => c.id) || [];
-            
-            if (courseIds.length > 0) {
-              const { data: enrollments } = await supabase
-                .from('course_enrollments')
-                .select('student_id')
-                .in('modulo_id', courseIds);
-              
-              // Count unique students
-              const uniqueStudents = new Set(enrollments?.map(e => e.student_id) || []);
-              
-              return { ...classroom, enrollments: [{ count: uniqueStudents.size }] };
-            }
-            
-            return { ...classroom, enrollments: [{ count: 0 }] };
-          })
-        );
-        
-        setClassrooms(classroomsWithEnrollments as VirtualClassroom[]);
+      if (error) throw error;
+
+      // 2. Traer perfiles de profesores/tutores de forma asíncrona
+      const teacherIds = [...new Set(modulosData?.map(m => m.teacher_principal_id).filter(Boolean))];
+      let profilesMap = new Map();
+      
+      if (teacherIds.length > 0) {
+        const { data: profilesData } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name')
+          .in('id', teacherIds);
+          
+        profilesData?.forEach(p => profilesMap.set(p.id, p));
       }
-    } catch (error) {
-      console.error('Error:', error);
+
+      // 3. Traer conteo de estudiantes matriculados
+      const moduloIds = modulosData?.map(m => m.id) || [];
+      let enrollmentsMap = new Map();
+      
+      if (moduloIds.length > 0) {
+        const { data: enrollmentsData } = await supabase
+          .from('course_enrollments')
+          .select('modulo_id, student_id')
+          .in('modulo_id', moduloIds);
+
+        if (enrollmentsData) {
+          enrollmentsData.forEach(e => {
+            if (!enrollmentsMap.has(e.modulo_id)) {
+              enrollmentsMap.set(e.modulo_id, new Set());
+            }
+            enrollmentsMap.get(e.modulo_id).add(e.student_id);
+          });
+        }
+      }
+
+      // 4. Mapear los datos simulando los campos de grado/sección para que la UI no se rompa
+      const formattedClassrooms = modulosData?.map(modulo => {
+        const teacherInfo = profilesMap.get(modulo.teacher_principal_id);
+        const uniqueStudentsCount = enrollmentsMap.get(modulo.id)?.size || 0;
+
+        return {
+          ...modulo,
+          grade: 'Módulo ', // Quitamos el fallback al campo 'grade' inexistente
+          section: 'Único',  // Fallback seguro
+          education_level: 'General',
+          teacher_id: modulo.teacher_principal_id,
+          profiles: teacherInfo || null,
+          enrollments: [{ count: uniqueStudentsCount }],
+          courses: [{ count: 1 }]
+        };
+      }) || [];
+
+      setClassrooms(formattedClassrooms as any);
+
+    } catch (error: any) {
+      console.error('Error fetching classrooms:', error);
       toast({
         title: "Error",
-        description: "Ocurrió un error al cargar los datos",
+        description: "No se pudieron cargar los datos de las aulas",
         variant: "destructive",
       });
     } finally {
@@ -192,8 +206,8 @@ const AdminBulkStudentImport = () => {
                 <span className="font-medium">{getEnrollmentCount(classroom)}</span>
               </div>
               {classroom.profiles && (
-                <div className="text-xs text-muted-foreground pt-2 border-t">
-                  Tutor: {classroom.profiles.first_name} {classroom.profiles.last_name}
+                <div className="text-xs text-muted-foreground pt-2 border-t mt-2">
+                  Tutor/Profesor: {classroom.profiles.first_name} {classroom.profiles.last_name}
                 </div>
               )}
             </CardContent>

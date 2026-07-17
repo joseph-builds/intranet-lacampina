@@ -1,389 +1,372 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/hooks/useAuth';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { Plus, Search, Edit, Trash2, Users, BookOpen, UserCheck, UserX, Filter, Mail, Phone, GraduationCap } from 'lucide-react';
+import { Plus, Search, Edit, Users, BookOpen, Mail, Phone, GraduationCap, ShieldAlert } from 'lucide-react';
 
+// --- INTERFACES ---
+interface Level { id: string; name: string; }
+interface Grade { id: string; name: string; level_id: string; level?: Level; }
 interface Student {
-  id: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  phone: string | null;
-  role: string;
-  is_active: boolean;
-  created_at: string;
-  nivel?: string; // Futura columna en BD
-  grado?: string; // Futura columna en BD
-  enrollments?: { count: number }[];
+  id: string; first_name: string; last_name: string; email: string;
+  phone: string | null; guardian_name: string | null; emergency_phone: string | null;
+  role: string; is_active: boolean; current_grade_id?: string; grade?: Grade;
 }
-
-interface Course {
-  id: string;
-  name: string;
-  code: string;
-}
-
-interface Enrollment {
-  id: string;
-  student_id: string;
-  modulo_id: string;
-  enrolled_at: string;
-  course: Course;
-}
-
 interface StudentFormData {
-  first_name: string;
-  last_name: string;
-  email: string;
-  phone: string;
+  first_name: string; last_name: string; email: string; phone: string;
+  guardian_name: string; emergency_phone: string; current_grade_id: string;
 }
+interface CourseMalla { id: string; name: string; area: string; is_mandatory: boolean; }
 
 const AdminStudentManagement = () => {
-  const { profile } = useAuth();
   const { toast } = useToast();
   
-  // States
+  // --- ESTADOS ---
   const [students, setStudents] = useState<Student[]>([]);
-  const [courses, setCourses] = useState<Course[]>([]);
+  const [levels, setLevels] = useState<Level[]>([]);
+  const [grades, setGrades] = useState<Grade[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  
+  // Estados para Malla y Exoneraciones
+  const [studentMallaCourses, setStudentMallaCourses] = useState<CourseMalla[]>([]);
+  const [exemptions, setExemptions] = useState<string[]>([]);
+  const [loadingCourses, setLoadingCourses] = useState(false);
+  
+  // Modales
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
+  
+  // Selección
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [studentEnrollments, setStudentEnrollments] = useState<Enrollment[]>([]);
   
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [nivelFilter, setNivelFilter] = useState('all');
   const [gradoFilter, setGradoFilter] = useState('all');
-  
-  const [selectedCourseForEnrollment, setSelectedCourseForEnrollment] = useState('');
-  const [formData, setFormData] = useState<StudentFormData>({
-    first_name: '', last_name: '', email: '', phone: ''
-  });
 
-  useEffect(() => {
-    fetchStudents();
-    fetchCourses();
-  }, []);
+  // Formulario
+  const initialFormState: StudentFormData = {
+    first_name: '', last_name: '', email: '', phone: '', guardian_name: '', emergency_phone: '', current_grade_id: 'unassigned'
+  };
+  const [formData, setFormData] = useState<StudentFormData>(initialFormState);
+
+  // --- EFECTOS ---
+  useEffect(() => { fetchInitialData(); }, []);
+
+  const fetchInitialData = async () => {
+    setLoading(true);
+    await Promise.all([fetchLevelsAndGrades(), fetchStudents()]);
+    setLoading(false);
+  };
+
+  const fetchLevelsAndGrades = async () => {
+    try {
+      const [levelsRes, gradesRes] = await Promise.all([
+        supabase.from('academic_levels').select('*').order('name'),
+        supabase.from('academic_grades').select('*, level:academic_levels(id, name)').order('name')
+      ]);
+      if (levelsRes.data) setLevels(levelsRes.data);
+      if (gradesRes.data) setGrades(gradesRes.data);
+    } catch (error) {
+      console.error("Error cargando estructura académica", error);
+    }
+  };
 
   const fetchStudents = async () => {
-    setLoading(true);
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select(`*, enrollments:course_enrollments (count)`)
+        .select(`id, first_name, last_name, email, phone, guardian_name, emergency_phone, is_active, role, current_grade_id, grade:academic_grades(id, name, level:academic_levels(id, name))`)
         .eq('role', 'student')
-        .order('created_at', { ascending: false });
+        .order('first_name', { ascending: true });
 
       if (error) throw error;
       setStudents(data || []);
     } catch (error) {
-      console.error('Error fetching students:', error);
-      toast({ title: "Error", description: "No se pudieron cargar los estudiantes", variant: "destructive" });
-    } finally {
-      setLoading(false);
+      toast({ title: "Error", description: "No se pudieron cargar los estudiantes.", variant: "destructive" });
     }
   };
 
-  const fetchCourses = async () => {
-    try {
-      const { data, error } = await supabase.from('courses').select('id, name, code').eq('is_active', true).order('name');
-      if (!error) setCourses(data || []);
-    } catch (error) {
-      console.error('Error:', error);
-    }
-  };
-
-  const fetchStudentEnrollments = async (studentId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('course_enrollments')
-        .select(`*, course:courses (id, name, code)`)
-        .eq('student_id', studentId)
-        .order('enrollment_date', { ascending: false });
-      if (!error) setStudentEnrollments(data || []);
-    } catch (error) {
-      console.error('Error:', error);
-    }
-  };
-
-  const handleCreateStudent = async (e: React.FormEvent) => {
+  // --- FUNCIONES CRUD ---
+  const handleSaveStudent = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaving(true);
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: 'TempPassword123!',
-        options: { data: { first_name: formData.first_name, last_name: formData.last_name, role: 'student' } }
-      });
+      const payload = {
+        first_name: formData.first_name.trim(),
+        last_name: formData.last_name.trim(),
+        email: formData.email.trim(),
+        phone: formData.phone.trim() || null,
+        guardian_name: formData.guardian_name.trim() || null,
+        emergency_phone: formData.emergency_phone.trim() || null,
+        current_grade_id: formData.current_grade_id === 'unassigned' ? null : formData.current_grade_id,
+        role: 'student',
+        is_active: true
+      };
 
-      if (authError) throw authError;
-
-      if (authData.user) {
-        await supabase.from('profiles').update({ phone: formData.phone || null, role: 'student' }).eq('id', authData.user.id);
+      if (editingStudent) {
+        const { error } = await supabase.from('profiles').update(payload).eq('id', editingStudent.id);
+        if (error) throw error;
+        toast({ title: "Éxito", description: "Datos del estudiante actualizados." });
+      } else {
+        const { error: profileError } = await supabase.from('profiles').insert([payload]);
+        if (profileError) throw profileError; 
+        toast({ title: "Éxito", description: "Estudiante matriculado en el sistema." });
       }
-
-      toast({ title: "Éxito", description: "Estudiante creado exitosamente." });
-      setIsCreateModalOpen(false);
-      resetForm();
+      closeModal();
       fetchStudents();
-    } catch (error) {
-      toast({ title: "Error", description: "Error al crear el estudiante", variant: "destructive" });
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Ocurrió un error al guardar.", variant: "destructive" });
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleEditStudent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingStudent) return;
+  const handleToggleStatus = async (student: Student, newStatus: boolean) => {
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ first_name: formData.first_name, last_name: formData.last_name, phone: formData.phone || null })
-        .eq('id', editingStudent.id);
+      const { error } = await supabase.from('profiles').update({ is_active: newStatus }).eq('id', student.id);
       if (error) throw error;
-      
-      toast({ title: "Éxito", description: "Estudiante actualizado exitosamente" });
-      setIsEditModalOpen(false);
-      setEditingStudent(null);
-      resetForm();
+      toast({ title: "Estado actualizado", description: `El alumno ahora está ${newStatus ? 'activo' : 'inactivo'}.` });
       fetchStudents();
     } catch (error) {
-      toast({ title: "Error", description: "No se pudo actualizar", variant: "destructive" });
+      toast({ title: "Error", description: "No se pudo cambiar el estado.", variant: "destructive" });
     }
   };
 
-  const handleToggleStudentStatus = async (student: Student) => {
+  // --- LOGICA DE EXONERACIONES ---
+  const openEnrollModal = async (student: Student) => {
+    setSelectedStudent(student);
+    setStudentMallaCourses([]);
+    setExemptions([]);
+    setIsEnrollModalOpen(true);
+    
+    if (student.grade?.id) {
+      setLoadingCourses(true);
+      try {
+        // 1. Cargar Malla Activa
+        const { data: malla } = await supabase
+          .from('base_courses')
+          .select('id, name, area, is_mandatory, course:courses(is_active)')
+          .eq('grade_id', student.grade.id)
+          .order('name');
+          
+        const cursosActivos = (malla || []).filter(c => c.course?.is_active !== false);
+        setStudentMallaCourses(cursosActivos as any);
+
+        // 2. Cargar Exoneraciones del alumno
+        const { data: exempData } = await supabase
+          .from('student_course_exemptions')
+          .select('base_course_id')
+          .eq('student_id', student.id);
+          
+        setExemptions(exempData?.map(e => e.base_course_id) || []);
+      } catch (err) {
+        toast({ title: "Error", description: "Fallo al cargar cursos.", variant: "destructive" });
+      } finally {
+        setLoadingCourses(false);
+      }
+    }
+  };
+
+  const handleToggleExemption = async (baseCourseId: string, isExempted: boolean) => {
+    if (!selectedStudent) return;
     try {
-      const { error } = await supabase.from('profiles').update({ is_active: !student.is_active }).eq('id', student.id);
-      if (error) throw error;
-      toast({ title: "Éxito", description: `Estado actualizado` });
-      fetchStudents();
+      if (isExempted) {
+        await supabase.from('student_course_exemptions').insert({ student_id: selectedStudent.id, base_course_id: baseCourseId });
+        setExemptions(prev => [...prev, baseCourseId]);
+        toast({ title: "Exonerado", description: "El alumno ya no llevará este curso." });
+      } else {
+        await supabase.from('student_course_exemptions').delete().eq('student_id', selectedStudent.id).eq('base_course_id', baseCourseId);
+        setExemptions(prev => prev.filter(id => id !== baseCourseId));
+        toast({ title: "Inscrito", description: "El alumno ha sido reincorporado al curso." });
+      }
     } catch (error) {
-      console.error('Error:', error);
+      toast({ title: "Error", description: "No se pudo actualizar el estado.", variant: "destructive" });
     }
   };
 
-  const handleEnrollStudent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedStudent || !selectedCourseForEnrollment) return;
-    try {
-      const { error } = await supabase.from('course_enrollments').insert([{
-        student_id: selectedStudent.id,
-        modulo_id: selectedCourseForEnrollment,
-        enrolled_at: new Date().toISOString()
-      }]);
-
-      if (error) throw error;
-      toast({ title: "Éxito", description: "Estudiante matriculado" });
-      setSelectedCourseForEnrollment('');
-      fetchStudentEnrollments(selectedStudent.id);
-      fetchStudents();
-    } catch (error) {
-      toast({ title: "Error", description: "No se pudo matricular", variant: "destructive" });
-    }
-  };
-
-  const handleUnenrollStudent = async (enrollmentId: string) => {
-    if (!confirm('¿Estás seguro de que quieres retirar al estudiante de este curso?')) return;
-    try {
-      const { error } = await supabase.from('course_enrollments').delete().eq('id', enrollmentId);
-      if (error) throw error;
-      toast({ title: "Éxito", description: "Estudiante retirado" });
-      if (selectedStudent) fetchStudentEnrollments(selectedStudent.id);
-      fetchStudents();
-    } catch (error) {
-      console.error('Error:', error);
-    }
-  };
-
+  // --- CONTROL DE UI ---
+  const openCreateModal = () => { setEditingStudent(null); setFormData(initialFormState); setIsModalOpen(true); };
   const openEditModal = (student: Student) => {
     setEditingStudent(student);
-    setFormData({ first_name: student.first_name, last_name: student.last_name, email: student.email, phone: student.phone || '' });
-    setIsEditModalOpen(true);
+    setFormData({
+      first_name: student.first_name || '', last_name: student.last_name || '', email: student.email || '',
+      phone: student.phone || '', guardian_name: student.guardian_name || '', emergency_phone: student.emergency_phone || '',
+      current_grade_id: student.current_grade_id || 'unassigned',
+    });
+    setIsModalOpen(true);
   };
+  const closeModal = () => { setIsModalOpen(false); setEditingStudent(null); setFormData(initialFormState); };
 
-  const openEnrollModal = (student: Student) => {
-    setSelectedStudent(student);
-    fetchStudentEnrollments(student.id);
-    setIsEnrollModalOpen(true);
-  };
+  // --- FILTROS OPTIMIZADOS ---
+  const filteredStudents = useMemo(() => {
+    return students.filter(student => {
+      const searchStr = `${student.first_name} ${student.last_name} ${student.email} ${student.guardian_name || ''}`.toLowerCase();
+      const matchesSearch = searchStr.includes(searchTerm.toLowerCase());
+      
+      const matchesStatus = filterStatus === 'all' || 
+                           (filterStatus === 'active' && student.is_active) || 
+                           (filterStatus === 'inactive' && !student.is_active);
+      
+      const studentLevelId = student.grade?.level?.id || 'unassigned';
+      const studentGradeId = student.grade?.id || 'unassigned';
+      const matchesNivel = nivelFilter === 'all' || studentLevelId === nivelFilter;
+      const matchesGrado = gradoFilter === 'all' || studentGradeId === gradoFilter;
 
-  const resetForm = () => setFormData({ first_name: '', last_name: '', email: '', phone: '' });
+      return matchesSearch && matchesStatus && matchesNivel && matchesGrado;
+    });
+  }, [students, searchTerm, filterStatus, nivelFilter, gradoFilter]);
 
-  // Filtros combinados
-  const filteredStudents = students.filter(student => {
-    const searchString = `${student.first_name} ${student.last_name} ${student.email}`.toLowerCase();
-    const matchesSearch = searchString.includes(searchTerm.toLowerCase());
-    const matchesStatus = filterStatus === 'all' || (filterStatus === 'active' && student.is_active) || (filterStatus === 'inactive' && !student.is_active);
-    
-    // Simulando el filtro de nivel/grado hasta agregar las columnas a BD
-    const matchesNivel = nivelFilter === 'all' || student.nivel === nivelFilter;
-    const matchesGrado = gradoFilter === 'all' || student.grado === gradoFilter;
-
-    return matchesSearch && matchesStatus && matchesNivel && matchesGrado;
-  });
-
-  const StudentForm = ({ onSubmit, isEdit = false }: { onSubmit: (e: React.FormEvent) => void, isEdit?: boolean }) => (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="first_name">Nombres</Label>
-          <Input id="first_name" value={formData.first_name} onChange={(e) => setFormData({ ...formData, first_name: e.target.value })} required />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="last_name">Apellidos</Label>
-          <Input id="last_name" value={formData.last_name} onChange={(e) => setFormData({ ...formData, last_name: e.target.value })} required />
-        </div>
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
-        <Input id="email" type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} required disabled={isEdit} />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="phone">Teléfono</Label>
-        <Input id="phone" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
-      </div>
-      <div className="flex justify-end gap-2 pt-4">
-        <Button type="button" variant="outline" onClick={() => { isEdit ? setIsEditModalOpen(false) : setIsCreateModalOpen(false); resetForm(); }}>Cancelar</Button>
-        <Button type="submit">{isEdit ? 'Actualizar' : 'Crear Estudiante'}</Button>
-      </div>
-    </form>
-  );
+  const availableGradesForFilter = useMemo(() => {
+    if (nivelFilter === 'all') return grades;
+    return grades.filter(g => g.level_id === nivelFilter);
+  }, [grades, nivelFilter]);
 
   return (
     <DashboardLayout>
       <div className="container mx-auto px-4 py-8 space-y-6">
-        {/* Header */}
+        
+        {/* CABECERA */}
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold flex items-center gap-3">
-              <GraduationCap className="h-8 w-8 text-primary" />
+            <h1 className="text-3xl font-bold flex items-center gap-3 text-gray-800">
+              <Users className="h-8 w-8 text-blue-600" />
               Gestión de Estudiantes
             </h1>
-            <p className="text-muted-foreground mt-1">Administra la matrícula, grados y niveles del colegio</p>
+            <p className="text-muted-foreground mt-1">Administra la base de datos de alumnos, apoderados y asignación de grados.</p>
           </div>
-          <Button onClick={() => setIsCreateModalOpen(true)} className="bg-blue-600 hover:bg-blue-700">
+          <Button onClick={openCreateModal} className="bg-blue-600 hover:bg-blue-700 shadow-md">
             <Plus className="w-4 h-4 mr-2" />
-            Matricular Nuevo Alumno
+            + Nuevo Estudiante
           </Button>
         </div>
 
-        {/* Filtros de Colegio */}
+        {/* BARRA DE FILTROS */}
         <Card className="border-0 shadow-sm bg-white">
           <CardContent className="p-4">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="relative md:col-span-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Buscar alumno..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input placeholder="Buscar alumno, email o apoderado..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
               </div>
-              <Select value={nivelFilter} onValueChange={setNivelFilter}>
+              <Select value={nivelFilter} onValueChange={(val) => { setNivelFilter(val); setGradoFilter('all'); }}>
                 <SelectTrigger><SelectValue placeholder="Nivel Educativo" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos los Niveles</SelectItem>
-                  <SelectItem value="inicial">Inicial (3-5 años)</SelectItem>
-                  <SelectItem value="primaria">Primaria</SelectItem>
-                  <SelectItem value="secundaria">Secundaria</SelectItem>
+                  {levels.map(l => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <Select value={gradoFilter} onValueChange={setGradoFilter}>
+              <Select value={gradoFilter} onValueChange={setGradoFilter} disabled={nivelFilter === 'all' && grades.length === 0}>
                 <SelectTrigger><SelectValue placeholder="Grado" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos los Grados</SelectItem>
-                  <SelectItem value="1">1er Grado</SelectItem>
-                  <SelectItem value="2">2do Grado</SelectItem>
-                  <SelectItem value="3">3er Grado</SelectItem>
-                  <SelectItem value="4">4to Grado</SelectItem>
-                  <SelectItem value="5">5to Grado</SelectItem>
-                  <SelectItem value="6">6to Grado</SelectItem>
+                  {availableGradesForFilter.map(g => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}
                 </SelectContent>
               </Select>
               <Select value={filterStatus} onValueChange={setFilterStatus}>
                 <SelectTrigger><SelectValue placeholder="Estado" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos los estados</SelectItem>
-                  <SelectItem value="active">Activos</SelectItem>
-                  <SelectItem value="inactive">Inactivos</SelectItem>
+                  <SelectItem value="active">Solo Activos</SelectItem>
+                  <SelectItem value="inactive">Solo Inactivos</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </CardContent>
         </Card>
 
-        {/* Tabla */}
-        <Card className="border-0 shadow-lg bg-white">
-          <CardHeader>
-            <CardTitle className="text-lg">Alumnos Registrados ({filteredStudents.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
+        {/* TABLA PRINCIPAL */}
+        <Card className="border-0 shadow-sm bg-white">
+          <CardContent className="p-0">
             {loading ? (
-               <div className="animate-pulse space-y-4 py-4">
-                 {[1,2,3].map(i => <div key={i} className="h-12 bg-muted rounded w-full"></div>)}
-               </div>
+              <div className="p-8 text-center text-gray-500 animate-pulse">Cargando base de datos de estudiantes...</div>
             ) : (
-              <div className="rounded-md border overflow-hidden">
+              <div className="overflow-x-auto">
                 <Table>
-                  <TableHeader className="bg-muted/50">
+                  <TableHeader className="bg-gray-50">
                     <TableRow>
                       <TableHead>Estudiante</TableHead>
-                      <TableHead>Nivel / Grado</TableHead>
-                      <TableHead>Cursos Matriculados</TableHead>
-                      <TableHead>Estado</TableHead>
-                      <TableHead className="text-center">Acciones</TableHead>
+                      <TableHead>Grado / Nivel</TableHead>
+                      <TableHead>Apoderado / Emergencia</TableHead>
+                      <TableHead className="text-center">Estado</TableHead>
+                      <TableHead className="text-right pr-6">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody className="bg-white">
+                  <TableBody>
                     {filteredStudents.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                          <Users className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                          No se encontraron estudiantes con esos filtros.
+                        <TableCell colSpan={5} className="text-center py-12 text-muted-foreground">
+                          <GraduationCap className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                          No se encontraron estudiantes con los filtros actuales.
                         </TableCell>
                       </TableRow>
                     ) : (
                       filteredStudents.map((student) => (
-                        <TableRow key={student.id} className="hover:bg-muted/30">
+                        <TableRow key={student.id} className="hover:bg-gray-50/50">
                           <TableCell>
-                            <div className="font-medium text-gray-900">{student.first_name} {student.last_name}</div>
-                            <div className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                              <Mail className="w-3 h-3" /> {student.email}
+                            <div className="font-semibold text-gray-900">{student.first_name} {student.last_name}</div>
+                            <div className="text-xs text-gray-500 flex items-center mt-1">
+                              <Mail className="w-3 h-3 mr-1" /> {student.email}
                             </div>
+                            {student.phone && (
+                              <div className="text-xs text-gray-500 flex items-center mt-0.5">
+                                <Phone className="w-3 h-3 mr-1" /> {student.phone}
+                              </div>
+                            )}
                           </TableCell>
                           <TableCell>
-                            <span className="text-sm text-gray-500 italic">Por asignar</span>
+                            {student.grade ? (
+                              <div>
+                                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 font-semibold">
+                                  {student.grade.name}
+                                </Badge>
+                                <div className="text-xs text-gray-500 mt-1 pl-1">{student.grade.level?.name}</div>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-orange-500 italic flex items-center">
+                                <ShieldAlert className="w-3 h-3 mr-1"/> Sin asignar
+                              </span>
+                            )}
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">
-                              <BookOpen className="w-3 h-3 mr-1" />
-                              {student.enrollments?.[0]?.count || 0} cursos
-                            </Badge>
+                            {student.guardian_name ? (
+                              <div className="text-sm font-medium text-gray-700">{student.guardian_name}</div>
+                            ) : (
+                              <span className="text-xs text-gray-400 italic">No registrado</span>
+                            )}
+                            {student.emergency_phone && (
+                              <div className="text-xs text-red-600 flex items-center mt-1 font-medium">
+                                <Phone className="w-3 h-3 mr-1" /> {student.emergency_phone}
+                              </div>
+                            )}
                           </TableCell>
-                          <TableCell>
-                            <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${student.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                              {student.is_active ? 'Activo' : 'Inactivo'}
-                            </span>
+                          <TableCell className="text-center">
+                             <div className="flex items-center justify-center gap-2">
+                                <Switch checked={student.is_active} onCheckedChange={(val) => handleToggleStatus(student, val)} />
+                                <span className={`text-xs font-medium w-12 text-left ${student.is_active ? "text-green-600" : "text-gray-400"}`}>
+                                  {student.is_active ? 'Activo' : 'Inactivo'}
+                                </span>
+                             </div>
                           </TableCell>
-                          <TableCell>
-                            <div className="flex items-center justify-center gap-2">
-                              <Button variant="outline" size="sm" title="Matricular en Cursos" onClick={() => openEnrollModal(student)}>
-                                <BookOpen className="w-4 h-4 text-indigo-600" />
+                          <TableCell className="text-right pr-4">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button variant="ghost" size="sm" className="h-8 px-2 text-indigo-600 hover:bg-indigo-50" onClick={() => openEnrollModal(student)} title="Ver Cursos/Matrícula">
+                                <BookOpen className="w-4 h-4 mr-1" /> <span className="hidden sm:inline text-xs">Cursos</span>
                               </Button>
-                              <Button variant="outline" size="sm" title="Editar Estudiante" onClick={() => openEditModal(student)}>
-                                <Edit className="w-4 h-4 text-blue-600" />
-                              </Button>
-                              <Button variant="outline" size="sm" title={student.is_active ? 'Desactivar' : 'Activar'} onClick={() => handleToggleStudentStatus(student)}>
-                                {student.is_active ? <UserX className="w-4 h-4 text-red-600" /> : <UserCheck className="w-4 h-4 text-green-600" />}
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50" onClick={() => openEditModal(student)} title="Editar Ficha">
+                                <Edit className="w-4 h-4" />
                               </Button>
                             </div>
                           </TableCell>
@@ -397,54 +380,144 @@ const AdminStudentManagement = () => {
           </CardContent>
         </Card>
 
-        {/* Modales - Mantenemos tus modales originales de Supabase aquí */}
-        <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
-          <DialogContent><DialogHeader><DialogTitle>Nuevo Estudiante</DialogTitle></DialogHeader><StudentForm onSubmit={handleCreateStudent} /></DialogContent>
-        </Dialog>
-        
-        <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-          <DialogContent><DialogHeader><DialogTitle>Editar Estudiante</DialogTitle></DialogHeader><StudentForm onSubmit={handleEditStudent} isEdit={true} /></DialogContent>
-        </Dialog>
-
-        <Dialog open={isEnrollModalOpen} onOpenChange={setIsEnrollModalOpen}>
-          <DialogContent className="max-w-4xl">
-            <DialogHeader><DialogTitle>Matrícula de Cursos - {selectedStudent?.first_name} {selectedStudent?.last_name}</DialogTitle></DialogHeader>
-            <div className="space-y-6">
+        {/* MODAL CREAR / EDITAR ESTUDIANTE */}
+        <Dialog open={isModalOpen} onOpenChange={(open) => { if(!open) closeModal(); }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-xl">{editingStudent ? 'Editar Ficha del Estudiante' : 'Registrar Nuevo Estudiante'}</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleSaveStudent} className="space-y-6 mt-4">
               <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Inscribir en nuevo curso</h3>
-                <form onSubmit={handleEnrollStudent} className="flex gap-2">
-                  <Select value={selectedCourseForEnrollment} onValueChange={setSelectedCourseForEnrollment}>
-                    <SelectTrigger className="flex-1"><SelectValue placeholder="Seleccionar curso" /></SelectTrigger>
-                    <SelectContent>
-                      {courses.filter(course => !studentEnrollments.some(enrollment => enrollment.modulo_id === course.id)).map((course) => (
-                        <SelectItem key={course.id} value={course.id}>{course.name} ({course.code})</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button type="submit" disabled={!selectedCourseForEnrollment}>Inscribir</Button>
-                </form>
+                <h3 className="text-sm font-bold text-gray-500 uppercase border-b pb-2">1. Datos del Alumno</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label>Nombres *</Label><Input value={formData.first_name} onChange={e => setFormData({...formData, first_name: e.target.value})} required autoFocus/></div>
+                  <div className="space-y-2"><Label>Apellidos *</Label><Input value={formData.last_name} onChange={e => setFormData({...formData, last_name: e.target.value})} required /></div>
+                  <div className="space-y-2"><Label>Correo Institucional / Personal *</Label><Input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} required disabled={!!editingStudent} className={editingStudent ? "bg-gray-100" : ""}/></div>
+                  <div className="space-y-2"><Label>Teléfono Celular (Opcional)</Label><Input value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} placeholder="Ej: 987654321" /></div>
+                </div>
               </div>
               <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Cursos Actuales ({studentEnrollments.length})</h3>
-                {studentEnrollments.length > 0 ? (
-                  <Table>
-                    <TableHeader><TableRow><TableHead>Curso</TableHead><TableHead>Fecha</TableHead><TableHead>Acciones</TableHead></TableRow></TableHeader>
-                    <TableBody>
-                      {studentEnrollments.map((enrollment) => (
-                        <TableRow key={enrollment.id}>
-                          <TableCell className="font-medium">{enrollment.course.name}</TableCell>
-                          <TableCell>{new Date(enrollment.enrolled_at).toLocaleDateString()}</TableCell>
-                          <TableCell><Button variant="destructive" size="sm" onClick={() => handleUnenrollStudent(enrollment.id)}><Trash2 className="w-4 h-4" /></Button></TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (<p className="text-muted-foreground text-sm">No está matriculado en ningún curso.</p>)}
+                <h3 className="text-sm font-bold text-gray-500 uppercase border-b pb-2">2. Ubicación Académica</h3>
+                <div className="grid grid-cols-1 gap-4">
+                  <div className="space-y-2">
+                    <Label>Grado Actual</Label>
+                    <Select value={formData.current_grade_id} onValueChange={val => setFormData({...formData, current_grade_id: val})}>
+                      <SelectTrigger><SelectValue placeholder="Seleccionar grado a cursar" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="unassigned" className="text-orange-600 font-medium">Dejar sin asignar temporalmente</SelectItem>
+                        {levels.map(level => (
+                          <div key={`group-${level.id}`}>
+                            <div className="px-2 py-1.5 text-xs font-bold text-gray-400 uppercase bg-gray-50">{level.name}</div>
+                            {grades.filter(g => g.level_id === level.id).map(grade => (
+                              <SelectItem key={grade.id} value={grade.id} className="pl-6">{grade.name}</SelectItem>
+                            ))}
+                          </div>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500">Asignar el grado conectará al alumno automáticamente a la malla curricular correspondiente.</p>
+                  </div>
+                </div>
               </div>
-            </div>
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold text-gray-500 uppercase border-b pb-2">3. Apoderado / Emergencia</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label>Nombre del Padre/Madre/Apoderado</Label><Input value={formData.guardian_name} onChange={e => setFormData({...formData, guardian_name: e.target.value})} placeholder="Nombre completo" /></div>
+                  <div className="space-y-2"><Label className="text-red-600">Teléfono de Emergencia</Label><Input value={formData.emergency_phone} onChange={e => setFormData({...formData, emergency_phone: e.target.value})} placeholder="Nro para llamadas urgentes" className="border-red-200 focus-visible:ring-red-500" /></div>
+                </div>
+              </div>
+              <DialogFooter className="pt-4 border-t">
+                <Button type="button" variant="outline" onClick={closeModal} disabled={saving}>Cancelar</Button>
+                <Button type="submit" className="bg-blue-600 text-white" disabled={saving}>{saving ? 'Guardando...' : (editingStudent ? 'Actualizar Ficha' : 'Registrar Estudiante')}</Button>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
 
+        {/* MODAL VER CURSOS (Con gestión de exoneraciones) */}
+        <Dialog open={isEnrollModalOpen} onOpenChange={setIsEnrollModalOpen}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Situación Académica y Cursos Asignados</DialogTitle>
+            </DialogHeader>
+            <div className="py-4 space-y-6">
+              <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-lg border">
+                <div className="bg-blue-100 p-3 rounded-full"><GraduationCap className="w-6 h-6 text-blue-600" /></div>
+                <div>
+                  <h3 className="text-lg font-bold">{selectedStudent?.first_name} {selectedStudent?.last_name}</h3>
+                  {selectedStudent?.grade ? (
+                    <p className="text-sm font-medium text-blue-600">Matriculado en: {selectedStudent.grade.name} ({selectedStudent.grade.level?.name})</p>
+                  ) : <p className="text-sm font-medium text-orange-600">Sin grado asignado actualmente.</p>}
+                </div>
+              </div>
+
+              {selectedStudent?.grade ? (
+                <div className="space-y-3">
+                  <h4 className="font-semibold text-gray-800 border-b pb-2 flex items-center justify-between">
+                    Cursos de la Currícula
+                    <Badge variant="secondary">{studentMallaCourses.length} Asignaturas</Badge>
+                  </h4>
+                  {loadingCourses ? (
+                    <p className="text-center text-sm text-gray-500 animate-pulse py-4">Cargando cursos...</p>
+                  ) : studentMallaCourses.length > 0 ? (
+                    <div className="border rounded-md overflow-hidden">
+                      <Table>
+                        <TableHeader className="bg-gray-50">
+                          <TableRow>
+                            <TableHead>Curso</TableHead>
+                            <TableHead className="text-center">Tipo</TableHead>
+                            <TableHead className="text-right">Estado del Alumno</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {studentMallaCourses.map((curso) => {
+                            const isExempt = exemptions.includes(curso.id);
+                            return (
+                              <TableRow key={curso.id} className={isExempt ? "bg-gray-50 opacity-60" : ""}>
+                                <TableCell className="font-medium flex items-center gap-2">
+                                  <BookOpen className={`w-4 h-4 ${isExempt ? 'text-gray-300' : 'text-blue-500'}`} /> 
+                                  <span className={isExempt ? "line-through text-gray-400" : ""}>{curso.name}</span>
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <Badge variant="outline" className={curso.is_mandatory ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'}>
+                                    {curso.is_mandatory ? 'Obligatorio' : 'Electivo'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex items-center justify-end gap-3">
+                                    <span className={`text-xs font-bold ${isExempt ? 'text-red-500' : 'text-green-600'}`}>
+                                      {isExempt ? 'Exonerado' : 'Cursando'}
+                                    </span>
+                                    <Switch 
+                                      checked={!isExempt} 
+                                      onCheckedChange={(checked) => handleToggleExemption(curso.id, !checked)}
+                                    />
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <div className="text-center py-6 bg-gray-50 rounded-lg border border-dashed">
+                      <BookOpen className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500 font-medium">Este grado aún no tiene cursos registrados en su Malla Curricular.</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                   <ShieldAlert className="w-12 h-12 mx-auto mb-3 text-orange-400" />
+                   <p className="text-gray-600 font-medium mb-1">Para visualizar los cursos, primero edita la ficha del alumno.</p>
+                   <p className="text-sm text-gray-500">Asígnele un grado y automáticamente heredará los cursos de su respectiva malla curricular.</p>
+                </div>
+              )}
+            </div>
+            <DialogFooter className="border-t pt-4"><Button onClick={() => setIsEnrollModalOpen(false)}>Cerrar</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );

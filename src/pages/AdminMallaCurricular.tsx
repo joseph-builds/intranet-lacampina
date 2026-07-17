@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { BookOpen, Plus, Trash2, Layers, AlertCircle, Loader2 } from 'lucide-react';
+import { BookOpen, Plus, Trash2, Layers, Loader2, Library } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
@@ -16,7 +16,7 @@ import { Switch } from '@/components/ui/switch';
 interface Nivel { id: string; name: string; level_order: number; }
 interface Grado { id: string; level_id: string; name: string; grade_order: number; }
 interface CursoCatalogo { id: string; name: string; code: string; }
-interface CursoBase { id: string; grade_id: string; course_id: string; name: string; area: string; weekly_hours: number; is_mandatory: boolean; }
+interface CursoBase { id: string; grade_id: string; course_id: string; name: string; area: string; is_mandatory: boolean; }
 
 const AdminMallaCurricular = () => {
   const { toast } = useToast();
@@ -39,7 +39,7 @@ const AdminMallaCurricular = () => {
 
   // Formularios
   const [nuevoGradoNombre, setNuevoGradoNombre] = useState('');
-  const [formData, setFormData] = useState({ course_id: '', area: '', weekly_hours: 0, is_mandatory: true });
+  const [formData, setFormData] = useState({ course_id: '', area: '', is_mandatory: true });
 
   useEffect(() => {
     fetchEstructura();
@@ -50,6 +50,8 @@ const AdminMallaCurricular = () => {
     if (nivelActivo && grados.length > 0) {
       const gradosDelNivel = grados.filter(g => g.level_id === nivelActivo).sort((a, b) => a.grade_order - b.grade_order);
       setGradoActivo(gradosDelNivel.length > 0 ? gradosDelNivel[0].id : '');
+    } else {
+      setGradoActivo('');
     }
   }, [nivelActivo, grados]);
 
@@ -58,7 +60,6 @@ const AdminMallaCurricular = () => {
     else setCursosMalla([]);
   }, [gradoActivo]);
 
-  // Cargar Catálogo (Tus cursos existentes)
   const fetchCatalogoCursos = async () => {
     const { data, error } = await supabase.from('courses').select('id, name, code').eq('is_active', true).order('name');
     if (!error) setCatalogoCursos(data || []);
@@ -71,7 +72,11 @@ const AdminMallaCurricular = () => {
       const { data: dataGrados } = await supabase.from('academic_grades').select('*').order('grade_order');
       setNiveles(dataNiveles || []);
       setGrados(dataGrados || []);
-      if (dataNiveles && dataNiveles.length > 0 && !nivelActivo) setNivelActivo(dataNiveles[0].id);
+      
+      // Asegurar que haya un nivel activo por defecto si no lo hay
+      if (dataNiveles && dataNiveles.length > 0 && !nivelActivo) {
+        setNivelActivo(dataNiveles[0].id);
+      }
     } catch (error) {
       toast({ title: "Error", description: "No se pudo cargar la estructura", variant: "destructive" });
     } finally {
@@ -87,16 +92,16 @@ const AdminMallaCurricular = () => {
   // ----- GESTIÓN DE GRADOS -----
   const handleCrearGrado = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!nuevoGradoNombre || !nivelActivo) return;
+    if (!nuevoGradoNombre.trim() || !nivelActivo) return;
     setSaving(true);
     try {
       const gradosActuales = grados.filter(g => g.level_id === nivelActivo);
       await supabase.from('academic_grades').insert([{
         level_id: nivelActivo,
-        name: nuevoGradoNombre,
+        name: nuevoGradoNombre.trim(),
         grade_order: gradosActuales.length + 1
       }]);
-      toast({ title: "Grado Creado", description: "El grado se añadió correctamente." });
+      toast({ title: "Grado Creado", description: "El grado se añadió correctamente al nivel." });
       setIsGradoModalOpen(false);
       setNuevoGradoNombre('');
       fetchEstructura();
@@ -107,10 +112,16 @@ const AdminMallaCurricular = () => {
 
   const handleEliminarGrado = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('¿Estás seguro? Se eliminará este grado y TODOS los cursos asignados a su malla.')) return;
-    await supabase.from('academic_grades').delete().eq('id', id);
-    toast({ title: "Eliminado", description: "Grado removido exitosamente." });
-    fetchEstructura();
+    if (!confirm('¿Estás seguro? Se eliminará este grado y TODOS los cursos asignados a su malla. Esta acción no se puede deshacer.')) return;
+    
+    try {
+      const { error } = await supabase.from('academic_grades').delete().eq('id', id);
+      if (error) throw error;
+      toast({ title: "Grado Eliminado", description: "Grado removido exitosamente." });
+      fetchEstructura();
+    } catch (error) {
+      toast({ title: "Error", description: "No se pudo eliminar el grado. Verifica que no tenga alumnos asignados.", variant: "destructive" });
+    }
   };
 
   // ----- GESTIÓN DE CURSOS EN LA MALLA -----
@@ -126,48 +137,47 @@ const AdminMallaCurricular = () => {
       const { error } = await supabase.from('base_courses').insert([{
         grade_id: gradoActivo,
         course_id: cursoSeleccionado.id,
-        name: cursoSeleccionado.name, // Guardamos el nombre para referencia rápida
-        area: formData.area || 'General',
-        weekly_hours: formData.weekly_hours,
+        name: cursoSeleccionado.name,
+        area: formData.area.trim() || 'General',
         is_mandatory: formData.is_mandatory
       }]);
 
       if (error) throw error;
-      toast({ title: "Éxito", description: "Curso asignado al grado." });
+      toast({ title: "Éxito", description: "Asignatura agregada a la malla curricular." });
       fetchCursosPorGrado(gradoActivo);
       setIsCursoModalOpen(false);
-      setFormData({ course_id: '', area: '', weekly_hours: 0, is_mandatory: true });
+      setFormData({ course_id: '', area: '', is_mandatory: true });
     } catch (error) {
-      toast({ title: "Error", description: "El curso ya está en la malla o hubo un error.", variant: "destructive" });
+      toast({ title: "Error", description: "El curso ya existe en esta malla o hubo un problema.", variant: "destructive" });
     } finally {
       setSaving(false);
     }
   };
 
   const handleEliminarCursoMalla = async (id: string) => {
-    if (!confirm('¿Quitar este curso de la malla del grado?')) return;
+    if (!confirm('¿Quitar este curso de la malla de este grado?')) return;
     await supabase.from('base_courses').delete().eq('id', id);
-    toast({ title: "Removido", description: "Curso quitado de la malla." });
+    toast({ title: "Removido", description: "Curso quitado de la malla exitosamente." });
     fetchCursosPorGrado(gradoActivo);
   };
 
-  if (loading) return <DashboardLayout><div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div></DashboardLayout>;
+  if (loading) return <DashboardLayout><div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin w-8 h-8 text-blue-600" /></div></DashboardLayout>;
 
   return (
     <DashboardLayout>
       <div className="container mx-auto px-4 py-8 max-w-6xl space-y-6">
         
         <div>
-          <h1 className="text-3xl font-bold flex items-center gap-3 text-gray-900">
-            <Layers className="h-8 w-8 text-primary" /> Malla Curricular Maestra
+          <h1 className="text-3xl font-bold flex items-center gap-3 text-gray-800">
+            <Layers className="h-8 w-8 text-blue-600" /> Malla Curricular Maestra
           </h1>
-          <p className="text-muted-foreground mt-2">Gestiona niveles, grados y vincula los cursos existentes a la currícula de cada grado.</p>
+          <p className="text-muted-foreground mt-2">Crea los grados académicos y asígnales los cursos del catálogo general para armar su currícula.</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           
           {/* PANEL IZQUIERDO: NIVELES Y GRADOS */}
-          <Card className="md:col-span-1 border-0 shadow-md bg-white h-fit">
+          <Card className="md:col-span-1 border-0 shadow-sm bg-white h-fit">
             <CardHeader className="bg-gray-50 border-b pb-4">
               <CardTitle className="text-lg">Estructura Escolar</CardTitle>
             </CardHeader>
@@ -178,26 +188,28 @@ const AdminMallaCurricular = () => {
                   <SelectTrigger className="bg-white"><SelectValue placeholder="Seleccionar Nivel" /></SelectTrigger>
                   <SelectContent>
                     {niveles.map(n => <SelectItem key={n.id} value={n.id}>{n.name}</SelectItem>)}
+                    {niveles.length === 0 && <SelectItem value="none" disabled>No hay niveles creados</SelectItem>}
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2 pt-4 border-t">
                 <div className="flex items-center justify-between">
-                  <Label>Grados de {niveles.find(n => n.id === nivelActivo)?.name}</Label>
-                  {/* Modal para Crear Grado */}
+                  <Label className="text-gray-700">Grados Registrados</Label>
                   <Dialog open={isGradoModalOpen} onOpenChange={setIsGradoModalOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-blue-600 hover:text-blue-800"><Plus className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 bg-blue-50 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-full" title="Añadir Grado">
+                        <Plus className="h-4 w-4" />
+                      </Button>
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader><DialogTitle>Añadir Nuevo Grado</DialogTitle></DialogHeader>
                       <form onSubmit={handleCrearGrado} className="space-y-4">
                         <div>
                           <Label>Nombre del Grado</Label>
-                          <Input required value={nuevoGradoNombre} onChange={e => setNuevoGradoNombre(e.target.value)} placeholder="Ej: 3 Años, 1ro, 7mo" />
+                          <Input required value={nuevoGradoNombre} onChange={e => setNuevoGradoNombre(e.target.value)} placeholder="Ej: 1er Grado, 3 Años, 5to Año" autoFocus />
                         </div>
-                        <Button type="submit" disabled={saving} className="w-full">Guardar Grado</Button>
+                        <Button type="submit" disabled={saving} className="w-full bg-blue-600">Crear Grado</Button>
                       </form>
                     </DialogContent>
                   </Dialog>
@@ -209,18 +221,21 @@ const AdminMallaCurricular = () => {
                       key={grado.id}
                       onClick={() => setGradoActivo(grado.id)}
                       className={`group flex items-center justify-between px-3 py-2 rounded-md text-sm cursor-pointer transition-colors ${
-                        gradoActivo === grado.id ? 'bg-blue-50 text-blue-700 font-medium border border-blue-200' : 'hover:bg-gray-100 text-gray-600'
+                        gradoActivo === grado.id ? 'bg-blue-50 text-blue-700 font-bold border border-blue-200' : 'hover:bg-gray-100 text-gray-600 font-medium'
                       }`}
                     >
                       <span>{grado.name}</span>
                       <Trash2 
-                        className="h-4 w-4 text-gray-300 opacity-0 group-hover:opacity-100 hover:text-red-600 transition-opacity" 
+                        className="h-4 w-4 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-red-600 transition-opacity" 
                         onClick={(e) => handleEliminarGrado(grado.id, e)}
+                        title="Eliminar Grado"
                       />
                     </div>
                   ))}
                   {grados.filter(g => g.level_id === nivelActivo).length === 0 && (
-                    <span className="text-xs text-muted-foreground italic">No hay grados. Crea uno en el botón (+).</span>
+                    <div className="text-center py-4 bg-gray-50 rounded border border-dashed">
+                      <span className="text-xs text-muted-foreground">Sin grados.<br/>Haz clic en el botón (+) para crear uno.</span>
+                    </div>
                   )}
                 </div>
               </div>
@@ -228,48 +243,46 @@ const AdminMallaCurricular = () => {
           </Card>
 
           {/* PANEL PRINCIPAL: CURSOS ASIGNADOS */}
-          <Card className="md:col-span-3 border-0 shadow-md bg-white">
+          <Card className="md:col-span-3 border-0 shadow-sm bg-white">
             <CardHeader className="flex flex-row items-start md:items-center justify-between border-b pb-4 gap-4">
               <div>
-                <CardTitle className="text-xl">Malla de {grados.find(g => g.id === gradoActivo)?.name || '...'}</CardTitle>
-                <CardDescription>Cursos asignados a los alumnos de este grado.</CardDescription>
+                <CardTitle className="text-xl">
+                  {gradoActivo ? `Malla Curricular: ${grados.find(g => g.id === gradoActivo)?.name}` : 'Selecciona un grado'}
+                </CardTitle>
+                <CardDescription>Cursos obligatorios y electivos asignados a este grado.</CardDescription>
               </div>
               
-              {/* Modal para Vincular Curso Existente */}
               <Dialog open={isCursoModalOpen} onOpenChange={setIsCursoModalOpen}>
                 <DialogTrigger asChild>
-                  <Button disabled={!gradoActivo} className="bg-blue-600 hover:bg-blue-700 shrink-0">
-                    <Plus className="w-4 h-4 mr-2" /> Asignar Curso
+                  <Button disabled={!gradoActivo} className="bg-blue-600 hover:bg-blue-700 shrink-0 shadow-sm">
+                    <Plus className="w-4 h-4 mr-2" /> Añadir Curso a Malla
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
-                  <DialogHeader><DialogTitle>Vincular Curso a la Malla</DialogTitle></DialogHeader>
-                  <form onSubmit={handleVincularCurso} className="space-y-4">
-                    <div>
-                      <Label>Seleccionar Curso del Catálogo General</Label>
+                  <DialogHeader><DialogTitle>Añadir Curso a la Malla</DialogTitle></DialogHeader>
+                  <form onSubmit={handleVincularCurso} className="space-y-5 mt-2">
+                    <div className="space-y-2">
+                      <Label>Seleccionar Asignatura Base</Label>
                       <Select required value={formData.course_id} onValueChange={val => setFormData({...formData, course_id: val})}>
-                        <SelectTrigger><SelectValue placeholder="Busca un curso ya creado..." /></SelectTrigger>
+                        <SelectTrigger><SelectValue placeholder="Elige un curso del catálogo general..." /></SelectTrigger>
                         <SelectContent>
                           {catalogoCursos.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.code})</SelectItem>)}
                         </SelectContent>
                       </Select>
+                      <p className="text-xs text-gray-500">¿No encuentras el curso? Créalo primero en la pestaña "Catálogo de Cursos".</p>
                     </div>
-                    <div>
-                      <Label>Área Curricular</Label>
-                      <Input value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} placeholder="Ej: Ciencias Exactas" />
+                    <div className="space-y-2">
+                      <Label>Área Académica (Opcional)</Label>
+                      <Input value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} placeholder="Ej: Letras, Ciencias, Arte..." />
                     </div>
-                    <div>
-                      <Label>Horas Semanales Sugeridas</Label>
-                      <Input type="number" min={0} value={formData.weekly_hours} onChange={e => setFormData({...formData, weekly_hours: parseInt(e.target.value) || 0})} />
-                    </div>
-                    <div className="flex items-center justify-between p-3 border rounded-md">
+                    <div className="flex items-center justify-between p-4 bg-gray-50 border rounded-lg">
                       <div>
-                        <Label className="font-bold">¿Es Obligatorio?</Label>
-                        <p className="text-xs text-muted-foreground">Desmarcar para cursos exonerables (Ej: Religión).</p>
+                        <Label className="font-bold text-gray-800">Curso Obligatorio</Label>
+                        <p className="text-xs text-gray-500 mt-1">Desactívalo si es un curso exonerable o electivo.</p>
                       </div>
                       <Switch checked={formData.is_mandatory} onCheckedChange={checked => setFormData({...formData, is_mandatory: checked})} />
                     </div>
-                    <Button type="submit" disabled={saving || !formData.course_id} className="w-full">Agregar a la Malla</Button>
+                    <Button type="submit" disabled={saving || !formData.course_id} className="w-full bg-blue-600">Guardar Asignación</Button>
                   </form>
                 </DialogContent>
               </Dialog>
@@ -280,28 +293,26 @@ const AdminMallaCurricular = () => {
                 <Table>
                   <TableHeader className="bg-gray-50">
                     <TableRow>
-                      <TableHead>Asignatura</TableHead>
-                      <TableHead>Área</TableHead>
-                      <TableHead className="text-center">Hrs/Semana</TableHead>
+                      <TableHead className="pl-6">Asignatura</TableHead>
+                      <TableHead>Área Curricular</TableHead>
                       <TableHead className="text-center">Tipo</TableHead>
-                      <TableHead className="text-right">Acciones</TableHead>
+                      <TableHead className="text-right pr-6">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {cursosMalla.map((curso) => (
                       <TableRow key={curso.id} className="hover:bg-gray-50/50">
-                        <TableCell className="font-medium flex items-center gap-2">
-                          <BookOpen className="h-4 w-4 text-gray-400" /> {curso.name}
+                        <TableCell className="font-semibold text-gray-800 flex items-center gap-2 pl-6">
+                          <BookOpen className="h-4 w-4 text-blue-500" /> {curso.name}
                         </TableCell>
-                        <TableCell className="text-gray-600">{curso.area}</TableCell>
-                        <TableCell className="text-center">{curso.weekly_hours}</TableCell>
+                        <TableCell className="text-gray-600 text-sm">{curso.area}</TableCell>
                         <TableCell className="text-center">
-                          <Badge variant={curso.is_mandatory ? "default" : "secondary"} className={curso.is_mandatory ? "bg-blue-100 text-blue-800" : ""}>
-                            {curso.is_mandatory ? 'Obligatorio' : 'Exonerable'}
+                          <Badge variant="outline" className={curso.is_mandatory ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-50 text-gray-600 border-gray-200"}>
+                            {curso.is_mandatory ? 'Obligatorio' : 'Electivo'}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm" onClick={() => handleEliminarCursoMalla(curso.id)} className="text-red-600 hover:text-red-700 hover:bg-red-50">
+                        <TableCell className="text-right pr-6">
+                          <Button variant="ghost" size="sm" onClick={() => handleEliminarCursoMalla(curso.id)} className="text-red-600 hover:text-red-800 hover:bg-red-50 h-8 w-8 p-0">
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </TableCell>
@@ -309,8 +320,10 @@ const AdminMallaCurricular = () => {
                     ))}
                     {cursosMalla.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center py-12 text-gray-500">
-                          Aún no has configurado los cursos para este grado.
+                        <TableCell colSpan={4} className="text-center py-16">
+                          <Library className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                          <p className="text-gray-500 font-medium">Aún no has configurado los cursos para este grado.</p>
+                          <p className="text-sm text-gray-400 mt-1">Usa el botón superior para empezar a armar la malla.</p>
                         </TableCell>
                       </TableRow>
                     )}

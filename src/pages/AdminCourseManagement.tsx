@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useForm } from 'react-hook-form';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { supabase } from '@/integrations/supabase/client';
@@ -8,179 +7,95 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
-import { Loader2, Check } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { BookOpen, Edit, Trash2, Search, CheckCircle2, XCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { BookOpen, Edit, Trash2, Users } from 'lucide-react';
-import { fetchAllTeachers } from '@/utils/teacherUtils';
-
-interface Teacher {
-  id: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-}
-
-interface Program {
-  id: string;
-  name: string;
-}
+import { Badge } from '@/components/ui/badge';
 
 interface Course {
   id: string;
   name: string;
-  description?: string;
   code: string;
-  teacher_principal_id: string;
-  teacher?: Teacher;
-  academic_year: string;
-  start_date?: string;
-  end_date?: string;
+  description?: string;
   is_active: boolean;
-  enrollments_count?: number; // Modificado para el join manual en JS
+  grades_taught?: string[]; // <- NUEVO CAMPO PARA MOSTRAR GRADOS
 }
 
 interface CourseFormData {
   name: string;
-  description: string;
   code: string;
-  teacher_principal_id: string;
-  academic_year: string;
-  semester: string;
-  program_id: string;
-  start_date: string;
-  end_date: string;
+  description: string;
 }
 
 const AdminCourseManagement = () => {
   const { toast } = useToast();
+  
+  // Estados
   const [courses, setCourses] = useState<Course[]>([]);
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [programs, setPrograms] = useState<Program[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  
+  // Modales
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  
+  // Selección
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [formData, setFormData] = useState<CourseFormData>({
-    name: '',
-    description: '',
-    code: '',
-    teacher_principal_id: '',
-    academic_year: new Date().getFullYear().toString(),
-    semester: '',
-    program_id: '',
-    start_date: '',
-    end_date: '',
-  });
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [showBulkTeacherModal, setShowBulkTeacherModal] = useState(false);
-  const [showBulkScheduleModal, setShowBulkScheduleModal] = useState(false);
-  const [bulkTeacherId, setBulkTeacherId] = useState<string>('');
-  const [bulkSchedule, setBulkSchedule] = useState<any[]>([]);
+  
+  // Formularios y Filtros
+  const [formData, setFormData] = useState<CourseFormData>({ name: '', code: '', description: '' });
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterYear, setFilterYear] = useState('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
+  
+  // Edición Rápida
   const [quickEditMode, setQuickEditMode] = useState(false);
   const [quickEditChanges, setQuickEditChanges] = useState<{ [id: string]: Partial<Course> }>({});
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [scheduleEditCourse, setScheduleEditCourse] = useState<Course | null>(null);
-  const [scheduleForm, setScheduleForm] = useState<any[]>([]);
 
   useEffect(() => {
     fetchCourses();
-    fetchTeachers();
-    fetchPrograms();
   }, []);
 
-  // Función maestra corregida (Frontend Join para evitar PGRST200)
   const fetchCourses = async () => {
     try {
       setLoading(true);
       
-      // 1. Traer los cursos limpios con la relación del profesor principal
-      const { data: coursesData, error: coursesError } = await supabase
+      // OPTIMIZACIÓN: Traer datos base y cruzar con la malla (base_courses) 
+      // para saber en qué grados está asignado cada curso
+      const { data, error } = await supabase
         .from('courses')
         .select(`
-          *,
-          teacher:profiles!courses_teacher_principal_id_fkey (
-            id,
-            first_name,
-            last_name,
-            email
+          id, name, code, description, is_active,
+          base_courses (
+            grade:academic_grades (name)
           )
         `)
-        .order('created_at', { ascending: false });
+        .order('name', { ascending: true });
 
-      if (coursesError) throw coursesError;
+      if (error) throw error;
+      
+      // Formatear los datos para extraer solo los nombres de los grados únicos
+      const formattedCourses = (data || []).map((c: any) => {
+        const gradesSet = new Set<string>();
+        if (c.base_courses) {
+          c.base_courses.forEach((bc: any) => {
+            if (bc.grade && bc.grade.name) gradesSet.add(bc.grade.name);
+          });
+        }
+        return {
+          ...c,
+          grades_taught: Array.from(gradesSet)
+        };
+      });
 
-      // 2. Traer el conteo de estudiantes inscritos usando la tabla intermedia 'modulos'
-      const { data: enrollmentsData, error: enrollmentsError } = await supabase
-        .from('course_enrollments')
-        .select(`
-          modulo_id,
-          modulos!course_enrollments_modulo_id_fkey (
-            course_id
-          )
-        `);
-
-      // 3. Agrupar y mapear los conteos por course_id en memoria de JS
-      const enrollmentsMap = new Map<string, number>();
-      if (!enrollmentsError && enrollmentsData) {
-        enrollmentsData.forEach((item: any) => {
-          const courseId = item.modulos?.course_id;
-          if (courseId) {
-            enrollmentsMap.set(courseId, (enrollmentsMap.get(courseId) || 0) + 1);
-          }
-        });
-      }
-
-      // 4. Cruzar los datos limpios en memoria
-      const finalCourses = (coursesData || []).map((course: any) => ({
-        ...course,
-        enrollments_count: enrollmentsMap.get(course.id) || 0
-      }));
-
-      setCourses(finalCourses);
+      setCourses(formattedCourses as Course[]);
     } catch (error: any) {
       console.error('Error fetching courses:', error);
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar los cursos correctamente",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "No se pudieron cargar los cursos.", variant: "destructive" });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchTeachers = async () => {
-    try {
-      const data = await fetchAllTeachers();
-      setTeachers(data);
-    } catch (error) {
-      console.error('Error fetching teachers:', error);
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar los profesores",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const fetchPrograms = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('programas')
-        .select('id, name')
-        .order('name');
-      if (!error) setPrograms(data || []);
-    } catch (error) {
-      console.error('Error fetching programs:', error);
     }
   };
 
@@ -190,36 +105,16 @@ const AdminCourseManagement = () => {
     setFormData(prev => ({ ...prev, [field]: e.target.value }));
   }, []);
 
-  const handleSelectChange = useCallback((field: keyof CourseFormData) => (value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  }, []);
-
   const resetForm = useCallback(() => {
-    setFormData({
-      name: '',
-      description: '',
-      code: '',
-      teacher_principal_id: '',
-      academic_year: new Date().getFullYear().toString(),
-      semester: '',
-      program_id: '',
-      start_date: '',
-      end_date: '',
-    });
+    setFormData({ name: '', code: '', description: '' });
   }, []);
 
   const openEditModal = (course: Course) => {
     setEditingCourse(course);
     setFormData({
       name: course.name,
-      description: course.description || '',
       code: course.code,
-      teacher_principal_id: course.teacher_principal_id,
-      academic_year: course.academic_year,
-      semester: (course as any).semester || '',
-      program_id: (course as any).program_id || '',
-      start_date: course.start_date || '',
-      end_date: course.end_date || '',
+      description: course.description || '',
     });
     setIsEditModalOpen(true);
   };
@@ -229,15 +124,24 @@ const AdminCourseManagement = () => {
     setIsDeleteModalOpen(true);
   };
 
-  const filteredCourses = courses.filter(course => {
-    const matchesSearch = course.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          course.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          course.teacher?.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          course.teacher?.last_name?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesYear = filterYear === 'all' || course.academic_year === filterYear;
-    return matchesSearch && matchesYear;
-  });
+  // OPTIMIZACIÓN: Filtro memoizado
+  const filteredCourses = useMemo(() => {
+    return courses.filter(course => {
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch = 
+        course.name.toLowerCase().includes(searchLower) ||
+        course.code.toLowerCase().includes(searchLower);
+      
+      const matchesStatus = 
+        filterStatus === 'all' || 
+        (filterStatus === 'active' && course.is_active) ||
+        (filterStatus === 'inactive' && !course.is_active);
+        
+      return matchesSearch && matchesStatus;
+    });
+  }, [courses, searchTerm, filterStatus]);
 
+  // Funciones de Edición Rápida
   const handleQuickEditChange = (courseId: string, field: keyof Course, value: any) => {
     setQuickEditChanges(prev => ({
       ...prev,
@@ -252,12 +156,14 @@ const AdminCourseManagement = () => {
     if (updates.length === 0) return;
     setSaving(true);
     try {
-      for (const [id, changes] of updates) {
-        const { error } = await supabase.from('courses').update(changes).eq('id', id);
-        if (error) throw error;
-      }
+      await Promise.all(
+        updates.map(([id, changes]) => 
+          supabase.from('courses').update(changes).eq('id', id)
+        )
+      );
       toast({ title: 'Cambios guardados', description: 'Todos los cambios fueron guardados exitosamente.' });
       clearQuickEditChanges();
+      setQuickEditMode(false);
       fetchCourses();
     } catch (error) {
       toast({ title: 'Error', description: 'No se pudieron guardar los cambios', variant: 'destructive' });
@@ -266,45 +172,82 @@ const AdminCourseManagement = () => {
     }
   };
 
-  const openScheduleModal = (course: Course) => {
-    setScheduleEditCourse(course);
-    setScheduleForm([]);
-    setShowScheduleModal(true);
+  // Funciones CRUD
+  const handleToggleCourseStatus = async (course: Course, newStatus: boolean) => {
+    try {
+      const { error } = await supabase.from('courses').update({ is_active: newStatus }).eq('id', course.id);
+      if (error) throw error;
+      toast({ title: "Estado actualizado", description: `El curso ahora está ${newStatus ? 'activo' : 'inactivo'}.` });
+      fetchCourses();
+    } catch (error) {
+      toast({ title: "Error", description: "No se pudo cambiar el estado.", variant: "destructive" });
+    }
   };
 
-  const daysOfWeek = [
-    { key: 'monday', label: 'Lunes' },
-    { key: 'tuesday', label: 'Martes' },
-    { key: 'wednesday', label: 'Miércoles' },
-    { key: 'thursday', label: 'Jueves' },
-    { key: 'friday', label: 'Viernes' },
-    { key: 'saturday', label: 'Sábado' },
-    { key: 'sunday', label: 'Domingo' },
-  ];
+  const handleCreateCourse = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name || !formData.code) {
+      toast({ title: "Campos requeridos", description: "Completa el nombre y el código.", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('courses').insert([{
+        name: formData.name.trim(),
+        code: formData.code.trim(),
+        description: formData.description.trim(),
+        is_active: true,
+      }]);
+
+      if (error) throw error;
+
+      toast({ title: "Curso creado", description: `El curso "${formData.name}" fue añadido al catálogo.` });
+      setIsCreateModalOpen(false);
+      resetForm();
+      fetchCourses();
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "No se pudo crear.", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEditCourse = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCourse) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('courses').update({
+        name: formData.name.trim(),
+        code: formData.code.trim(),
+        description: formData.description.trim(),
+      }).eq('id', editingCourse.id);
+      
+      if (error) throw error;
+      
+      toast({ title: "Curso actualizado", description: "Los cambios fueron guardados." });
+      setIsEditModalOpen(false);
+      setEditingCourse(null);
+      resetForm();
+      fetchCourses();
+    } catch (error) {
+      toast({ title: "Error", description: "No se pudo actualizar el curso", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleDeleteCourse = async () => {
     if (!deletingCourse) return;
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('courses')
-        .delete()
-        .eq('id', deletingCourse.id);
-      if (error) {
-        toast({
-          title: "Error",
-          description: "No se pudo eliminar el curso",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Curso eliminado",
-          description: `El curso "${deletingCourse.name}" fue eliminado exitosamente.`,
-        });
-        fetchCourses();
-      }
+      const { error } = await supabase.from('courses').delete().eq('id', deletingCourse.id);
+      if (error) throw error;
+      
+      toast({ title: "Curso eliminado", description: `El curso fue eliminado del catálogo.` });
+      fetchCourses();
     } catch (error) {
-      console.error('Error:', error);
+      toast({ title: "Error", description: "No se pudo eliminar. Es posible que esté asignado a una malla curricular.", variant: "destructive" });
     } finally {
       setSaving(false);
       setIsDeleteModalOpen(false);
@@ -312,120 +255,18 @@ const AdminCourseManagement = () => {
     }
   };
 
-  const handleCreateCourse = async () => {
-    if (!formData.name || !formData.code || !formData.teacher_principal_id || !formData.academic_year) {
-      toast({
-        title: "Campos requeridos",
-        description: "Por favor completa todos los campos obligatorios.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setSaving(true);
-    try {
-      // Creamos el objeto de inserción limpio
-      const insertData: any = {
-        name: formData.name,
-        description: formData.description,
-        code: formData.code,
-        teacher_principal_id: formData.teacher_principal_id,
-        academic_year: formData.academic_year,
-        is_active: true,
-      };
-
-      // SOLO agregamos start_date si tiene un valor real
-      if (formData.start_date) {
-        insertData.start_date = formData.start_date;
-      }
-
-      const { error } = await supabase
-        .from('courses')
-        .insert([insertData]);
-
-      if (error) {
-        console.error("Error detallado de Supabase:", error);
-        toast({
-          title: "Error",
-          description: `No se pudo crear el curso: ${error.message}`,
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Curso creado",
-          description: `El curso "${formData.name}" fue creado exitosamente.`,
-        });
-        setIsCreateModalOpen(false);
-        resetForm();
-        fetchCourses();
-      }
-    } catch (error) {
-      console.error('Error:', error);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleEditCourse = async () => {
-    if (!editingCourse) return;
-    if (!formData.name || !formData.code || !formData.teacher_principal_id || !formData.academic_year) {
-      toast({
-        title: "Campos requeridos",
-        description: "Por favor completa todos los campos obligatorios.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setSaving(true);
-    try {
-      const { error } = await supabase
-        .from('courses')
-        .update({
-          name: formData.name,
-          description: formData.description,
-          code: formData.code,
-          teacher_principal_id: formData.teacher_principal_id,
-          academic_year: formData.academic_year,
-          semester: formData.semester,
-          program_id: formData.program_id,
-          start_date: formData.start_date,
-          end_date: formData.end_date,
-        })
-        .eq('id', editingCourse.id);
-      if (error) {
-        toast({
-          title: "Error",
-          description: "No se pudo actualizar el curso",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Curso actualizado",
-          description: `El curso "${formData.name}" fue actualizado exitosamente.`,
-        });
-        setIsEditModalOpen(false);
-        setEditingCourse(null);
-        resetForm();
-        fetchCourses();
-      }
-    } catch (error) {
-      console.error('Error:', error);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) {
+  if (loading && courses.length === 0) {
     return (
-      <div className="p-6 space-y-6">
-        <div className="animate-pulse">
-          <div className="h-8 bg-muted rounded w-1/3 mb-6"></div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="h-32 bg-muted rounded"></div>
-            ))}
+      <DashboardLayout>
+        <div className="p-6 space-y-6">
+          <div className="animate-pulse">
+            <div className="h-8 bg-muted rounded w-1/3 mb-6"></div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {[...Array(3)].map((_, i) => <div key={i} className="h-32 bg-muted rounded"></div>)}
+            </div>
           </div>
         </div>
-      </div>
+      </DashboardLayout>
     );
   }
 
@@ -433,457 +274,252 @@ const AdminCourseManagement = () => {
     <DashboardLayout>
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-1">Gestión de Cursos</h1>
-          <p className="text-gray-600 mb-6">Administra los cursos del sistema</p>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <Card className="hover:shadow-lg transition-shadow">
+          <h1 className="text-3xl font-bold mb-1">Catálogo General de Cursos</h1>
+          <p className="text-gray-600 mb-6">Administra las asignaturas base. Luego podrás asignarlas a los diferentes grados en la Malla Curricular.</p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card className="hover:shadow-md transition-shadow border-l-4 border-l-blue-500">
               <div className="p-4">
                 <div className="text-sm font-medium text-gray-600 flex items-center justify-between">
-                  Total Cursos
-                  <BookOpen className="inline h-5 w-5 text-blue-500" />
+                  Total en Catálogo <BookOpen className="inline h-5 w-5 text-blue-500" />
                 </div>
-                <div className="text-2xl font-bold">{courses.length}</div>
-                <p className="text-xs text-gray-500 mt-1">Cursos registrados en el sistema</p>
+                <div className="text-3xl font-bold text-gray-800">{courses.length}</div>
               </div>
             </Card>
-            <Card className="hover:shadow-lg transition-shadow">
+            <Card className="hover:shadow-md transition-shadow border-l-4 border-l-green-500">
               <div className="p-4">
                 <div className="text-sm font-medium text-gray-600 flex items-center justify-between">
-                  Cursos Activos
-                  <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+                  Cursos Activos <CheckCircle2 className="inline h-5 w-5 text-green-500" />
                 </div>
-                <div className="text-2xl font-bold">{courses.filter(c => c.is_active).length}</div>
-                <p className="text-xs text-gray-500 mt-1">Cursos activos</p>
+                <div className="text-3xl font-bold text-gray-800">{courses.filter(c => c.is_active).length}</div>
               </div>
             </Card>
-            <Card className="hover:shadow-lg transition-shadow">
+            <Card className="hover:shadow-md transition-shadow border-l-4 border-l-gray-400">
               <div className="p-4">
                 <div className="text-sm font-medium text-gray-600 flex items-center justify-between">
-                  Cursos Inactivos
-                  <span className="inline-block w-2 h-2 rounded-full bg-gray-400"></span>
+                  Cursos Inactivos <XCircle className="inline h-5 w-5 text-gray-400" />
                 </div>
-                <div className="text-2xl font-bold">{courses.filter(c => !c.is_active).length}</div>
-                <p className="text-xs text-gray-500 mt-1">Cursos inactivos</p>
-              </div>
-            </Card>
-            <Card className="hover:shadow-lg transition-shadow">
-              <div className="p-4">
-                <div className="text-sm font-medium text-gray-600 flex items-center justify-between">
-                  Profesores Asignados
-                  <Users className="inline h-5 w-5 text-purple-500" />
-                </div>
-                <div className="text-2xl font-bold">{[...new Set(courses.map(c => c.teacher_principal_id).filter(Boolean))].length}</div>
-                <p className="text-xs text-gray-500 mt-1">Profesores con al menos un curso</p>
+                <div className="text-3xl font-bold text-gray-800">{courses.filter(c => !c.is_active).length}</div>
               </div>
             </Card>
           </div>
         </div>
 
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-          <div className="flex gap-2 flex-1 max-w-md">
-            <Input 
-              placeholder="Buscar curso por nombre o código..." 
-              value={searchTerm} 
-              onChange={(e) => setSearchTerm(e.target.value)} 
-              className="w-full"
-            />
+        {/* Barra de Filtros y Acciones */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 bg-white p-4 rounded-lg shadow-sm border">
+          <div className="flex gap-4 flex-1 max-w-xl">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input 
+                placeholder="Buscar por nombre o código..." 
+                value={searchTerm} 
+                onChange={(e) => setSearchTerm(e.target.value)} 
+                className="pl-9 w-full"
+              />
+            </div>
+            <select 
+              className="flex h-10 w-[180px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value as any)}
+            >
+              <option value="all">Todos los estados</option>
+              <option value="active">Solo Activos</option>
+              <option value="inactive">Solo Inactivos</option>
+            </select>
           </div>
-          <div className="flex flex-wrap gap-2 items-center justify-end">
-            {selectedIds.length > 0 && (
-              <>
-                <Button size="sm" className="bg-purple-600 text-white" onClick={() => setShowBulkTeacherModal(true)}>
-                  Asignar Profesor a Seleccionados
-                </Button>
-                <Button size="sm" className="bg-blue-600 text-white" onClick={() => setShowBulkScheduleModal(true)}>
-                  Asignar Horario a Seleccionados
-                </Button>
-                <span className="text-xs text-gray-500 ml-2">{selectedIds.length} seleccionados</span>
-              </>
-            )}
-            <Button className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => { resetForm(); setIsCreateModalOpen(true); }}>
-              + Nuevo Curso
-            </Button>
+          
+          <div className="flex gap-2">
             <Button
               variant={quickEditMode ? 'default' : 'outline'}
               className={quickEditMode ? 'bg-blue-600 text-white hover:bg-blue-700' : ''}
               onClick={() => {
                 if (quickEditMode && Object.keys(quickEditChanges).length > 0) {
-                  if (window.confirm('Tienes cambios sin guardar. ¿Deseas descartarlos?')) {
+                  if (window.confirm('Tienes cambios sin guardar. ¿Descartarlos?')) {
                     clearQuickEditChanges();
                     setQuickEditMode(false);
                   }
                 } else {
-                  setQuickEditMode((prev) => !prev);
+                  setQuickEditMode(!quickEditMode);
                 }
               }}
             >
               {quickEditMode ? 'Salir de Edición Rápida' : 'Edición Rápida'}
             </Button>
-            {quickEditMode && Object.keys(quickEditChanges).length > 0 && (
-              <Button
-                className="bg-green-600 text-white hover:bg-green-700 fixed bottom-8 right-8 z-50 shadow-lg"
-                onClick={() => {
-                  if (window.confirm('¿Deseas guardar todos los cambios realizados?')) {
-                    saveAllQuickEdits();
-                  }
-                }}
-                disabled={saving}
-              >
-                Guardar Cambios Pendientes
-              </Button>
-            )}
+            <Button className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => { resetForm(); setIsCreateModalOpen(true); }}>
+              + Añadir Curso al Catálogo
+            </Button>
           </div>
         </div>
 
-        <Card className="bg-gradient-card shadow-card border-0">
-          <CardHeader>
-            <CardTitle>Lista de Cursos</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto relative">
+        {/* Tabla de Cursos */}
+        <Card className="border-0 shadow-sm">
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
               <Table>
-                <TableHeader>
+                <TableHeader className="bg-gray-50">
                   <TableRow>
-                    <TableHead></TableHead>
-                    <TableHead>Código</TableHead>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Profesor</TableHead>
-                    <TableHead>Año/Semestre</TableHead>
-                    <TableHead>Horario</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Acciones</TableHead>
+                    <TableHead className="w-24">Código</TableHead>
+                    <TableHead>Nombre de Asignatura</TableHead>
+                    <TableHead>Grados donde se Imparte</TableHead>
+                    <TableHead className="w-32 text-center">Estado</TableHead>
+                    <TableHead className="w-24 text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredCourses.map((course) => (
-                    <TableRow key={course.id}>
+                    <TableRow key={course.id} className="hover:bg-gray-50/50">
+                      <TableCell className="font-mono text-sm text-gray-500">
+                        {quickEditMode ? (
+                          <Input value={quickEditChanges[course.id]?.code ?? course.code} onChange={e => handleQuickEditChange(course.id, 'code', e.target.value)} className="h-8 text-sm" />
+                        ) : (course.code)}
+                      </TableCell>
+                      
                       <TableCell>
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(course.id)}
-                          onChange={e => {
-                            setSelectedIds(prev => e.target.checked ? [...prev, course.id] : prev.filter(id => id !== course.id));
-                          }}
-                        />
-                      </TableCell>
-                      <TableCell>{course.code}</TableCell>
-                      <TableCell className={quickEditMode ? "cursor-pointer group" : ""}>
                         {quickEditMode ? (
-                          <Input
-                            value={quickEditChanges[course.id]?.name ?? course.name}
-                            onChange={e => handleQuickEditChange(course.id, 'name', e.target.value)}
-                          />
-                        ) : (
-                          <div className="font-bold flex items-center">
-                            {course.name}
-                          </div>
-                        )}
+                          <Input value={quickEditChanges[course.id]?.name ?? course.name} onChange={e => handleQuickEditChange(course.id, 'name', e.target.value)} className="h-8 font-medium" />
+                        ) : (<span className="font-medium text-gray-900">{course.name}</span>)}
                       </TableCell>
-                      <TableCell className={quickEditMode ? "cursor-pointer group" : ""}>
-                        {quickEditMode ? (
-                          <Select
-                            value={quickEditChanges[course.id]?.teacher_principal_id ?? course.teacher_principal_id}
-                            onValueChange={val => handleQuickEditChange(course.id, 'teacher_principal_id', val)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Seleccionar profesor" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {teachers.map((t) => (
-                                <SelectItem key={t.id} value={t.id}>{t.first_name} {t.last_name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <span className="flex items-center">
-                            {course.teacher ? `${course.teacher.first_name} ${course.teacher.last_name}` : 'Sin asignar'}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className={quickEditMode ? "cursor-pointer group" : ""}>
-                        {quickEditMode ? (
-                          <Select
-                            value={quickEditChanges[course.id]?.academic_year ?? course.academic_year}
-                            onValueChange={val => handleQuickEditChange(course.id, 'academic_year', val)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Seleccionar año" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {[2024,2025,2026,2027].map(y => (
-                                <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <span className="flex items-center">
-                            {course.academic_year}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className={quickEditMode ? "cursor-pointer group" : ""}>
-                        <span className="flex items-center">
-                          <span className="text-gray-400 text-sm">Gestionado por módulos</span>
-                        </span>
-                      </TableCell>
+                      
                       <TableCell>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap gap-1">
+                          {course.grades_taught && course.grades_taught.length > 0 ? (
+                            course.grades_taught.map(g => (
+                              <Badge key={g} variant="secondary" className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100">{g}</Badge>
+                            ))
+                          ) : (
+                            <span className="text-xs text-gray-400 italic">No asignado en mallas</span>
+                          )}
+                        </div>
+                      </TableCell>
+
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-2">
                           <Switch 
                             checked={quickEditChanges[course.id]?.is_active ?? course.is_active} 
                             onCheckedChange={(val) => {
                               if(quickEditMode) {
                                 handleQuickEditChange(course.id, 'is_active', val);
                               } else {
-                                handleToggleCourseStatus(course);
+                                handleToggleCourseStatus(course, val);
                               }
                             }}
-                            disabled={!quickEditMode && saving}
                           />
-                          <span className={(quickEditChanges[course.id]?.is_active ?? course.is_active) ? "text-green-700 text-sm" : "text-gray-500 text-sm"}>
+                          <span className={`text-xs font-medium w-12 text-left ${(quickEditChanges[course.id]?.is_active ?? course.is_active) ? "text-green-600" : "text-gray-400"}`}>
                             {(quickEditChanges[course.id]?.is_active ?? course.is_active) ? 'Activo' : 'Inactivo'}
                           </span>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Button variant="outline" size="sm" onClick={() => openEditModal(course)}>
+                      
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => openEditModal(course)} disabled={quickEditMode} className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 h-8 w-8 p-0">
                             <Edit className="w-4 h-4" />
                           </Button>
-                          <Button variant="destructive" size="sm" onClick={() => openDeleteModal(course)}>
+                          <Button variant="ghost" size="sm" onClick={() => openDeleteModal(course)} disabled={quickEditMode} className="text-red-600 hover:text-red-800 hover:bg-red-50 h-8 w-8 p-0">
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
                       </TableCell>
                     </TableRow>
                   ))}
+                  {filteredCourses.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center py-12">
+                        <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                        <p className="text-gray-500 font-medium">No se encontraron asignaturas</p>
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </div>
-            {filteredCourses.length === 0 && (
-              <div className="text-center py-8">
-                <BookOpen className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">No se encontraron cursos</p>
-              </div>
-            )}
           </CardContent>
         </Card>
+
+        {/* Botón flotante para guardar edición rápida */}
+        {quickEditMode && Object.keys(quickEditChanges).length > 0 && (
+          <Button
+            className="bg-green-600 text-white hover:bg-green-700 fixed bottom-8 right-8 z-50 shadow-xl rounded-full px-6 py-6"
+            onClick={saveAllQuickEdits}
+            disabled={saving}
+          >
+            Guardar Cambios ({Object.keys(quickEditChanges).length})
+          </Button>
+        )}
       </div>
-
-      {/* Modal Asignar Profesor Masivo */}
-      <Dialog open={showBulkTeacherModal} onOpenChange={setShowBulkTeacherModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Asignar Profesor a Cursos Seleccionados</DialogTitle>
-          </DialogHeader>
-          <div className="mb-4">
-            <Label>Profesor</Label>
-            <Select value={bulkTeacherId} onValueChange={setBulkTeacherId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar profesor" />
-              </SelectTrigger>
-              <SelectContent>
-                {teachers.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>{t.first_name} {t.last_name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
-            <Button
-              onClick={async () => {
-                if (!bulkTeacherId) return;
-                setSaving(true);
-                try {
-                  for (const id of selectedIds) {
-                    await supabase.from('courses').update({ teacher_principal_id: bulkTeacherId }).eq('id', id);
-                  }
-                  toast({ title: 'Profesor asignado', description: 'Profesor asignado a los cursos seleccionados.' });
-                  setShowBulkTeacherModal(false);
-                  setBulkTeacherId('');
-                  setSelectedIds([]);
-                  fetchCourses();
-                } catch {
-                  toast({ title: 'Error', description: 'No se pudo asignar el profesor', variant: 'destructive' });
-                } finally {
-                  setSaving(false);
-                }
-              }}
-              disabled={!bulkTeacherId || saving}
-              className="bg-purple-600 text-white"
-            >
-              Asignar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal Asignar Horario Masivo */}
-      <Dialog open={showBulkScheduleModal} onOpenChange={setShowBulkScheduleModal}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Asignar Horario a Cursos Seleccionados</DialogTitle>
-          </DialogHeader>
-          <div className="mb-2 text-sm text-gray-600">El horario se gestiona actualmente desde los módulos asociados de cada curso.</div>
-          <DialogFooter className="mt-4">
-            <Button className="bg-blue-600 text-white" onClick={() => { setShowBulkScheduleModal(false); setSelectedIds([]); }}>
-              Entendido
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Modal Crear Curso */}
       <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Crear Nuevo Curso</DialogTitle>
+            <DialogTitle>Añadir Nueva Asignatura</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label>Nombre del Curso</Label>
-              <Input placeholder="Ej: Matemáticas Básicas" value={formData.name} onChange={handleInputChange('name')} />
+          <form onSubmit={handleCreateCourse} className="space-y-4">
+            <div className="grid grid-cols-3 gap-4">
+              <div className="col-span-2 space-y-2">
+                <Label>Nombre de Asignatura *</Label>
+                <Input placeholder="Ej: Álgebra" value={formData.name} onChange={handleInputChange('name')} autoFocus required />
+              </div>
+              <div className="space-y-2">
+                <Label>Código *</Label>
+                <Input placeholder="ALG-01" value={formData.code} onChange={handleInputChange('code')} required />
+              </div>
             </div>
-            <div>
-              <Label>Código del Curso</Label>
-              <Input placeholder="Ej: MAT101" value={formData.code} onChange={handleInputChange('code')} />
+            <div className="space-y-2">
+              <Label>Descripción (Opcional)</Label>
+              <Textarea placeholder="Breve descripción del propósito de la asignatura..." value={formData.description} onChange={handleInputChange('description')} rows={3} />
             </div>
-          </div>
-          <div className="mt-2">
-            <Label>Descripción</Label>
-            <Textarea placeholder="Descripción del curso..." value={formData.description} onChange={handleInputChange('description')} />
-          </div>
-          <div className="mt-2">
-            <Label>Profesor Principal *</Label>
-            <Select value={formData.teacher_principal_id} onValueChange={handleSelectChange('teacher_principal_id')}>
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar profesor" />
-              </SelectTrigger>
-              <SelectContent>
-                {teachers.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>{t.first_name} {t.last_name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-1 gap-4 mt-2">
-            <div>
-              <Label>Año Académico *</Label>
-              <Input 
-                placeholder="Ej: 2026" 
-                value={formData.academic_year} 
-                onChange={handleInputChange('academic_year')} 
-              />
-            </div>
-          </div>
-          <div className="mt-2">
-            <Label>Fecha de Inicio *</Label>
-            <Input type="date" value={formData.start_date} onChange={e => setFormData(prev => ({ ...prev, start_date: e.target.value }))} />
-          </div>
-          <DialogFooter className="mt-4">
-            <Button onClick={handleCreateCourse} disabled={saving} className="bg-blue-600 text-white">
-              Crear Curso
-            </Button>
-          </DialogFooter>
+            <DialogFooter className="pt-4">
+              <Button type="button" variant="outline" onClick={() => setIsCreateModalOpen(false)}>Cancelar</Button>
+              <Button type="submit" disabled={saving} className="bg-blue-600 text-white">Guardar en Catálogo</Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
       {/* Modal Editar Curso */}
       <Dialog open={isEditModalOpen} onOpenChange={(open) => { setIsEditModalOpen(open); if (!open) setEditingCourse(null); }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Editar Curso</DialogTitle>
+            <DialogTitle>Editar Asignatura</DialogTitle>
           </DialogHeader>
-          <form onSubmit={e => { e.preventDefault(); handleEditCourse(); }} className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-name">Nombre del Curso *</Label>
-                <Input id="edit-name" value={formData.name} onChange={handleInputChange('name')} required />
+          <form onSubmit={handleEditCourse} className="space-y-4">
+            <div className="grid grid-cols-3 gap-4">
+              <div className="col-span-2 space-y-2">
+                <Label>Nombre de Asignatura *</Label>
+                <Input value={formData.name} onChange={handleInputChange('name')} required />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-code">Código *</Label>
-                <Input id="edit-code" value={formData.code} onChange={handleInputChange('code')} required />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-description">Descripción</Label>
-              <Textarea id="edit-description" value={formData.description} onChange={handleInputChange('description')} rows={3} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-academic-year">Año Académico *</Label>
-                <Input id="edit-academic-year" value={formData.academic_year} onChange={handleInputChange('academic_year')} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-semester">Semestre *</Label>
-                <Input id="edit-semester" placeholder="Ej: 2024-I" value={formData.semester} onChange={handleInputChange('semester')} required />
+                <Label>Código *</Label>
+                <Input value={formData.code} onChange={handleInputChange('code')} required />
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-program">Programa *</Label>
-              <Select value={formData.program_id} onValueChange={handleSelectChange('program_id')}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar programa" />
-                </SelectTrigger>
-                <SelectContent>
-                  {programs.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Descripción</Label>
+              <Textarea value={formData.description} onChange={handleInputChange('description')} rows={3} />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-start-date">Fecha de Inicio *</Label>
-                <Input id="edit-start-date" type="date" value={formData.start_date} onChange={e => setFormData(prev => ({ ...prev, start_date: e.target.value }))} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-end-date">Fecha de Fin</Label>
-                <Input id="edit-end-date" type="date" value={formData.end_date} onChange={e => setFormData(prev => ({ ...prev, end_date: e.target.value }))} />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-teacher">Profesor Principal *</Label>
-              <Select value={formData.teacher_principal_id} onValueChange={handleSelectChange('teacher_principal_id')}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar profesor" />
-                </SelectTrigger>
-                <SelectContent>
-                  {teachers.map((teacher) => (
-                    <SelectItem key={teacher.id} value={teacher.id}>
-                      {teacher.first_name} {teacher.last_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex justify-end gap-3">
-              <Button type="button" variant="outline" onClick={() => setIsEditModalOpen(false)} disabled={saving}>
-                Cancelar
-              </Button>
-              <Button type="submit" className="bg-blue-600 text-white hover:bg-blue-700" disabled={saving}>
-                Guardar Cambios
-              </Button>
-            </div>
+            <DialogFooter className="pt-4">
+              <Button type="button" variant="outline" onClick={() => setIsEditModalOpen(false)} disabled={saving}>Cancelar</Button>
+              <Button type="submit" className="bg-blue-600 text-white hover:bg-blue-700" disabled={saving}>Guardar Cambios</Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
       {/* Modal Eliminar Curso */}
       <Dialog open={isDeleteModalOpen} onOpenChange={(open) => { setIsDeleteModalOpen(open); if (!open) setDeletingCourse(null); }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>¿Estás seguro?</DialogTitle>
+            <DialogTitle className="text-red-600">Eliminar Asignatura</DialogTitle>
           </DialogHeader>
-          <div className="mb-4">
-            Esta acción no se puede deshacer. Se eliminará el curso "{deletingCourse?.name}" permanentemente.
+          <div className="py-4 text-gray-600">
+            ¿Estás seguro que deseas eliminar <strong>{deletingCourse?.name}</strong> del catálogo general? Esta acción no se puede deshacer.
           </div>
           <DialogFooter>
             <DialogClose asChild>
               <Button variant="outline" type="button" disabled={saving}>Cancelar</Button>
             </DialogClose>
-            <Button variant="destructive" onClick={handleDeleteCourse} disabled={saving}>
-              Eliminar
-            </Button>
+            <Button variant="destructive" onClick={handleDeleteCourse} disabled={saving}>Sí, Eliminar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

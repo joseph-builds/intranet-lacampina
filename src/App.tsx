@@ -48,6 +48,8 @@ import AdminStudentManagement from "./pages/AdminStudentManagement";
 import AdminMallaCurricular from "./pages/AdminMallaCurricular";
 import AdminClassrooms from "./pages/AdminClassrooms";
 import SectionManagement from "./pages/SectionManagement";
+import MentalGames from "./pages/MentalGames";
+import Classmates from "./pages/Classmates";
 
 
 const queryClient = new QueryClient();
@@ -231,6 +233,16 @@ const App = () => (
             <Route path="/admin/*" element={
               <ProtectedRoute>
                 <AdminDashboard />
+              </ProtectedRoute>
+            } />
+            <Route path="/mental-games" element={
+              <ProtectedRoute>
+                <MentalGames />
+              </ProtectedRoute>
+            } />
+            <Route path="/classmates" element={
+              <ProtectedRoute>
+                <Classmates />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

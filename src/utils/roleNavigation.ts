@@ -2,7 +2,9 @@ import {
   Home, 
   BookOpen, 
   FileText, 
-  School, 
+  School,
+  Shield,
+  Layers, 
   ClipboardList,
   Users,
   UserCog,
@@ -193,6 +195,13 @@ export const adminNavigationItems: NavItem[] = [
     icon: Users,
     roles: ['admin']
   },
+  {
+    title: "Malla Curricular",
+    url: "/admin/malla-curricular",
+    icon: Layers,
+    roles: ['admin']
+  },
+  
   {
     title: 'Importación Masiva',
     url: '/admin/bulk-import',

@@ -2,16 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Users, BookOpen, FileText, Activity, GraduationCap, UserCheck } from 'lucide-react';
-import AdminCourseManagement from './AdminCourseManagement';
-import SimpleCourseManagement from './SimpleCourseManagement';
-import AdminStudentManagement from './AdminStudentManagement';
-import TestForm from './TestForm';
+
+// Se eliminaron las importaciones innecesarias de otros componentes (Tabs, TestForm, AdminStudentManagement, etc.)
 
 interface AdminStats {
   totalUsers: number;
@@ -45,18 +42,20 @@ const AdminDashboard = () => {
 
   const fetchAdminStats = async () => {
     try {
-      // Fetch user counts by role
+      // 1. Obtener conteo de usuarios por rol
       const { data: usersData } = await supabase
         .from('profiles')
         .select('role, is_active');
 
-      const { data: coursesData } = await supabase
+      // 2. Obtener conteo exacto de cursos (Corregido usando count)
+      const { count: coursesCount, error: coursesError } = await supabase
         .from('courses')
-        .select('id', { count: 'exact', head: true });
+        .select('*', { count: 'exact', head: true });
 
-      const { data: assignmentsData } = await supabase
+      // 3. Obtener conteo exacto de tareas (Corregido usando count)
+      const { count: assignmentsCount, error: assignmentsError } = await supabase
         .from('assignments')
-        .select('id', { count: 'exact', head: true });
+        .select('*', { count: 'exact', head: true });
 
       if (usersData) {
         const totalUsers = usersData.length;
@@ -70,8 +69,8 @@ const AdminDashboard = () => {
           totalStudents,
           totalTeachers,
           totalParents,
-          totalCourses: coursesData?.length || 0,
-          totalAssignments: assignmentsData?.length || 0,
+          totalCourses: coursesCount || 0,       // <-- Sincronizado correctamente
+          totalAssignments: assignmentsCount || 0, // <-- Sincronizado correctamente
           activeUsers
         });
       }
@@ -87,7 +86,6 @@ const AdminDashboard = () => {
     }
   };
 
-  // Redirect if not admin
   if (profile?.role !== 'admin') {
     return (
       <DashboardLayout>
@@ -123,193 +121,134 @@ const AdminDashboard = () => {
   return (
     <DashboardLayout>
       <div className="container mx-auto px-4 py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Panel de Administración</h1>
-        <p className="mt-2 text-gray-600">
-          Gestiona usuarios, cursos y contenido de La Campiña
-        </p>
-      </div>
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">Panel de Administración</h1>
+          <p className="mt-2 text-gray-600">
+            Gestiona usuarios, cursos y contenido de La Campiña
+          </p>
+        </div>
 
-      {/* Estadísticas */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {[
-          {
-            title: "Total Usuarios",
-            value: stats.totalUsers,
-            icon: Users,
-            description: "Usuarios registrados en el sistema",
-            color: "text-blue-600"
-          },
-          {
-            title: "Estudiantes",
-            value: stats.totalStudents,
-            icon: GraduationCap,
-            description: "Estudiantes activos",
-            color: "text-green-600"
-          },
-          {
-            title: "Profesores",
-            value: stats.totalTeachers,
-            icon: UserCheck,
-            description: "Profesores registrados",
-            color: "text-purple-600"
-          },
-          {
-            title: "Cursos",
-            value: stats.totalCourses,
-            icon: BookOpen,
-            description: "Cursos disponibles",
-            color: "text-indigo-600"
-          }
-        ].map((stat, index) => {
-          const IconComponent = stat.icon;
-          return (
-            <Card key={index} className="hover:shadow-lg transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">
-                  {stat.title}
-                </CardTitle>
-                <IconComponent className={`h-4 w-4 ${stat.color}`} />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stat.value}</div>
-                <p className="text-xs text-gray-500 mt-1">
-                  {stat.description}
-                </p>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+        {/* Estadísticas Globales */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {[
+            {
+              title: "Total Usuarios",
+              value: stats.totalUsers,
+              icon: Users,
+              description: "Usuarios registrados en el sistema",
+              color: "text-blue-600"
+            },
+            {
+              title: "Estudiantes",
+              value: stats.totalStudents,
+              icon: GraduationCap,
+              description: "Estudiantes activos",
+              color: "text-green-600"
+            },
+            {
+              title: "Profesores",
+              value: stats.totalTeachers,
+              icon: UserCheck,
+              description: "Profesores registrados",
+              color: "text-purple-600"
+            },
+            {
+              title: "Cursos",
+              value: stats.totalCourses,
+              icon: BookOpen,
+              description: "Cursos disponibles",
+              color: "text-indigo-600"
+            }
+          ].map((stat, index) => {
+            const IconComponent = stat.icon;
+            return (
+              <Card key={index} className="hover:shadow-lg transition-shadow">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">
+                    {stat.title}
+                  </CardTitle>
+                  <IconComponent className={`h-4 w-4 ${stat.color}`} />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{stat.value}</div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {stat.description}
+                  </p>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
 
-      {/* Tabs de gestión */}
-      <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="overview">Resumen</TabsTrigger>
-          <TabsTrigger value="test">Prueba</TabsTrigger>
-          <TabsTrigger value="courses">Cursos</TabsTrigger>
-          <TabsTrigger value="students">Estudiantes</TabsTrigger>
-          <TabsTrigger value="reports">Reportes</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Actividad Reciente</CardTitle>
-                <CardDescription>
-                  Últimas acciones en el sistema
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <Badge variant="outline">Usuario</Badge>
-                      <span className="text-sm">Nuevo estudiante registrado</span>
-                    </div>
-                    <span className="text-xs text-gray-500">Hace 2 horas</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <Badge variant="outline">Curso</Badge>
-                      <span className="text-sm">Curso actualizado</span>
-                    </div>
-                    <span className="text-xs text-gray-500">Hace 5 horas</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <Badge variant="outline">Tarea</Badge>
-                      <span className="text-sm">Nueva tarea asignada</span>
-                    </div>
-                    <span className="text-xs text-gray-500">Hace 1 día</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Acciones Rápidas</CardTitle>
-                <CardDescription>
-                  Tareas administrativas comunes
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Button className="w-full justify-start" variant="outline">
-                  <Users className="mr-2 h-4 w-4" />
-                  Crear nuevo usuario
-                </Button>
-                <Button className="w-full justify-start" variant="outline">
-                  <BookOpen className="mr-2 h-4 w-4" />
-                  Crear nuevo curso
-                </Button>
-                <Button className="w-full justify-start" variant="outline">
-                  <FileText className="mr-2 h-4 w-4" />
-                  Generar reporte
-                </Button>
-                <Button 
-                  className="w-full justify-start" 
-                  variant="outline"
-                  onClick={fetchAdminStats}
-                >
-                  <Activity className="mr-2 h-4 w-4" />
-                  Actualizar estadísticas
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="test">
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold">Formulario de Prueba</h2>
-            <p className="text-gray-600">
-              Este es un formulario simple para probar si el problema de input persiste
-            </p>
-            <TestForm />
-          </div>
-        </TabsContent>
-
-        <TabsContent value="courses">
-          <SimpleCourseManagement />
-        </TabsContent>
-
-        <TabsContent value="students">
-          <AdminStudentManagement />
-        </TabsContent>
-
-        <TabsContent value="reports" className="space-y-6">
+        {/* Paneles Informativos Inferiores */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Actividad Reciente */}
           <Card>
             <CardHeader>
-              <CardTitle>Reportes del Sistema</CardTitle>
+              <CardTitle>Actividad Reciente</CardTitle>
               <CardDescription>
-                Genera reportes detallados sobre el uso de la plataforma
+                Últimas acciones en el sistema
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Button variant="outline" className="h-20 flex-col">
-                  <Users className="h-6 w-6 mb-2" />
-                  Reporte de Usuarios
-                </Button>
-                <Button variant="outline" className="h-20 flex-col">
-                  <BookOpen className="h-6 w-6 mb-2" />
-                  Reporte de Cursos
-                </Button>
-                <Button variant="outline" className="h-20 flex-col">
-                  <FileText className="h-6 w-6 mb-2" />
-                  Reporte de Tareas
-                </Button>
-                <Button variant="outline" className="h-20 flex-col">
-                  <Activity className="h-6 w-6 mb-2" />
-                  Reporte de Actividad
-                </Button>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Badge variant="outline">Usuario</Badge>
+                    <span className="text-sm">Nuevo estudiante registrado</span>
+                  </div>
+                  <span className="text-xs text-gray-500">Hace 2 horas</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Badge variant="outline">Curso</Badge>
+                    <span className="text-sm">Curso actualizado</span>
+                  </div>
+                  <span className="text-xs text-gray-500">Hace 5 horas</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Badge variant="outline">Tarea</Badge>
+                    <span className="text-sm">Nueva tarea asignada</span>
+                  </div>
+                  <span className="text-xs text-gray-500">Hace 1 día</span>
+                </div>
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+
+          {/* Acciones Rápidas */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Acciones Rápidas</CardTitle>
+              <CardDescription>
+                Tareas administrativas comunes
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button className="w-full justify-start" variant="outline" onClick={() => window.location.href = '/admin/users'}>
+                <Users className="mr-2 h-4 w-4" />
+                Ir a Gestión de Usuarios
+              </Button>
+              <Button className="w-full justify-start" variant="outline" onClick={() => window.location.href = '/admin/courses'}>
+                <BookOpen className="mr-2 h-4 w-4" />
+                Ir a Gestión de Cursos
+              </Button>
+              <Button className="w-full justify-start" variant="outline" onClick={() => window.location.href = '/admin/students'}>
+                <GraduationCap className="mr-2 h-4 w-4" />
+                Ir a Gestión de Estudiantes
+              </Button>
+              <Button 
+                className="w-full justify-start" 
+                variant="outline"
+                onClick={fetchAdminStats}
+              >
+                <Activity className="mr-2 h-4 w-4" />
+                Actualizar estadísticas
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </DashboardLayout>
   );

@@ -72,7 +72,7 @@ const AdminCourseManagement = () => {
     description: '',
     code: '',
     teacher_principal_id: '',
-    academic_year: '2024',
+    academic_year: new Date().getFullYear().toString(),
     semester: '',
     program_id: '',
     start_date: '',
@@ -200,7 +200,7 @@ const AdminCourseManagement = () => {
       description: '',
       code: '',
       teacher_principal_id: '',
-      academic_year: '2024',
+      academic_year: new Date().getFullYear().toString(),
       semester: '',
       program_id: '',
       start_date: '',
@@ -323,25 +323,30 @@ const AdminCourseManagement = () => {
     }
     setSaving(true);
     try {
+      // Creamos el objeto de inserción limpio
+      const insertData: any = {
+        name: formData.name,
+        description: formData.description,
+        code: formData.code,
+        teacher_principal_id: formData.teacher_principal_id,
+        academic_year: formData.academic_year,
+        is_active: true,
+      };
+
+      // SOLO agregamos start_date si tiene un valor real
+      if (formData.start_date) {
+        insertData.start_date = formData.start_date;
+      }
+
       const { error } = await supabase
         .from('courses')
-        .insert([
-          {
-            name: formData.name,
-            description: formData.description,
-            code: formData.code,
-            teacher_principal_id: formData.teacher_principal_id,
-            academic_year: formData.academic_year,
-            semester: formData.semester,
-            program_id: formData.program_id,
-            start_date: formData.start_date,
-            is_active: true,
-          },
-        ]);
+        .insert([insertData]);
+
       if (error) {
+        console.error("Error detallado de Supabase:", error);
         toast({
           title: "Error",
-          description: "No se pudo crear el curso",
+          description: `No se pudo crear el curso: ${error.message}`,
           variant: "destructive",
         });
       } else {
@@ -760,23 +765,14 @@ const AdminCourseManagement = () => {
               </SelectContent>
             </Select>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+          <div className="grid grid-cols-1 gap-4 mt-2">
             <div>
-              <Label>Programa *</Label>
-              <Select value={formData.program_id} onValueChange={handleSelectChange('program_id')}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar programa" />
-                </SelectTrigger>
-                <SelectContent>
-                  {programs.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Semestre *</Label>
-              <Input placeholder="Ej: 2024-I" value={formData.semester} onChange={handleInputChange('semester')} />
+              <Label>Año Académico *</Label>
+              <Input 
+                placeholder="Ej: 2026" 
+                value={formData.academic_year} 
+                onChange={handleInputChange('academic_year')} 
+              />
             </div>
           </div>
           <div className="mt-2">

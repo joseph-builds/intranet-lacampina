@@ -44,6 +44,10 @@ import TeacherDetailView from "./pages/TeacherDetailView";
 import ParentStudentAssociation from "./pages/ParentStudentAssociation";
 import CreateExam from "./pages/CreateExam";
 import GradingView from "./pages/GradingView";
+import AdminStudentManagement from "./pages/AdminStudentManagement";
+import AdminMallaCurricular from "./pages/AdminMallaCurricular";
+import AdminClassrooms from "./pages/AdminClassrooms";
+import SectionManagement from "./pages/SectionManagement";
 
 
 const queryClient = new QueryClient();
@@ -202,6 +206,26 @@ const App = () => (
             <Route path="/admin/users" element={
               <ProtectedRoute allowedRoles={["admin"]}>
                 <AdminUserManagement />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/students" element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <AdminStudentManagement />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/malla-curricular" element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <AdminMallaCurricular />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/classrooms" element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <AdminClassrooms />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/section/:sectionId" element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <SectionManagement />
               </ProtectedRoute>
             } />
             <Route path="/admin/*" element={

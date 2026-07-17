@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { Plus, Search, Edit, Users, BookOpen, Mail, Phone, GraduationCap, ShieldAlert } from 'lucide-react';
+import { Plus, Search, Edit, Users, BookOpen, Mail, Phone, GraduationCap, ShieldAlert, CheckCircle2 } from 'lucide-react';
 
 // --- INTERFACES ---
 interface Level { id: string; name: string; }
@@ -25,44 +25,37 @@ interface StudentFormData {
   first_name: string; last_name: string; email: string; phone: string;
   guardian_name: string; emergency_phone: string; current_grade_id: string;
 }
-interface CourseMalla { id: string; name: string; area: string; is_mandatory: boolean; }
+interface CourseMalla { id: string; name: string; area: string; is_mandatory: boolean; course?: { is_active: boolean }; }
 
 const AdminStudentManagement = () => {
   const { toast } = useToast();
   
-  // --- ESTADOS ---
   const [students, setStudents] = useState<Student[]>([]);
   const [levels, setLevels] = useState<Level[]>([]);
   const [grades, setGrades] = useState<Grade[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   
-  // Estados para Malla y Exoneraciones
   const [studentMallaCourses, setStudentMallaCourses] = useState<CourseMalla[]>([]);
   const [exemptions, setExemptions] = useState<string[]>([]);
   const [loadingCourses, setLoadingCourses] = useState(false);
   
-  // Modales
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
   
-  // Selección
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   
-  // Filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [nivelFilter, setNivelFilter] = useState('all');
   const [gradoFilter, setGradoFilter] = useState('all');
 
-  // Formulario
   const initialFormState: StudentFormData = {
     first_name: '', last_name: '', email: '', phone: '', guardian_name: '', emergency_phone: '', current_grade_id: 'unassigned'
   };
   const [formData, setFormData] = useState<StudentFormData>(initialFormState);
 
-  // --- EFECTOS ---
   useEffect(() => { fetchInitialData(); }, []);
 
   const fetchInitialData = async () => {
@@ -99,53 +92,77 @@ const AdminStudentManagement = () => {
     }
   };
 
-  // --- FUNCIONES CRUD ---
+  // --- SOLUCIÓN: BUG DE ACTUALIZACIÓN Y FALLOS SILENCIOSOS ---
   const handleSaveStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
-      const payload = {
+      // 1. Armamos el payload SIN EL EMAIL para las actualizaciones
+      const payload: any = {
         first_name: formData.first_name.trim(),
         last_name: formData.last_name.trim(),
-        email: formData.email.trim(),
         phone: formData.phone.trim() || null,
         guardian_name: formData.guardian_name.trim() || null,
         emergency_phone: formData.emergency_phone.trim() || null,
         current_grade_id: formData.current_grade_id === 'unassigned' ? null : formData.current_grade_id,
-        role: 'student',
-        is_active: true
       };
 
       if (editingStudent) {
-        const { error } = await supabase.from('profiles').update(payload).eq('id', editingStudent.id);
+        // ACTUALIZAR ALUMNO: Agregamos .select() para forzar respuesta de Supabase
+        const { data, error } = await supabase
+          .from('profiles')
+          .update(payload)
+          .eq('id', editingStudent.id)
+          .select(); // <-- CRÍTICO PARA DETECTAR FALLOS DE RLS
+          
         if (error) throw error;
-        toast({ title: "Éxito", description: "Datos del estudiante actualizados." });
+        if (!data || data.length === 0) {
+          throw new Error("No se pudo actualizar en BD. Posible bloqueo por políticas RLS.");
+        }
+        toast({ title: "Éxito", description: "Ficha del estudiante actualizada correctamente." });
       } else {
+        // CREAR ALUMNO: Aquí sí mandamos el email y los roles
+        payload.email = formData.email.trim();
+        payload.role = 'student';
+        payload.is_active = true;
+        
         const { error: profileError } = await supabase.from('profiles').insert([payload]);
         if (profileError) throw profileError; 
         toast({ title: "Éxito", description: "Estudiante matriculado en el sistema." });
       }
+      
       closeModal();
-      fetchStudents();
+      await fetchStudents(); // Esperamos a que recargue la data real
     } catch (error: any) {
+      console.error("Error al guardar:", error);
       toast({ title: "Error", description: error.message || "Ocurrió un error al guardar.", variant: "destructive" });
     } finally {
       setSaving(false);
     }
   };
 
+  // --- SOLUCIÓN: BUG DE TOGGLE STATUS ---
   const handleToggleStatus = async (student: Student, newStatus: boolean) => {
     try {
-      const { error } = await supabase.from('profiles').update({ is_active: newStatus }).eq('id', student.id);
+      // Forzamos a que devuelva la fila actualizada con .select()
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({ is_active: newStatus })
+        .eq('id', student.id)
+        .select();
+        
       if (error) throw error;
-      toast({ title: "Estado actualizado", description: `El alumno ahora está ${newStatus ? 'activo' : 'inactivo'}.` });
-      fetchStudents();
-    } catch (error) {
-      toast({ title: "Error", description: "No se pudo cambiar el estado.", variant: "destructive" });
+      if (!data || data.length === 0) {
+         throw new Error("No tienes permisos para desactivar este usuario o hubo un bloqueo de base de datos.");
+      }
+      
+      toast({ title: "Estado actualizado", description: `El alumno ha sido ${newStatus ? 'activado' : 'desmatriculado'}.` });
+      await fetchStudents(); // Recargamos para que la tabla y el dashboard se actualicen
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "No se pudo cambiar el estado.", variant: "destructive" });
     }
   };
 
-  // --- LOGICA DE EXONERACIONES ---
   const openEnrollModal = async (student: Student) => {
     setSelectedStudent(student);
     setStudentMallaCourses([]);
@@ -155,17 +172,14 @@ const AdminStudentManagement = () => {
     if (student.grade?.id) {
       setLoadingCourses(true);
       try {
-        // 1. Cargar Malla Activa
         const { data: malla } = await supabase
           .from('base_courses')
           .select('id, name, area, is_mandatory, course:courses(is_active)')
           .eq('grade_id', student.grade.id)
           .order('name');
           
-        const cursosActivos = (malla || []).filter(c => c.course?.is_active !== false);
-        setStudentMallaCourses(cursosActivos as any);
+        setStudentMallaCourses(malla as any);
 
-        // 2. Cargar Exoneraciones del alumno
         const { data: exempData } = await supabase
           .from('student_course_exemptions')
           .select('base_course_id')
@@ -197,7 +211,6 @@ const AdminStudentManagement = () => {
     }
   };
 
-  // --- CONTROL DE UI ---
   const openCreateModal = () => { setEditingStudent(null); setFormData(initialFormState); setIsModalOpen(true); };
   const openEditModal = (student: Student) => {
     setEditingStudent(student);
@@ -210,7 +223,6 @@ const AdminStudentManagement = () => {
   };
   const closeModal = () => { setIsModalOpen(false); setEditingStudent(null); setFormData(initialFormState); };
 
-  // --- FILTROS OPTIMIZADOS ---
   const filteredStudents = useMemo(() => {
     return students.filter(student => {
       const searchStr = `${student.first_name} ${student.last_name} ${student.email} ${student.guardian_name || ''}`.toLowerCase();
@@ -238,19 +250,42 @@ const AdminStudentManagement = () => {
     <DashboardLayout>
       <div className="container mx-auto px-4 py-8 space-y-6">
         
-        {/* CABECERA */}
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center gap-3 text-gray-800">
-              <Users className="h-8 w-8 text-blue-600" />
-              Gestión de Estudiantes
-            </h1>
-            <p className="text-muted-foreground mt-1">Administra la base de datos de alumnos, apoderados y asignación de grados.</p>
+        {/* CABECERA Y DASHBOARD METRICS */}
+        <div className="mb-8">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
+            <div>
+              <h1 className="text-3xl font-bold flex items-center gap-3 text-gray-800">
+                <Users className="h-8 w-8 text-blue-600" />
+                Gestión de Estudiantes
+              </h1>
+              <p className="text-muted-foreground mt-1">Administra la base de datos de alumnos, apoderados y su matrícula en el colegio.</p>
+            </div>
+            <Button onClick={openCreateModal} className="bg-blue-600 hover:bg-blue-700 shadow-md">
+              <Plus className="w-4 h-4 mr-2" />
+              + Nuevo Estudiante
+            </Button>
           </div>
-          <Button onClick={openCreateModal} className="bg-blue-600 hover:bg-blue-700 shadow-md">
-            <Plus className="w-4 h-4 mr-2" />
-            + Nuevo Estudiante
-          </Button>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card className="hover:shadow-md transition-shadow border-l-4 border-l-blue-500">
+              <div className="p-4">
+                <div className="text-sm font-medium text-gray-600 flex items-center justify-between">Total Registrados <Users className="inline h-5 w-5 text-blue-500" /></div>
+                <div className="text-3xl font-bold text-gray-800">{students.length}</div>
+              </div>
+            </Card>
+            <Card className="hover:shadow-md transition-shadow border-l-4 border-l-green-500">
+              <div className="p-4">
+                <div className="text-sm font-medium text-gray-600 flex items-center justify-between">Alumnos Activos <CheckCircle2 className="inline h-5 w-5 text-green-500" /></div>
+                <div className="text-3xl font-bold text-gray-800">{students.filter(s => s.is_active).length}</div>
+              </div>
+            </Card>
+            <Card className="hover:shadow-md transition-shadow border-l-4 border-l-red-400">
+              <div className="p-4">
+                <div className="text-sm font-medium text-gray-600 flex items-center justify-between">Desmatriculados (Inactivos) <ShieldAlert className="inline h-5 w-5 text-red-400" /></div>
+                <div className="text-3xl font-bold text-gray-800">{students.filter(s => !s.is_active).length}</div>
+              </div>
+            </Card>
+          </div>
         </div>
 
         {/* BARRA DE FILTROS */}
@@ -280,7 +315,7 @@ const AdminStudentManagement = () => {
                 <SelectContent>
                   <SelectItem value="all">Todos los estados</SelectItem>
                   <SelectItem value="active">Solo Activos</SelectItem>
-                  <SelectItem value="inactive">Solo Inactivos</SelectItem>
+                  <SelectItem value="inactive">Solo Desmatriculados</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -314,7 +349,7 @@ const AdminStudentManagement = () => {
                       </TableRow>
                     ) : (
                       filteredStudents.map((student) => (
-                        <TableRow key={student.id} className="hover:bg-gray-50/50">
+                        <TableRow key={student.id} className={`hover:bg-gray-50/50 ${!student.is_active ? 'bg-red-50/30 opacity-75' : ''}`}>
                           <TableCell>
                             <div className="font-semibold text-gray-900">{student.first_name} {student.last_name}</div>
                             <div className="text-xs text-gray-500 flex items-center mt-1">
@@ -329,7 +364,7 @@ const AdminStudentManagement = () => {
                           <TableCell>
                             {student.grade ? (
                               <div>
-                                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 font-semibold">
+                                <Badge variant="outline" className={`${student.is_active ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-100 text-gray-600 border-gray-200'} font-semibold`}>
                                   {student.grade.name}
                                 </Badge>
                                 <div className="text-xs text-gray-500 mt-1 pl-1">{student.grade.level?.name}</div>
@@ -355,8 +390,8 @@ const AdminStudentManagement = () => {
                           <TableCell className="text-center">
                              <div className="flex items-center justify-center gap-2">
                                 <Switch checked={student.is_active} onCheckedChange={(val) => handleToggleStatus(student, val)} />
-                                <span className={`text-xs font-medium w-12 text-left ${student.is_active ? "text-green-600" : "text-gray-400"}`}>
-                                  {student.is_active ? 'Activo' : 'Inactivo'}
+                                <span className={`text-xs font-medium w-16 text-left ${student.is_active ? "text-green-600" : "text-red-500"}`}>
+                                  {student.is_active ? 'Activo' : 'Desmatriculado'}
                                 </span>
                              </div>
                           </TableCell>
@@ -392,7 +427,7 @@ const AdminStudentManagement = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2"><Label>Nombres *</Label><Input value={formData.first_name} onChange={e => setFormData({...formData, first_name: e.target.value})} required autoFocus/></div>
                   <div className="space-y-2"><Label>Apellidos *</Label><Input value={formData.last_name} onChange={e => setFormData({...formData, last_name: e.target.value})} required /></div>
-                  <div className="space-y-2"><Label>Correo Institucional / Personal *</Label><Input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} required disabled={!!editingStudent} className={editingStudent ? "bg-gray-100" : ""}/></div>
+                  <div className="space-y-2"><Label>Correo Institucional / Personal *</Label><Input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} required disabled={!!editingStudent} className={editingStudent ? "bg-gray-100 cursor-not-allowed" : ""}/></div>
                   <div className="space-y-2"><Label>Teléfono Celular (Opcional)</Label><Input value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} placeholder="Ej: 987654321" /></div>
                 </div>
               </div>
@@ -434,19 +469,31 @@ const AdminStudentManagement = () => {
           </DialogContent>
         </Dialog>
 
-        {/* MODAL VER CURSOS (Con gestión de exoneraciones) */}
+        {/* MODAL VER CURSOS (Con gestión de inactivos, desmatriculados y exoneraciones) */}
         <Dialog open={isEnrollModalOpen} onOpenChange={setIsEnrollModalOpen}>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Situación Académica y Cursos Asignados</DialogTitle>
             </DialogHeader>
             <div className="py-4 space-y-6">
+
+              {/* AVISO DE ALUMNO DESMATRICULADO */}
+              {!selectedStudent?.is_active && (
+                <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-md">
+                  <div className="flex items-center gap-2 text-red-800 font-bold">
+                    <ShieldAlert className="w-5 h-5" />
+                    ALUMNO INACTIVO (DESMATRICULADO)
+                  </div>
+                  <p className="text-sm text-red-600 mt-1">Este alumno ha sido desactivado del sistema. No aparecerá en las listas de clase de los profesores y sus cursos se encuentran suspendidos.</p>
+                </div>
+              )}
+
               <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-lg border">
-                <div className="bg-blue-100 p-3 rounded-full"><GraduationCap className="w-6 h-6 text-blue-600" /></div>
+                <div className={`p-3 rounded-full ${selectedStudent?.is_active ? 'bg-blue-100 text-blue-600' : 'bg-gray-200 text-gray-500'}`}><GraduationCap className="w-6 h-6" /></div>
                 <div>
                   <h3 className="text-lg font-bold">{selectedStudent?.first_name} {selectedStudent?.last_name}</h3>
                   {selectedStudent?.grade ? (
-                    <p className="text-sm font-medium text-blue-600">Matriculado en: {selectedStudent.grade.name} ({selectedStudent.grade.level?.name})</p>
+                    <p className={`text-sm font-medium ${selectedStudent?.is_active ? 'text-blue-600' : 'text-gray-500'}`}>Matriculado en: {selectedStudent.grade.name} ({selectedStudent.grade.level?.name})</p>
                   ) : <p className="text-sm font-medium text-orange-600">Sin grado asignado actualmente.</p>}
                 </div>
               </div>
@@ -460,7 +507,7 @@ const AdminStudentManagement = () => {
                   {loadingCourses ? (
                     <p className="text-center text-sm text-gray-500 animate-pulse py-4">Cargando cursos...</p>
                   ) : studentMallaCourses.length > 0 ? (
-                    <div className="border rounded-md overflow-hidden">
+                    <div className={`border rounded-md overflow-hidden ${!selectedStudent.is_active ? 'opacity-80 grayscale' : ''}`}>
                       <Table>
                         <TableHeader className="bg-gray-50">
                           <TableRow>
@@ -472,11 +519,14 @@ const AdminStudentManagement = () => {
                         <TableBody>
                           {studentMallaCourses.map((curso) => {
                             const isExempt = exemptions.includes(curso.id);
+                            const isCourseActive = curso.course?.is_active !== false;
+
                             return (
-                              <TableRow key={curso.id} className={isExempt ? "bg-gray-50 opacity-60" : ""}>
+                              <TableRow key={curso.id} className={!isCourseActive || !selectedStudent.is_active ? "bg-red-50/20" : (isExempt ? "bg-gray-50 opacity-60" : "")}>
                                 <TableCell className="font-medium flex items-center gap-2">
-                                  <BookOpen className={`w-4 h-4 ${isExempt ? 'text-gray-300' : 'text-blue-500'}`} /> 
-                                  <span className={isExempt ? "line-through text-gray-400" : ""}>{curso.name}</span>
+                                  <BookOpen className={`w-4 h-4 ${(!isCourseActive || !selectedStudent.is_active) ? 'text-red-400' : (isExempt ? 'text-gray-300' : 'text-blue-500')}`} /> 
+                                  <span className={!isCourseActive || isExempt || !selectedStudent.is_active ? "line-through text-gray-400" : ""}>{curso.name}</span>
+                                  {!isCourseActive && <Badge variant="outline" className="ml-2 text-[10px] bg-red-50 text-red-600 border-red-200">Inactivo en Catálogo</Badge>}
                                 </TableCell>
                                 <TableCell className="text-center">
                                   <Badge variant="outline" className={curso.is_mandatory ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'}>
@@ -484,15 +534,21 @@ const AdminStudentManagement = () => {
                                   </Badge>
                                 </TableCell>
                                 <TableCell className="text-right">
-                                  <div className="flex items-center justify-end gap-3">
-                                    <span className={`text-xs font-bold ${isExempt ? 'text-red-500' : 'text-green-600'}`}>
-                                      {isExempt ? 'Exonerado' : 'Cursando'}
-                                    </span>
-                                    <Switch 
-                                      checked={!isExempt} 
-                                      onCheckedChange={(checked) => handleToggleExemption(curso.id, !checked)}
-                                    />
-                                  </div>
+                                  {!selectedStudent.is_active ? (
+                                    <span className="text-xs font-bold text-red-500 pr-2">Desmatriculado (Inactivo)</span>
+                                  ) : !isCourseActive ? (
+                                    <span className="text-xs font-bold text-red-500 pr-2">Suspendido por Dirección</span>
+                                  ) : (
+                                    <div className="flex items-center justify-end gap-3">
+                                      <span className={`text-xs font-bold ${isExempt ? 'text-red-500' : 'text-green-600'}`}>
+                                        {isExempt ? 'Exonerado' : 'Cursando'}
+                                      </span>
+                                      <Switch 
+                                        checked={!isExempt} 
+                                        onCheckedChange={(checked) => handleToggleExemption(curso.id, !checked)}
+                                      />
+                                    </div>
+                                  )}
                                 </TableCell>
                               </TableRow>
                             );

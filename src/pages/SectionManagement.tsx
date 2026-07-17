@@ -47,19 +47,16 @@ const SectionManagement = () => {
         .order('first_name');
       setStaff(staffData || []);
 
-      // 3. Cargar Cursos de esta sección (Solo cursos base activos)
+      // 3. Cargar Cursos de esta sección (SIN FILTRAR, TRAEMOS TODOS INCLUSO INACTIVOS)
       const { data: coursesData } = await supabase
         .from('section_courses')
         .select('id, teacher_id, base:base_courses(name, area, is_mandatory, course_id, course:courses(is_active))')
         .eq('section_id', sectionId);
       
-      const activeCourses = (coursesData || [])
-        .filter((c: any) => c.base?.course?.is_active !== false) // Ocultar si el curso maestro fue desactivado
-        .sort((a: any, b: any) => a.base.name.localeCompare(b.base.name));
-      setCourses(activeCourses);
+      const allCourses = (coursesData || []).sort((a: any, b: any) => a.base.name.localeCompare(b.base.name));
+      setCourses(allCourses);
 
       // 4. Cargar Alumnos Asignados (Solo alumnos activos)
-      // !inner obliga a que la fila de profiles cumpla la condición de is_active = true
       const { data: studData } = await supabase
         .from('student_sections')
         .select('id, student:profiles!inner(id, first_name, last_name, email, is_active)')
@@ -150,7 +147,6 @@ const SectionManagement = () => {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none" className="text-red-500">Sin Tutor Asignado</SelectItem>
-                {/* AQUI SOLO MOSTRAMOS TUTORES */}
                 {availableTutors.map(t => <SelectItem key={t.id} value={t.id}>{t.first_name} {t.last_name}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -172,27 +168,42 @@ const SectionManagement = () => {
                 {courses.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">No hay cursos registrados. Haz clic en Refrescar Malla.</p>
                 ) : (
-                  courses.map(course => (
-                    <div key={course.id} className="p-3 border rounded-lg bg-gray-50 hover:bg-white transition-colors">
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <span className="font-bold text-gray-800 block">{course.base?.name}</span>
-                          <span className="text-xs text-gray-500">{course.base?.area}</span>
+                  courses.map(course => {
+                    // VALIDACIÓN DE CURSO ACTIVO
+                    const isCourseActive = course.base?.course?.is_active !== false;
+
+                    return (
+                      <div key={course.id} className={`p-3 border rounded-lg transition-colors ${isCourseActive ? 'bg-gray-50 hover:bg-white' : 'bg-red-50/40 border-red-100 opacity-80'}`}>
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <span className={`font-bold block ${isCourseActive ? 'text-gray-800' : 'text-gray-500 line-through'}`}>
+                              {course.base?.name}
+                            </span>
+                            <span className="text-xs text-gray-500">{course.base?.area}</span>
+                          </div>
+                          <div className="flex flex-col gap-1 items-end">
+                            {!course.base?.is_mandatory && <Badge variant="secondary" className="text-[10px]">Electivo</Badge>}
+                            {!isCourseActive && <Badge variant="outline" className="text-[10px] bg-red-100 text-red-700 border-red-200">Inactivo en Catálogo</Badge>}
+                          </div>
                         </div>
-                        {!course.base?.is_mandatory && <Badge variant="secondary" className="text-[10px]">Electivo</Badge>}
+                        <Select 
+                          value={course.teacher_id || 'none'} 
+                          onValueChange={(val) => updateTeacher(course.id, val)}
+                          disabled={!isCourseActive} // BLOQUEA SI ESTÁ INACTIVO
+                        >
+                          <SelectTrigger className={`h-8 text-sm ${isCourseActive ? 'bg-white' : 'bg-gray-100 text-gray-400 border-dashed'}`}>
+                            <SelectValue placeholder={isCourseActive ? "Asignar profesor..." : "Curso inhabilitado"}/>
+                          </SelectTrigger>
+                          {isCourseActive && (
+                            <SelectContent>
+                              <SelectItem value="none" className="text-red-500 italic">Sin profesor asignado</SelectItem>
+                              {availableTeachers.map(t => <SelectItem key={t.id} value={t.id}>{t.first_name} {t.last_name}</SelectItem>)}
+                            </SelectContent>
+                          )}
+                        </Select>
                       </div>
-                      <Select value={course.teacher_id || 'none'} onValueChange={(val) => updateTeacher(course.id, val)}>
-                        <SelectTrigger className="h-8 text-sm bg-white">
-                          <SelectValue placeholder="Asignar profesor..."/>
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none" className="text-red-500 italic">Sin profesor asignado</SelectItem>
-                          {/* AQUI SOLO MOSTRAMOS PROFESORES */}
-                          {availableTeachers.map(t => <SelectItem key={t.id} value={t.id}>{t.first_name} {t.last_name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </CardContent>

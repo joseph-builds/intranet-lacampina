@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,13 +13,18 @@ import { BookOpen, Edit, Trash2, Search, CheckCircle2, XCircle } from 'lucide-re
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 
+interface CourseGroup {
+  level: string;
+  grades: string[];
+}
+
 interface Course {
   id: string;
   name: string;
   code: string;
   description?: string;
   is_active: boolean;
-  grades_taught?: string[]; // <- NUEVO CAMPO PARA MOSTRAR GRADOS
+  grades_taught?: CourseGroup[]; // <- Modificado para agrupar por niveles
 }
 
 interface CourseFormData {
@@ -31,26 +36,21 @@ interface CourseFormData {
 const AdminCourseManagement = () => {
   const { toast } = useToast();
   
-  // Estados
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   
-  // Modales
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   
-  // Selección
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [deletingCourse, setDeletingCourse] = useState<Course | null>(null);
   
-  // Formularios y Filtros
   const [formData, setFormData] = useState<CourseFormData>({ name: '', code: '', description: '' });
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
   
-  // Edición Rápida
   const [quickEditMode, setQuickEditMode] = useState(false);
   const [quickEditChanges, setQuickEditChanges] = useState<{ [id: string]: Partial<Course> }>({});
 
@@ -62,60 +62,61 @@ const AdminCourseManagement = () => {
     try {
       setLoading(true);
       
-      // OPTIMIZACIÓN: Traer datos base y cruzar con la malla (base_courses) 
-      // para saber en qué grados está asignado cada curso
+      // OPTIMIZACIÓN: Cruzar con niveles académicos
       const { data, error } = await supabase
         .from('courses')
         .select(`
           id, name, code, description, is_active,
           base_courses (
-            grade:academic_grades (name)
+            grade:academic_grades (
+              name,
+              level:academic_levels (name)
+            )
           )
         `)
         .order('name', { ascending: true });
 
       if (error) throw error;
       
-      // Formatear los datos para extraer solo los nombres de los grados únicos
+      // AGRUPACIÓN: Ordenar los grados por su Nivel respectivo
       const formattedCourses = (data || []).map((c: any) => {
-        const gradesSet = new Set<string>();
+        const grouped: Record<string, Set<string>> = {};
+        
         if (c.base_courses) {
           c.base_courses.forEach((bc: any) => {
-            if (bc.grade && bc.grade.name) gradesSet.add(bc.grade.name);
+            if (bc.grade && bc.grade.level?.name && bc.grade.name) {
+              const levelName = bc.grade.level.name;
+              if (!grouped[levelName]) grouped[levelName] = new Set();
+              grouped[levelName].add(bc.grade.name);
+            }
           });
         }
-        return {
-          ...c,
-          grades_taught: Array.from(gradesSet)
-        };
+
+        const grades_taught: CourseGroup[] = Object.keys(grouped).map(lvl => ({
+          level: lvl,
+          grades: Array.from(grouped[lvl]).sort() // Ordenar grados alfabéticamente
+        }));
+
+        return { ...c, grades_taught };
       });
 
       setCourses(formattedCourses as Course[]);
     } catch (error: any) {
-      console.error('Error fetching courses:', error);
       toast({ title: "Error", description: "No se pudieron cargar los cursos.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleInputChange = useCallback((field: keyof CourseFormData) => (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
+  const handleInputChange = useCallback((field: keyof CourseFormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData(prev => ({ ...prev, [field]: e.target.value }));
   }, []);
 
-  const resetForm = useCallback(() => {
-    setFormData({ name: '', code: '', description: '' });
-  }, []);
+  const resetForm = useCallback(() => setFormData({ name: '', code: '', description: '' }), []);
 
   const openEditModal = (course: Course) => {
     setEditingCourse(course);
-    setFormData({
-      name: course.name,
-      code: course.code,
-      description: course.description || '',
-    });
+    setFormData({ name: course.name, code: course.code, description: course.description || '' });
     setIsEditModalOpen(true);
   };
 
@@ -124,29 +125,17 @@ const AdminCourseManagement = () => {
     setIsDeleteModalOpen(true);
   };
 
-  // OPTIMIZACIÓN: Filtro memoizado
   const filteredCourses = useMemo(() => {
     return courses.filter(course => {
       const searchLower = searchTerm.toLowerCase();
-      const matchesSearch = 
-        course.name.toLowerCase().includes(searchLower) ||
-        course.code.toLowerCase().includes(searchLower);
-      
-      const matchesStatus = 
-        filterStatus === 'all' || 
-        (filterStatus === 'active' && course.is_active) ||
-        (filterStatus === 'inactive' && !course.is_active);
-        
+      const matchesSearch = course.name.toLowerCase().includes(searchLower) || course.code.toLowerCase().includes(searchLower);
+      const matchesStatus = filterStatus === 'all' || (filterStatus === 'active' && course.is_active) || (filterStatus === 'inactive' && !course.is_active);
       return matchesSearch && matchesStatus;
     });
   }, [courses, searchTerm, filterStatus]);
 
-  // Funciones de Edición Rápida
   const handleQuickEditChange = (courseId: string, field: keyof Course, value: any) => {
-    setQuickEditChanges(prev => ({
-      ...prev,
-      [courseId]: { ...prev[courseId], [field]: value }
-    }));
+    setQuickEditChanges(prev => ({ ...prev, [courseId]: { ...prev[courseId], [field]: value } }));
   };
 
   const clearQuickEditChanges = () => setQuickEditChanges({});
@@ -156,11 +145,7 @@ const AdminCourseManagement = () => {
     if (updates.length === 0) return;
     setSaving(true);
     try {
-      await Promise.all(
-        updates.map(([id, changes]) => 
-          supabase.from('courses').update(changes).eq('id', id)
-        )
-      );
+      await Promise.all(updates.map(([id, changes]) => supabase.from('courses').update(changes).eq('id', id)));
       toast({ title: 'Cambios guardados', description: 'Todos los cambios fueron guardados exitosamente.' });
       clearQuickEditChanges();
       setQuickEditMode(false);
@@ -172,7 +157,6 @@ const AdminCourseManagement = () => {
     }
   };
 
-  // Funciones CRUD
   const handleToggleCourseStatus = async (course: Course, newStatus: boolean) => {
     try {
       const { error } = await supabase.from('courses').update({ is_active: newStatus }).eq('id', course.id);
@@ -186,30 +170,18 @@ const AdminCourseManagement = () => {
 
   const handleCreateCourse = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.code) {
-      toast({ title: "Campos requeridos", description: "Completa el nombre y el código.", variant: "destructive" });
-      return;
-    }
+    if (!formData.name || !formData.code) return toast({ title: "Campos requeridos", variant: "destructive" });
     setSaving(true);
     try {
-      const { error } = await supabase.from('courses').insert([{
-        name: formData.name.trim(),
-        code: formData.code.trim(),
-        description: formData.description.trim(),
-        is_active: true,
-      }]);
-
+      const { error } = await supabase.from('courses').insert([{ name: formData.name.trim(), code: formData.code.trim(), description: formData.description.trim(), is_active: true }]);
       if (error) throw error;
-
       toast({ title: "Curso creado", description: `El curso "${formData.name}" fue añadido al catálogo.` });
       setIsCreateModalOpen(false);
       resetForm();
       fetchCourses();
     } catch (error: any) {
       toast({ title: "Error", description: error.message || "No se pudo crear.", variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   const handleEditCourse = async (e: React.FormEvent) => {
@@ -217,24 +189,16 @@ const AdminCourseManagement = () => {
     if (!editingCourse) return;
     setSaving(true);
     try {
-      const { error } = await supabase.from('courses').update({
-        name: formData.name.trim(),
-        code: formData.code.trim(),
-        description: formData.description.trim(),
-      }).eq('id', editingCourse.id);
-      
+      const { error } = await supabase.from('courses').update({ name: formData.name.trim(), code: formData.code.trim(), description: formData.description.trim() }).eq('id', editingCourse.id);
       if (error) throw error;
-      
       toast({ title: "Curso actualizado", description: "Los cambios fueron guardados." });
       setIsEditModalOpen(false);
       setEditingCourse(null);
       resetForm();
       fetchCourses();
     } catch (error) {
-      toast({ title: "Error", description: "No se pudo actualizar el curso", variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
+      toast({ title: "Error", variant: "destructive" });
+    } finally { setSaving(false); }
   };
 
   const handleDeleteCourse = async () => {
@@ -243,29 +207,19 @@ const AdminCourseManagement = () => {
     try {
       const { error } = await supabase.from('courses').delete().eq('id', deletingCourse.id);
       if (error) throw error;
-      
-      toast({ title: "Curso eliminado", description: `El curso fue eliminado del catálogo.` });
+      toast({ title: "Curso eliminado" });
       fetchCourses();
     } catch (error) {
-      toast({ title: "Error", description: "No se pudo eliminar. Es posible que esté asignado a una malla curricular.", variant: "destructive" });
+      toast({ title: "Error", description: "Es posible que esté asignado a una malla curricular.", variant: "destructive" });
     } finally {
-      setSaving(false);
-      setIsDeleteModalOpen(false);
-      setDeletingCourse(null);
+      setSaving(false); setIsDeleteModalOpen(false); setDeletingCourse(null);
     }
   };
 
   if (loading && courses.length === 0) {
     return (
       <DashboardLayout>
-        <div className="p-6 space-y-6">
-          <div className="animate-pulse">
-            <div className="h-8 bg-muted rounded w-1/3 mb-6"></div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {[...Array(3)].map((_, i) => <div key={i} className="h-32 bg-muted rounded"></div>)}
-            </div>
-          </div>
-        </div>
+        <div className="p-6 space-y-6"><div className="animate-pulse"><div className="h-8 bg-muted rounded w-1/3 mb-6"></div><div className="grid grid-cols-1 md:grid-cols-3 gap-4">{[...Array(3)].map((_, i) => <div key={i} className="h-32 bg-muted rounded"></div>)}</div></div></div>
       </DashboardLayout>
     );
   }
@@ -280,48 +234,32 @@ const AdminCourseManagement = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card className="hover:shadow-md transition-shadow border-l-4 border-l-blue-500">
               <div className="p-4">
-                <div className="text-sm font-medium text-gray-600 flex items-center justify-between">
-                  Total en Catálogo <BookOpen className="inline h-5 w-5 text-blue-500" />
-                </div>
+                <div className="text-sm font-medium text-gray-600 flex items-center justify-between">Total en Catálogo <BookOpen className="inline h-5 w-5 text-blue-500" /></div>
                 <div className="text-3xl font-bold text-gray-800">{courses.length}</div>
               </div>
             </Card>
             <Card className="hover:shadow-md transition-shadow border-l-4 border-l-green-500">
               <div className="p-4">
-                <div className="text-sm font-medium text-gray-600 flex items-center justify-between">
-                  Cursos Activos <CheckCircle2 className="inline h-5 w-5 text-green-500" />
-                </div>
+                <div className="text-sm font-medium text-gray-600 flex items-center justify-between">Cursos Activos <CheckCircle2 className="inline h-5 w-5 text-green-500" /></div>
                 <div className="text-3xl font-bold text-gray-800">{courses.filter(c => c.is_active).length}</div>
               </div>
             </Card>
             <Card className="hover:shadow-md transition-shadow border-l-4 border-l-gray-400">
               <div className="p-4">
-                <div className="text-sm font-medium text-gray-600 flex items-center justify-between">
-                  Cursos Inactivos <XCircle className="inline h-5 w-5 text-gray-400" />
-                </div>
+                <div className="text-sm font-medium text-gray-600 flex items-center justify-between">Cursos Inactivos <XCircle className="inline h-5 w-5 text-gray-400" /></div>
                 <div className="text-3xl font-bold text-gray-800">{courses.filter(c => !c.is_active).length}</div>
               </div>
             </Card>
           </div>
         </div>
 
-        {/* Barra de Filtros y Acciones */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 bg-white p-4 rounded-lg shadow-sm border">
           <div className="flex gap-4 flex-1 max-w-xl">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input 
-                placeholder="Buscar por nombre o código..." 
-                value={searchTerm} 
-                onChange={(e) => setSearchTerm(e.target.value)} 
-                className="pl-9 w-full"
-              />
+              <Input placeholder="Buscar por nombre o código..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 w-full" />
             </div>
-            <select 
-              className="flex h-10 w-[180px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value as any)}
-            >
+            <select className="flex h-10 w-[180px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as any)}>
               <option value="all">Todos los estados</option>
               <option value="active">Solo Activos</option>
               <option value="inactive">Solo Inactivos</option>
@@ -329,29 +267,13 @@ const AdminCourseManagement = () => {
           </div>
           
           <div className="flex gap-2">
-            <Button
-              variant={quickEditMode ? 'default' : 'outline'}
-              className={quickEditMode ? 'bg-blue-600 text-white hover:bg-blue-700' : ''}
-              onClick={() => {
-                if (quickEditMode && Object.keys(quickEditChanges).length > 0) {
-                  if (window.confirm('Tienes cambios sin guardar. ¿Descartarlos?')) {
-                    clearQuickEditChanges();
-                    setQuickEditMode(false);
-                  }
-                } else {
-                  setQuickEditMode(!quickEditMode);
-                }
-              }}
-            >
+            <Button variant={quickEditMode ? 'default' : 'outline'} className={quickEditMode ? 'bg-blue-600 text-white hover:bg-blue-700' : ''} onClick={() => { if (quickEditMode && Object.keys(quickEditChanges).length > 0) { if (window.confirm('Tienes cambios sin guardar. ¿Descartarlos?')) { clearQuickEditChanges(); setQuickEditMode(false); } } else { setQuickEditMode(!quickEditMode); } }}>
               {quickEditMode ? 'Salir de Edición Rápida' : 'Edición Rápida'}
             </Button>
-            <Button className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => { resetForm(); setIsCreateModalOpen(true); }}>
-              + Añadir Curso al Catálogo
-            </Button>
+            <Button className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => { resetForm(); setIsCreateModalOpen(true); }}>+ Añadir Curso al Catálogo</Button>
           </div>
         </div>
 
-        {/* Tabla de Cursos */}
         <Card className="border-0 shadow-sm">
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -369,22 +291,24 @@ const AdminCourseManagement = () => {
                   {filteredCourses.map((course) => (
                     <TableRow key={course.id} className="hover:bg-gray-50/50">
                       <TableCell className="font-mono text-sm text-gray-500">
-                        {quickEditMode ? (
-                          <Input value={quickEditChanges[course.id]?.code ?? course.code} onChange={e => handleQuickEditChange(course.id, 'code', e.target.value)} className="h-8 text-sm" />
-                        ) : (course.code)}
+                        {quickEditMode ? <Input value={quickEditChanges[course.id]?.code ?? course.code} onChange={e => handleQuickEditChange(course.id, 'code', e.target.value)} className="h-8 text-sm" /> : course.code}
                       </TableCell>
                       
                       <TableCell>
-                        {quickEditMode ? (
-                          <Input value={quickEditChanges[course.id]?.name ?? course.name} onChange={e => handleQuickEditChange(course.id, 'name', e.target.value)} className="h-8 font-medium" />
-                        ) : (<span className="font-medium text-gray-900">{course.name}</span>)}
+                        {quickEditMode ? <Input value={quickEditChanges[course.id]?.name ?? course.name} onChange={e => handleQuickEditChange(course.id, 'name', e.target.value)} className="h-8 font-medium" /> : <span className="font-medium text-gray-900">{course.name}</span>}
                       </TableCell>
                       
+                      {/* CELDAS AGRUPADAS POR NIVEL */}
                       <TableCell>
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-col gap-2">
                           {course.grades_taught && course.grades_taught.length > 0 ? (
-                            course.grades_taught.map(g => (
-                              <Badge key={g} variant="secondary" className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100">{g}</Badge>
+                            course.grades_taught.map((group, idx) => (
+                              <div key={idx} className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-[10px] font-bold text-gray-400 uppercase w-16 text-right mr-1">{group.level}:</span>
+                                {group.grades.map(g => (
+                                  <Badge key={g} variant="secondary" className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100">{g}</Badge>
+                                ))}
+                              </div>
                             ))
                           ) : (
                             <span className="text-xs text-gray-400 italic">No asignado en mallas</span>
@@ -394,16 +318,7 @@ const AdminCourseManagement = () => {
 
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-2">
-                          <Switch 
-                            checked={quickEditChanges[course.id]?.is_active ?? course.is_active} 
-                            onCheckedChange={(val) => {
-                              if(quickEditMode) {
-                                handleQuickEditChange(course.id, 'is_active', val);
-                              } else {
-                                handleToggleCourseStatus(course, val);
-                              }
-                            }}
-                          />
+                          <Switch checked={quickEditChanges[course.id]?.is_active ?? course.is_active} onCheckedChange={(val) => { if(quickEditMode) { handleQuickEditChange(course.id, 'is_active', val); } else { handleToggleCourseStatus(course, val); } }} />
                           <span className={`text-xs font-medium w-12 text-left ${(quickEditChanges[course.id]?.is_active ?? course.is_active) ? "text-green-600" : "text-gray-400"}`}>
                             {(quickEditChanges[course.id]?.is_active ?? course.is_active) ? 'Activo' : 'Inactivo'}
                           </span>
@@ -412,12 +327,8 @@ const AdminCourseManagement = () => {
                       
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => openEditModal(course)} disabled={quickEditMode} className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 h-8 w-8 p-0">
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => openDeleteModal(course)} disabled={quickEditMode} className="text-red-600 hover:text-red-800 hover:bg-red-50 h-8 w-8 p-0">
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => openEditModal(course)} disabled={quickEditMode} className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 h-8 w-8 p-0"><Edit className="w-4 h-4" /></Button>
+                          <Button variant="ghost" size="sm" onClick={() => openDeleteModal(course)} disabled={quickEditMode} className="text-red-600 hover:text-red-800 hover:bg-red-50 h-8 w-8 p-0"><Trash2 className="w-4 h-4" /></Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -436,89 +347,46 @@ const AdminCourseManagement = () => {
           </CardContent>
         </Card>
 
-        {/* Botón flotante para guardar edición rápida */}
         {quickEditMode && Object.keys(quickEditChanges).length > 0 && (
-          <Button
-            className="bg-green-600 text-white hover:bg-green-700 fixed bottom-8 right-8 z-50 shadow-xl rounded-full px-6 py-6"
-            onClick={saveAllQuickEdits}
-            disabled={saving}
-          >
-            Guardar Cambios ({Object.keys(quickEditChanges).length})
-          </Button>
+          <Button className="bg-green-600 text-white hover:bg-green-700 fixed bottom-8 right-8 z-50 shadow-xl rounded-full px-6 py-6" onClick={saveAllQuickEdits} disabled={saving}>Guardar Cambios ({Object.keys(quickEditChanges).length})</Button>
         )}
       </div>
 
-      {/* Modal Crear Curso */}
+      {/* Modales (Crear, Editar, Eliminar) se mantienen iguales */}
       <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Añadir Nueva Asignatura</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Añadir Nueva Asignatura</DialogTitle></DialogHeader>
           <form onSubmit={handleCreateCourse} className="space-y-4">
             <div className="grid grid-cols-3 gap-4">
-              <div className="col-span-2 space-y-2">
-                <Label>Nombre de Asignatura *</Label>
-                <Input placeholder="Ej: Álgebra" value={formData.name} onChange={handleInputChange('name')} autoFocus required />
-              </div>
-              <div className="space-y-2">
-                <Label>Código *</Label>
-                <Input placeholder="ALG-01" value={formData.code} onChange={handleInputChange('code')} required />
-              </div>
+              <div className="col-span-2 space-y-2"><Label>Nombre de Asignatura *</Label><Input placeholder="Ej: Álgebra" value={formData.name} onChange={handleInputChange('name')} autoFocus required /></div>
+              <div className="space-y-2"><Label>Código *</Label><Input placeholder="ALG-01" value={formData.code} onChange={handleInputChange('code')} required /></div>
             </div>
-            <div className="space-y-2">
-              <Label>Descripción (Opcional)</Label>
-              <Textarea placeholder="Breve descripción del propósito de la asignatura..." value={formData.description} onChange={handleInputChange('description')} rows={3} />
-            </div>
-            <DialogFooter className="pt-4">
-              <Button type="button" variant="outline" onClick={() => setIsCreateModalOpen(false)}>Cancelar</Button>
-              <Button type="submit" disabled={saving} className="bg-blue-600 text-white">Guardar en Catálogo</Button>
-            </DialogFooter>
+            <div className="space-y-2"><Label>Descripción (Opcional)</Label><Textarea placeholder="Breve descripción del propósito de la asignatura..." value={formData.description} onChange={handleInputChange('description')} rows={3} /></div>
+            <DialogFooter className="pt-4"><Button type="button" variant="outline" onClick={() => setIsCreateModalOpen(false)}>Cancelar</Button><Button type="submit" disabled={saving} className="bg-blue-600 text-white">Guardar en Catálogo</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Modal Editar Curso */}
       <Dialog open={isEditModalOpen} onOpenChange={(open) => { setIsEditModalOpen(open); if (!open) setEditingCourse(null); }}>
         <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Editar Asignatura</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Editar Asignatura</DialogTitle></DialogHeader>
           <form onSubmit={handleEditCourse} className="space-y-4">
             <div className="grid grid-cols-3 gap-4">
-              <div className="col-span-2 space-y-2">
-                <Label>Nombre de Asignatura *</Label>
-                <Input value={formData.name} onChange={handleInputChange('name')} required />
-              </div>
-              <div className="space-y-2">
-                <Label>Código *</Label>
-                <Input value={formData.code} onChange={handleInputChange('code')} required />
-              </div>
+              <div className="col-span-2 space-y-2"><Label>Nombre de Asignatura *</Label><Input value={formData.name} onChange={handleInputChange('name')} required /></div>
+              <div className="space-y-2"><Label>Código *</Label><Input value={formData.code} onChange={handleInputChange('code')} required /></div>
             </div>
-            <div className="space-y-2">
-              <Label>Descripción</Label>
-              <Textarea value={formData.description} onChange={handleInputChange('description')} rows={3} />
-            </div>
-            <DialogFooter className="pt-4">
-              <Button type="button" variant="outline" onClick={() => setIsEditModalOpen(false)} disabled={saving}>Cancelar</Button>
-              <Button type="submit" className="bg-blue-600 text-white hover:bg-blue-700" disabled={saving}>Guardar Cambios</Button>
-            </DialogFooter>
+            <div className="space-y-2"><Label>Descripción</Label><Textarea value={formData.description} onChange={handleInputChange('description')} rows={3} /></div>
+            <DialogFooter className="pt-4"><Button type="button" variant="outline" onClick={() => setIsEditModalOpen(false)} disabled={saving}>Cancelar</Button><Button type="submit" className="bg-blue-600 text-white hover:bg-blue-700" disabled={saving}>Guardar Cambios</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Modal Eliminar Curso */}
       <Dialog open={isDeleteModalOpen} onOpenChange={(open) => { setIsDeleteModalOpen(open); if (!open) setDeletingCourse(null); }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-red-600">Eliminar Asignatura</DialogTitle>
-          </DialogHeader>
-          <div className="py-4 text-gray-600">
-            ¿Estás seguro que deseas eliminar <strong>{deletingCourse?.name}</strong> del catálogo general? Esta acción no se puede deshacer.
-          </div>
+          <DialogHeader><DialogTitle className="text-red-600">Eliminar Asignatura</DialogTitle></DialogHeader>
+          <div className="py-4 text-gray-600">¿Estás seguro que deseas eliminar <strong>{deletingCourse?.name}</strong> del catálogo general? Esta acción no se puede deshacer.</div>
           <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline" type="button" disabled={saving}>Cancelar</Button>
-            </DialogClose>
+            <DialogClose asChild><Button variant="outline" type="button" disabled={saving}>Cancelar</Button></DialogClose>
             <Button variant="destructive" onClick={handleDeleteCourse} disabled={saving}>Sí, Eliminar</Button>
           </DialogFooter>
         </DialogContent>

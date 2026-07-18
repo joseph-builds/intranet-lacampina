@@ -53,8 +53,8 @@ serve(async (req: Request) => {
     // Get request body
     const body = await req.json()
     console.log('📥 Request body:', body)
-    const { name, grade, education_level, academic_year, teacher_id, tutor_id, section, start_date, end_date } = body
-
+    const { name, grade, education_level, academic_year, teacher_id, teacher_principal_id, tutor_id, section, start_date, end_date } = body
+    
     // Validate required fields
     if (!name || !grade || !education_level || !academic_year || !section || !start_date || !end_date) {
       throw new Error('Todos los campos son requeridos, incluyendo fechas de inicio y fin')
@@ -94,8 +94,8 @@ serve(async (req: Request) => {
       throw new Error(`Ya existe un aula virtual para ${education_level} ${grade}${section} del año ${academic_year}`)
     }
 
-    // Insert new virtual classroom - use teacher_id from request if admin, otherwise use current user's profile
-    const finalTeacherId = teacher_id || profile.id;
+    // Insert new virtual classroom - use teacher_id or teacher_principal_id from request, fallback to admin profile
+    const finalTeacherId = teacher_id || teacher_principal_id || profile.id;
     
     const { data: newClassroom, error: insertError } = await supabaseClient
       .from('virtual_classrooms')
@@ -115,27 +115,44 @@ serve(async (req: Request) => {
         grade,
         education_level,
         academic_year,
+        section,
         teacher_principal_id,
         tutor_id,
         is_active,
-        created_at,
-        teacher:profiles!teacher_principal_id(
-          id,
-          first_name,
-          last_name,
-          email
-        ),
-        tutor:profiles!tutor_id(
-          id,
-          first_name,
-          last_name,
-          email
-        )
+        created_at
       `)
       .single()
 
     if (insertError) {
       throw insertError
+    }
+
+    // Fetch teacher details manually to avoid PGRST200 join resolution issues
+    let teacherObj = null
+    if (newClassroom.teacher_principal_id) {
+      const { data: teacherData } = await supabaseClient
+        .from('profiles')
+        .select('id, first_name, last_name, email')
+        .eq('id', newClassroom.teacher_principal_id)
+        .single()
+      teacherObj = teacherData || null
+    }
+
+    // Fetch tutor details manually to avoid PGRST200 join resolution issues
+    let tutorObj = null
+    if (newClassroom.tutor_id) {
+      const { data: tutorData } = await supabaseClient
+        .from('profiles')
+        .select('id, first_name, last_name, email')
+        .eq('id', newClassroom.tutor_id)
+        .single()
+      tutorObj = tutorData || null
+    }
+
+    const classroomWithRelations = {
+      ...newClassroom,
+      teacher: teacherObj,
+      tutor: tutorObj
     }
 
     // Define standard courses based on education level
@@ -236,7 +253,7 @@ serve(async (req: Request) => {
       JSON.stringify({ 
         success: true, 
         data: {
-          ...newClassroom,
+          ...classroomWithRelations,
           courses_count: createdCourses?.length || 0,
           students_count: 0
         },

@@ -225,43 +225,145 @@ export default function VirtualClassrooms() {
     setIsCreating(true);
 
     try {
-      console.log('🔄 Creando nueva aula virtual con Edge Function...', formData);
+      console.log('🔄 Creando nueva aula virtual localmente en el cliente...', formData);
 
-      // Get the current session to include in the request
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        toast.error('No estás autenticado');
-        return;
-      }
+      const finalTeacherId = formData.teacher_principal_id || profile.id;
 
-      // Call the Edge Function
-      const { data, error } = await supabase.functions.invoke('create-virtual-classroom', {
-        body: {
+      // 1. Insertar el aula virtual directamente en la base de datos
+      const { data: newClassroom, error: insertError } = await supabase
+        .from('virtual_classrooms')
+        .insert({
           name: formData.name,
           grade: formData.grade,
-          education_level: formData.education_level as 'primaria' | 'secundaria',
+          education_level: formData.education_level,
           academic_year: formData.academic_year,
-          teacher_principal_id: formData.teacher_principal_id || profile.id,
-          tutor_id: formData.tutor_id && formData.tutor_id !== "none" ? formData.tutor_id : null,
           section: formData.section.toUpperCase(),
-          start_date: format(formData.start_date, 'yyyy-MM-dd'),
-          end_date: format(formData.end_date, 'yyyy-MM-dd')
-        }
+          teacher_principal_id: finalTeacherId,
+          tutor_id: formData.tutor_id && formData.tutor_id !== "none" ? formData.tutor_id : null,
+          is_active: true
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('❌ Error insertando aula virtual:', insertError);
+        throw new Error(insertError.message || 'Error al crear el aula virtual');
+      }
+
+      // 2. Definir cursos estándar según el nivel educativo
+      const standardCourses = formData.education_level === 'primaria' 
+        ? [
+            'Matemática',
+            'Ciencias',
+            'Inglés',
+            'Personal Social',
+            'Arte',
+            'Religión',
+            'Computación',
+            'Tutoría',
+            'Comunicación',
+            'Plan Lector'
+          ]
+        : [
+            'Ciencias Sociales',
+            'Desarrollo Personal Ciudadanía y Cívica',
+            'Ciencia y Tecnología',
+            'Arte y Cultura',
+            'Educación para el Trabajo',
+            'Matemática',
+            'Comunicación',
+            'Inglés',
+            'Religión'
+          ];
+
+      // 3. Crear los registros de cursos vinculados
+      const coursesToInsert = standardCourses.map((courseName, index) => {
+        const initials = courseName
+          .split(/\s+/)
+          .map((w) => w[0])
+          .join('')
+          .slice(0, 3)
+          .toUpperCase();
+        const idPart = String(newClassroom.id).replace(/-/g, '').slice(0, 8);
+        const code = `${initials}-${formData.grade}-${formData.section.toUpperCase()}-${formData.academic_year}-${idPart}-${index + 1}`;
+        return {
+          name: courseName,
+          code,
+          classroom_id: newClassroom.id,
+          teacher_principal_id: finalTeacherId,
+          academic_year: formData.academic_year,
+          start_date: format(formData.start_date!, 'yyyy-MM-dd'),
+          end_date: format(formData.end_date!, 'yyyy-MM-dd'),
+          is_active: true
+        };
       });
 
-      if (error) {
-        console.error('❌ Error calling Edge Function:', error);
-        throw new Error(error.message || 'Error al llamar a la función');
+      const { data: createdCourses, error: coursesError } = await supabase
+        .from('courses')
+        .insert(coursesToInsert)
+        .select('id');
+
+      if (coursesError) {
+        console.error('❌ Error al crear cursos estándar:', coursesError);
       }
 
-      if (!data.success) {
-        throw new Error(data.error || 'Error en la respuesta del servidor');
+      // 4. Intentar generar semanas automáticamente (si la función existe)
+      let successfulWeekGenerations = 0;
+      if (createdCourses && createdCourses.length > 0) {
+        console.log(`📅 Generando semanas para ${createdCourses.length} cursos...`);
+        for (const course of createdCourses) {
+          try {
+            const { error: weekError } = await supabase.functions.invoke(
+              'generate-course-weeks',
+              {
+                body: {
+                  courseId: course.id,
+                  startDate: format(formData.start_date!, 'yyyy-MM-dd'),
+                  endDate: format(formData.end_date!, 'yyyy-MM-dd')
+                }
+              }
+            );
+            if (!weekError) {
+              successfulWeekGenerations++;
+            }
+          } catch (weekGenError) {
+            console.error(`❌ Excepción generando semanas para curso ${course.id}:`, weekGenError);
+          }
+        }
       }
 
-      console.log('✅ Aula virtual creada exitosamente:', data.data);
+      // 5. Obtener los perfiles del profesor y tutor para actualizar la UI correctamente
+      let teacherObj = null;
+      if (newClassroom.teacher_principal_id) {
+        const { data: teacherData } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name, email')
+          .eq('id', newClassroom.teacher_principal_id)
+          .single();
+        teacherObj = teacherData || null;
+      }
 
-      toast.success(data.message || 'Aula virtual creada exitosamente');
+      let tutorObj = null;
+      if (newClassroom.tutor_id) {
+        const { data: tutorData } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name, email')
+          .eq('id', newClassroom.tutor_id)
+          .single();
+        tutorObj = tutorData || null;
+      }
+
+      const finalClassroomData = {
+        ...newClassroom,
+        teacher: teacherObj,
+        tutor: tutorObj,
+        courses_count: createdCourses?.length || 0,
+        students_count: 0
+      };
+
+      console.log('✅ Aula virtual creada exitosamente:', finalClassroomData);
+
+      toast.success(`Aula virtual creada exitosamente con ${createdCourses?.length || 0} cursos.`);
       setIsCreateDialogOpen(false);
       setFormData({
         name: '',
@@ -278,11 +380,11 @@ export default function VirtualClassrooms() {
       setTutorSearch("");
       
       // Add the new classroom to the existing list to avoid refetching
-      setClassrooms(prev => [data.data, ...prev]);
-      
+      setClassrooms(prev => [finalClassroomData as any, ...prev]);
+
     } catch (error: any) {
       console.error('❌ Error creando aula virtual:', error);
-      toast.error(`Error al crear el aula virtual: ${error.message}`);
+      toast.error(`Error al crear el aula virtual: ${error.message || error}`);
     } finally {
       setIsCreating(false);
     }

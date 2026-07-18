@@ -1,4 +1,32 @@
--- ─── 1. Enable RLS and add policies for virtual_classrooms table ─────────────────
+-- ─── 1. Create virtual_classrooms table and add foreign keys ──────────────────────
+
+-- Create virtual_classrooms table
+CREATE TABLE IF NOT EXISTS public.virtual_classrooms (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  grade text NOT NULL,
+  education_level text NOT NULL,
+  academic_year text NOT NULL,
+  section text NOT NULL,
+  teacher_principal_id uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+  tutor_id uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+  is_active boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT virtual_classrooms_pkey PRIMARY KEY (id)
+);
+
+-- Add classroom_id reference to courses table
+ALTER TABLE public.courses ADD COLUMN IF NOT EXISTS classroom_id UUID REFERENCES public.virtual_classrooms(id) ON DELETE SET NULL;
+
+-- Add classroom_id reference to attendance table
+ALTER TABLE public.attendance ADD COLUMN IF NOT EXISTS classroom_id UUID REFERENCES public.virtual_classrooms(id) ON DELETE SET NULL;
+
+-- Create indexes for performance
+CREATE INDEX IF NOT EXISTS idx_courses_classroom_id ON public.courses(classroom_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_classroom_id ON public.attendance(classroom_id);
+
+
+-- ─── 2. Enable RLS and add policies for virtual_classrooms table ─────────────────
 
 ALTER TABLE public.virtual_classrooms ENABLE ROW LEVEL SECURITY;
 
@@ -20,7 +48,8 @@ CREATE POLICY "Teachers can view their own virtual_classrooms" ON public.virtual
     OR tutor_id = public.get_auth_user_id()
   );
 
--- ─── 2. Create helper functions with row_security = off for Classmates ───────────
+
+-- ─── 3. Create helper functions with row_security = off for Classmates ───────────
 
 -- Check if a student shares at least one course/modulo with the current authenticated user
 CREATE OR REPLACE FUNCTION public.share_course_with_student(other_student_id UUID)
@@ -58,7 +87,8 @@ AS $$
   );
 $$;
 
--- ─── 3. Add RLS Policies for Classmates (profiles table) ─────────────────────────
+
+-- ─── 4. Add RLS Policies for Classmates (profiles table) ─────────────────────────
 
 -- Allow students to view profiles of their classmates
 DROP POLICY IF EXISTS "Students can view classmates' profiles" ON public.profiles;
@@ -67,7 +97,8 @@ CREATE POLICY "Students can view classmates' profiles" ON public.profiles
     public.share_course_with_student(id)
   );
 
--- ─── 4. Add RLS Policies for Classmates (course_enrollments table) ───────────────
+
+-- ─── 5. Add RLS Policies for Classmates (course_enrollments table) ───────────────
 
 -- Allow students to view other enrollments in the same course/modulo
 DROP POLICY IF EXISTS "Students can view classmates' enrollments" ON public.course_enrollments;

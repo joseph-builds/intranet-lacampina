@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-// AQUÍ ESTÁ LA CORRECCIÓN: Se agregó DialogDescription a la importación
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
@@ -13,6 +12,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { Loader2, ArrowLeft, BookOpen, Users, RefreshCw, GraduationCap, MinusCircle, UserMinus } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+
+// MAGIA: Año dinámico
+const CURRENT_YEAR = new Date().getFullYear();
+const COLUMNA_CURSO = 'section_course_id'; 
 
 const SectionManagement = () => {
   const { sectionId } = useParams();
@@ -24,8 +27,6 @@ const SectionManagement = () => {
   const [courses, setCourses] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [staff, setStaff] = useState<any[]>([]); 
-  
-  // Estado visual para simular la gestión de exonerados (lista de IDs de estudiantes exonerados por ID de curso)
   const [exoneratedStudents, setExoneratedStudents] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
@@ -35,7 +36,6 @@ const SectionManagement = () => {
   const loadAllData = async () => {
     setLoading(true);
     try {
-      // 1. Cargar Sección
       const { data: secData, error: secErr } = await supabase
         .from('sections')
         .select('*, tutor:profiles!tutor_id(*), grade:academic_grades(id, name, level:academic_levels(name))')
@@ -44,7 +44,6 @@ const SectionManagement = () => {
       if (secErr) throw secErr;
       setSection(secData);
 
-      // 2. Cargar Staff Educativo Activo
       const { data: staffData } = await supabase
         .from('profiles')
         .select('id, first_name, last_name, role')
@@ -53,20 +52,33 @@ const SectionManagement = () => {
         .order('first_name');
       setStaff(staffData || []);
 
-      // 3. Cargar Alumnos Asignados (Activos)
       const { data: studData } = await supabase
         .from('student_sections')
         .select('id, student:profiles!inner(id, first_name, last_name, email, is_active)')
         .eq('section_id', sectionId)
+        .eq('academic_year', CURRENT_YEAR) // Solo alumnos de este año
         .eq('profiles.is_active', true);
       
-      const alumnosLimpios = studData?.map(s => ({ enrollment_id: s.id, ...s.student })) || [];
+      const alumnosLimpios = studData?.map(s => ({ enrollment_id: s.id, ...s.student })).filter(s => s.is_active === true) || [];
       alumnosLimpios.sort((a: any, b: any) => a.last_name.localeCompare(b.last_name));
       setStudents(alumnosLimpios);
 
-      // 4. Cargar Cursos de esta sección
       await loadCourses(secData.grade_id);
 
+      if (alumnosLimpios.length > 0) {
+        const { data: exempData } = await supabase
+          .from('student_course_exemptions')
+          .select(`student_id, ${COLUMNA_CURSO}`)
+          .in('student_id', alumnosLimpios.map(a => a.id));
+        
+        const mappedExemptions: Record<string, string[]> = {};
+        exempData?.forEach(row => {
+          const cId = row[COLUMNA_CURSO];
+          if (!mappedExemptions[cId]) mappedExemptions[cId] = [];
+          mappedExemptions[cId].push(row.student_id);
+        });
+        setExoneratedStudents(mappedExemptions);
+      }
     } catch (err: any) {
       toast({ title: "Error", description: "No se pudo cargar la información del aula.", variant: "destructive" });
     } finally {
@@ -80,7 +92,6 @@ const SectionManagement = () => {
       .select('id, teacher_id, base:base_courses(name, area, is_mandatory, course_id, course:courses(is_active))')
       .eq('section_id', sectionId);
     
-    // Si no hay cursos, auto-sincronizar con la malla.
     if (!coursesData || coursesData.length === 0) {
       await autoSyncCursos(gradeId);
     } else {
@@ -94,7 +105,6 @@ const SectionManagement = () => {
     if (mallaCursos && mallaCursos.length > 0) {
       const registros = mallaCursos.map(c => ({ section_id: sectionId, base_course_id: c.id }));
       await supabase.from('section_courses').insert(registros);
-      // Recargar después de auto-insertar
       const { data: newCoursesData } = await supabase
         .from('section_courses')
         .select('id, teacher_id, base:base_courses(name, area, is_mandatory, course_id, course:courses(is_active))')
@@ -117,7 +127,6 @@ const SectionManagement = () => {
       }
       const registros = mallaCursos.map(c => ({ section_id: sectionId, base_course_id: c.id }));
       await supabase.from('section_courses').upsert(registros, { onConflict: 'section_id, base_course_id' });
-      
       toast({ title: "Cursos Sincronizados", description: "El aula tiene todos los cursos actualizados de la malla." });
       await loadCourses(section.grade_id);
     } catch (error) {
@@ -131,47 +140,41 @@ const SectionManagement = () => {
     try {
       const newTutorId = tutorId === 'none' ? null : tutorId;
       await supabase.from('sections').update({ tutor_id: newTutorId }).eq('id', sectionId);
-      
-      // Actualizar estado local para reflejar cambio inmediato
       setSection((prev: any) => ({ ...prev, tutor_id: newTutorId }));
       toast({ title: "Éxito", description: "El Tutor Principal ha sido actualizado." });
-    } catch (error) {
-      toast({ title: "Error", description: "No se pudo actualizar el tutor.", variant: "destructive" });
-    }
+    } catch (error) { toast({ title: "Error", variant: "destructive" }); }
   };
 
   const updateTeacher = async (courseId: string, teacherId: string) => {
     try {
       await supabase.from('section_courses').update({ teacher_id: teacherId === 'none' ? null : teacherId }).eq('id', courseId);
-      // Actualizamos estado local
       setCourses(prev => prev.map(c => c.id === courseId ? { ...c, teacher_id: teacherId === 'none' ? null : teacherId } : c));
       toast({ title: "Éxito", description: "Profesor asignado correctamente al curso." });
-    } catch (error) {
-      toast({ title: "Error", description: "No se pudo asignar al profesor.", variant: "destructive" });
-    }
+    } catch (error) { toast({ title: "Error", variant: "destructive" }); }
   };
 
   const handleRemoverAlumno = async (enrollmentId: string) => {
     if (!confirm('¿Seguro que deseas remover al alumno de esta sección? Pasará a estado "Sin Asignar".')) return;
     await supabase.from('student_sections').delete().eq('id', enrollmentId);
     toast({ title: "Alumno retirado" });
-    
-    // Actualizamos lista local sin recargar todo
     setStudents(prev => prev.filter(s => s.enrollment_id !== enrollmentId));
   };
 
-  // Función para gestionar los exonerados localmente (En producción conectaría a una tabla `course_exemptions`)
-  const toggleExoneration = (courseId: string, studentId: string) => {
-    setExoneratedStudents(prev => {
-      const currentList = prev[courseId] || [];
-      const isExonerated = currentList.includes(studentId);
-      
-      const newList = isExonerated 
-        ? currentList.filter(id => id !== studentId) 
-        : [...currentList, studentId];
-        
-      return { ...prev, [courseId]: newList };
-    });
+  const toggleExoneration = async (courseId: string, studentId: string) => {
+    const isExempted = (exoneratedStudents[courseId] || []).includes(studentId);
+    try {
+      if (isExempted) {
+        await supabase.from('student_course_exemptions').delete().eq('student_id', studentId).eq(COLUMNA_CURSO, courseId);
+        setExoneratedStudents(prev => ({ ...prev, [courseId]: (prev[courseId] || []).filter(id => id !== studentId) }));
+        toast({ title: "Inscrito", description: "El alumno ha sido reincorporado al curso." });
+      } else {
+        await supabase.from('student_course_exemptions').insert({ student_id: studentId, [COLUMNA_CURSO]: courseId });
+        setExoneratedStudents(prev => ({ ...prev, [courseId]: [...(prev[courseId] || []), studentId] }));
+        toast({ title: "Exonerado", description: "El alumno ha sido exonerado del curso." });
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "No se pudo actualizar la exoneración.", variant: "destructive" });
+    }
   };
 
   const availableTutors = useMemo(() => staff.filter(s => s.role === 'tutor' || s.role === 'admin'), [staff]);
@@ -231,7 +234,9 @@ const SectionManagement = () => {
                 ) : (
                   courses.map(course => {
                     const isCourseActive = course.base?.course?.is_active !== false;
-                    const exemptCount = (exoneratedStudents[course.id] || []).length;
+                    const exemptIds = exoneratedStudents[course.id] || [];
+                    const activeExemptStudents = students.filter(s => exemptIds.includes(s.id));
+                    const exemptCount = activeExemptStudents.length;
 
                     return (
                       <div key={course.id} className={`p-4 border rounded-lg transition-colors ${isCourseActive ? 'bg-gray-50 hover:bg-white border-gray-200' : 'bg-red-50/40 border-red-100 opacity-80'}`}>
@@ -263,19 +268,30 @@ const SectionManagement = () => {
                         {/* SECCIÓN EXONERADOS POR CURSO */}
                         {isCourseActive && (
                           <div className="mt-3 pt-3 border-t border-dashed">
+                            {exemptCount > 0 && (
+                              <div className="mb-3 p-2.5 bg-amber-50/80 rounded border border-amber-100">
+                                <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider mb-1.5 block">Alumnos Exonerados ({exemptCount}):</span>
+                                <ul className="text-xs text-amber-700 space-y-1">
+                                  {activeExemptStudents.map(es => (
+                                    <li key={es.id} className="flex items-center gap-1.5">
+                                      <MinusCircle className="w-3 h-3 text-amber-500 shrink-0"/> <span className="font-medium">{es.last_name}</span>, {es.first_name}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+
                             <Dialog>
                               <DialogTrigger asChild>
-                                <Button variant="ghost" size="sm" className="w-full text-xs text-gray-600 hover:text-amber-700 hover:bg-amber-50 h-7">
+                                <Button variant="ghost" size="sm" className={`w-full text-xs h-7 ${exemptCount > 0 ? 'text-amber-700 bg-amber-50 hover:bg-amber-100' : 'text-gray-500 hover:text-amber-700 hover:bg-amber-50'}`}>
                                   <UserMinus className="w-3 h-3 mr-1"/> 
-                                  Gestión de Exonerados {exemptCount > 0 && <Badge className="ml-2 bg-amber-100 text-amber-800 border-0">{exemptCount}</Badge>}
+                                  Gestión de Exonerados
                                 </Button>
                               </DialogTrigger>
                               <DialogContent>
                                 <DialogHeader>
                                   <DialogTitle className="text-amber-700 flex items-center gap-2"><UserMinus className="w-5 h-5"/> Alumnos Exonerados</DialogTitle>
-                                  <DialogDescription>
-                                    Marca a los alumnos que NO llevarán el curso de <strong>{course.base?.name}</strong>.
-                                  </DialogDescription>
+                                  <DialogDescription>Marca a los alumnos que NO llevarán el curso de <strong>{course.base?.name}</strong>.</DialogDescription>
                                 </DialogHeader>
                                 <div className="max-h-[300px] overflow-y-auto border rounded-md">
                                   {students.map(student => (
@@ -313,7 +329,7 @@ const SectionManagement = () => {
                 <Users className="w-5 h-5"/> Lista de Alumnos Activos
                 <Badge className="ml-auto bg-gray-200 text-gray-800 hover:bg-gray-300">{students.length}</Badge>
               </CardTitle>
-              <CardDescription>Para asignar más alumnos, hazlo desde la vista principal de grados.</CardDescription>
+              <CardDescription>Para matricular alumnos, ve a la vista principal de grados.</CardDescription>
             </CardHeader>
             <CardContent className="p-0 overflow-y-auto flex-1">
               <Table>

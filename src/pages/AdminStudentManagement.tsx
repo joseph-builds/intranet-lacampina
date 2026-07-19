@@ -14,7 +14,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/hooks/useAuth';
 import { Plus, Search, Edit, Users, BookOpen, Mail, Phone, GraduationCap, ShieldAlert, CheckCircle2, AlertTriangle, CheckSquare, ArrowUpDown, Download, UploadCloud, FileSpreadsheet, Loader2, Trash2, Key, Check } from 'lucide-react';
 
-const CURRENT_YEAR = 2026;
+const CURRENT_YEAR = new Date().getFullYear();
 const COLUMNA_CURSO = 'section_course_id'; 
 
 // --- INTERFACES ---
@@ -107,7 +107,6 @@ const AdminStudentManagement = () => {
 
   useEffect(() => { fetchInitialData(); }, []);
   useEffect(() => { setGradoFilter('all'); }, [nivelFilter]);
-  // NOTA: Se eliminó el useEffect que borraba el section_id automáticamente.
 
   const fetchInitialData = async () => {
     setLoading(true);
@@ -377,7 +376,6 @@ const AdminStudentManagement = () => {
   const openEditModal = (student: Student) => {
     setEditingStudent(student);
     setNewManualPassword('');
-    // Al abrir el modal seteamos todos los datos (incluyendo el section_id)
     setFormData({
       first_name: student.first_name || '', last_name: student.last_name || '', email: student.email || '',
       dni: student.dni || '', birth_date: student.birth_date || '',
@@ -389,6 +387,7 @@ const AdminStudentManagement = () => {
   };
   const closeModal = () => { setIsModalOpen(false); setEditingStudent(null); setFormData(initialFormState); setNewManualPassword(''); };
 
+  // --- LOGICA REPARADA Y OPTIMIZADA DE CURSOS/EXONERACIONES ---
   const openEnrollModal = async (student: Student) => {
     setSelectedStudent(student);
     setStudentMallaCourses([]);
@@ -401,10 +400,30 @@ const AdminStudentManagement = () => {
         const { data: baseCourses, error: baseErr } = await supabase.from('base_courses').select('id, name, area, is_mandatory, course:courses(is_active)').eq('grade_id', student.current_grade_id).order('name');
         if (baseErr) throw baseErr;
 
+        // 1. Verificar si el alumno realmente tiene Aula Asignada en BD
+        let currentSectionId = student.section_id;
+        if (!currentSectionId) {
+            const { data: matricula } = await supabase.from('student_sections').select('section_id').eq('student_id', student.id).eq('academic_year', CURRENT_YEAR).maybeSingle();
+            if (matricula) currentSectionId = matricula.section_id;
+        }
+
         let secCourseMap: Record<string, string> = {};
-        if (student.section_id) {
-           const { data: secCourses } = await supabase.from('section_courses').select('id, base_course_id').eq('section_id', student.section_id);
-           secCourses?.forEach(sc => { secCourseMap[sc.base_course_id] = sc.id; });
+        
+        // 2. Si tiene aula, buscamos los cursos de esa aula. Si le faltan cursos de la malla, los AUTO-SINCRONIZAMOS (Solución del bug rojo).
+        if (currentSectionId) {
+           const { data: secCourses } = await supabase.from('section_courses').select('id, base_course_id').eq('section_id', currentSectionId);
+           
+           const missingBaseCourses = (baseCourses || []).filter((bc: any) => !secCourses?.some(sc => sc.base_course_id === bc.id));
+           
+           if (missingBaseCourses.length > 0) {
+               // Auto-sincronizamos los cursos que faltan en el aula
+               const inserts = missingBaseCourses.map((bc: any) => ({ section_id: currentSectionId, base_course_id: bc.id }));
+               const { data: newSecCourses } = await supabase.from('section_courses').insert(inserts).select('id, base_course_id');
+               
+               [...(secCourses || []), ...(newSecCourses || [])].forEach(sc => { secCourseMap[sc.base_course_id] = sc.id; });
+           } else {
+               secCourses?.forEach(sc => { secCourseMap[sc.base_course_id] = sc.id; });
+           }
         }
 
         const combinedCourses: CourseDisplay[] = (baseCourses || []).map((bc: any) => ({
@@ -428,7 +447,7 @@ const AdminStudentManagement = () => {
   const handleToggleExemption = async (scId: string | null, isExempted: boolean) => {
     if (!selectedStudent) return;
     if (!scId) {
-      toast({ title: "Aula requerida", description: "Para guardar exoneraciones, primero debes asignar una Sección (Aula Virtual) al estudiante editando su perfil.", variant: "destructive" });
+      toast({ title: "Aula requerida", description: "Para guardar exoneraciones, primero debes asignar una Sección (Aula Virtual) al estudiante editando su ficha y dándole a Guardar.", variant: "destructive" });
       return;
     }
     try {
@@ -541,7 +560,6 @@ const AdminStudentManagement = () => {
     reader.readAsText(file);
   };
 
-  // Variable calculada para las aulas del grado actualmente seleccionado en el formulario
   const aulasDelGrado = sections.filter(s => s.grade_id === formData.current_grade_id);
 
   return (
@@ -989,15 +1007,15 @@ const AdminStudentManagement = () => {
                   <p className="text-sm text-orange-600 mt-2">Para ver la malla de cursos, asígnale un grado primero.</p>
                 </div>
               ) : loadingCourses ? (
-                <div className="flex flex-col items-center justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-indigo-600 mb-2" /><p className="text-sm text-gray-500">Cargando malla curricular...</p></div>
+                <div className="flex flex-col items-center justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-indigo-600 mb-2" /><p className="text-sm text-gray-500">Cargando malla curricular y sincronizando...</p></div>
               ) : studentMallaCourses.length === 0 ? (
-                <div className="text-center p-6 bg-gray-50 rounded-lg border"><p className="text-gray-500">No hay cursos registrados para este grado.</p></div>
+                <div className="text-center p-6 bg-gray-50 rounded-lg border"><p className="text-gray-500">No hay cursos registrados para este grado en la malla maestra.</p></div>
               ) : (
                 <div className="space-y-4">
                   {!selectedStudent.section_id && (
                     <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded text-sm flex gap-2">
                       <ShieldAlert className="w-5 h-5 shrink-0 text-amber-500"/>
-                      <p><strong>Aviso:</strong> El estudiante no tiene Aula Virtual asignada. Puedes ver su malla de cursos, pero para guardar exoneraciones necesitarás asignarle una Sección primero.</p>
+                      <p><strong>Aviso:</strong> El estudiante no tiene Aula Virtual asignada. Puedes ver su malla de cursos, pero para guardar exoneraciones necesitarás asignarle una Sección editando su ficha.</p>
                     </div>
                   )}
                   <p className="text-sm text-gray-600">Malla curricular correspondiente a {selectedStudent.grade?.name}.</p>

@@ -34,7 +34,7 @@ interface Assignment {
   description: string;
   due_date: string;
   max_score: number;
-  modulo_id: string;
+  course_id: string;
   source: "assignment" | "weekly_resource";
   course: {
     id: string;
@@ -72,7 +72,7 @@ const Assignments = () => {
       let assignmentsData = null;
       let assignmentsError = null;
 
-      // For teachers, fetch all assignments from their courses
+      // For teachers, fetch all assignments from their courses (including drafts)
       if (profile.role === "teacher" || profile.role === "admin") {
         const { data, error } = await supabase
           .from("assignments")
@@ -92,7 +92,6 @@ const Assignments = () => {
             )
           `,
           )
-          .eq("is_published", true)
           .order("due_date", { ascending: true });
 
         assignmentsData = data;
@@ -133,7 +132,7 @@ const Assignments = () => {
           description: assignment.description || "",
           due_date: assignment.due_date,
           max_score: assignment.max_score,
-          modulo_id: assignment.modulo_id,
+          course_id: assignment.course_id,
           source: "assignment" as const,
           course: assignment.course,
           submissions: assignment.submissions,
@@ -202,9 +201,9 @@ const Assignments = () => {
   };
 
   // Get unique courses for filter
-  const uniqueCourses = Array.from(new Set(assignments.map((a) => a.modulo_id)))
+  const uniqueCourses = Array.from(new Set(assignments.map((a) => a.course_id)))
     .map(
-      (courseId) => assignments.find((a) => a.modulo_id === courseId)?.course,
+      (courseId) => assignments.find((a) => a.course_id === courseId)?.course,
     )
     .filter(Boolean);
 
@@ -216,7 +215,7 @@ const Assignments = () => {
       assignment.course.name.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesCourse =
-      courseFilter === "all" || assignment.modulo_id === courseFilter;
+      courseFilter === "all" || assignment.course_id === courseFilter;
 
     const status = getAssignmentStatus(assignment).status;
     const matchesStatus = statusFilter === "all" || status === statusFilter;
@@ -427,7 +426,7 @@ const Assignments = () => {
                         variant="outline"
                         asChild
                       >
-                        <Link to={`/courses/${assignment.modulo_id}`}>
+                        <Link to={`/courses/${assignment.course_id}`}>
                           Ver Curso
                         </Link>
                       </Button>

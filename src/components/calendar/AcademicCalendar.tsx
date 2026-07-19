@@ -98,7 +98,7 @@ export function AcademicCalendar() {
       if (profile?.role === "student") {
         const { data: enrollments } = await supabase
           .from("course_enrollments")
-          .select("modulo_id")
+          .select("course_id")
           .eq("student_id", profile.id);
 
         if (enrollments && enrollments.length > 0) {

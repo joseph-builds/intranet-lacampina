@@ -112,39 +112,38 @@ export default function CreateExam() {
     try {
       setLoading(true);
 
-      // Create the exam
-      const { data: examData, error: examError } = await supabase
-        .from("exams")
-        .insert({
-          modulo_id: courseId,
-          title: formData.title.trim(),
-          description: formData.description.trim() || null,
-          start_time: formData.start_time.toISOString(),
-          duration_minutes: formData.duration_minutes,
-          is_published: formData.is_published,
-        })
-        .select()
-        .single();
+      // Create the exam via RPC (bypasses RLS)
+      const { data: examResult, error: examError } = await supabase.rpc(
+        "create_exam",
+        {
+          p_course_id: courseId,
+          p_title: formData.title.trim(),
+          p_description: formData.description.trim() || null,
+          p_start_time: formData.start_time.toISOString(),
+          p_duration_minutes: formData.duration_minutes,
+          p_is_published: formData.is_published,
+        },
+      );
 
       if (examError) throw examError;
+      const examData = examResult as any;
 
-      // Create the quiz for the exam
-      const { data: quizData, error: quizError } = await supabase
-        .from("quizzes")
-        .insert({
-          modulo_id: courseId,
-          title: formData.title.trim(),
-          description: formData.description.trim() || null,
-          time_limit_minutes: formData.duration_minutes,
-          max_attempts: 1,
-          exam_id: examData.id,
-          is_published: formData.is_published,
-          due_date: formData.start_time.toISOString(),
-        })
-        .select()
-        .single();
+      // Create the quiz via RPC
+      const { data: quizResult, error: quizError } = await supabase.rpc(
+        "create_quiz",
+        {
+          p_course_id: courseId,
+          p_title: formData.title.trim(),
+          p_description: formData.description.trim() || null,
+          p_time_limit_minutes: formData.duration_minutes,
+          p_max_attempts: 1,
+          p_is_published: formData.is_published,
+          p_due_date: formData.start_time.toISOString(),
+        },
+      );
 
       if (quizError) throw quizError;
+      const quizData = quizResult as any;
 
       // Create questions
       const questionsToInsert = questions.map((q, index) => ({
@@ -162,24 +161,25 @@ export default function CreateExam() {
 
       if (questionsError) throw questionsError;
 
-      // Create course event for the exam
+      // Create course event via RPC
       const endTime = new Date(formData.start_time);
       endTime.setMinutes(endTime.getMinutes() + formData.duration_minutes);
 
-      const { error: eventError } = await supabase
-        .from("course_events")
-        .insert({
-          modulo_id: courseId,
-          title: `Examen: ${formData.title}`,
-          description:
+      const { error: eventError } = await supabase.rpc(
+        "create_course_event",
+        {
+          p_course_id: courseId,
+          p_title: `Examen: ${formData.title}`,
+          p_description:
             formData.description ||
             `Examen de ${formData.duration_minutes} minutos`,
-          event_type: "exam",
-          start_date: formData.start_time.toISOString(),
-          end_date: endTime.toISOString(),
-          is_published: formData.is_published,
-          created_by: profile?.id,
-        });
+          p_event_type: "exam",
+          p_start_date: formData.start_time.toISOString(),
+          p_end_date: endTime.toISOString(),
+          p_is_published: formData.is_published,
+          p_created_by: profile?.id,
+        },
+      );
 
       if (eventError) {
         console.error("Error creating event:", eventError);

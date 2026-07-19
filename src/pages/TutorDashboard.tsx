@@ -116,7 +116,7 @@ interface GradeRecord {
 }
 
 interface CourseGradeDetail {
-  modulo_id: string;
+  course_id: string;
   course_name: string;
   course_code: string;
   average: number;
@@ -263,7 +263,7 @@ export default function TutorDashboard() {
         const { data: studentsData, error: studentsError } = await supabase
           .from("course_enrollments")
           .select("student_id, profiles!inner(*)")
-          .in("modulo_id", courseIds);
+          .in("course_id", courseIds);
 
         console.log("📦 Respuesta de estudiantes:", {
           studentsData,
@@ -303,7 +303,7 @@ export default function TutorDashboard() {
           .select("student_id, status, date, recorded_at")
           .in("student_id", studentIds)
           .or(
-            `modulo_id.in.(${courseIds.join(",")}),classroom_id.eq.${classroomId}`,
+            `course_id.in.(${courseIds.join(",")}),classroom_id.eq.${classroomId}`,
           )
           .order("date", { ascending: false });
 
@@ -361,7 +361,7 @@ export default function TutorDashboard() {
             score, 
             assignment_id, 
             assignments!inner(
-              modulo_id,
+              course_id,
               courses!inner(
                 id,
                 name,
@@ -389,7 +389,7 @@ export default function TutorDashboard() {
           "📋 All submissions:",
           submissionsData?.map((s) => ({
             student_id: s.student_id,
-            modulo_id: (s.assignments as any).courses.id,
+            course_id: (s.assignments as any).courses.id,
             course_name: (s.assignments as any).courses.name,
             score: s.score,
           })),
@@ -477,7 +477,7 @@ export default function TutorDashboard() {
             if (courseGradesMap) {
               record.course_grades = Array.from(courseGradesMap.entries()).map(
                 ([courseId, data]) => ({
-                  modulo_id: courseId,
+                  course_id: courseId,
                   course_name: data.course_name,
                   course_code: data.course_code,
                   average: data.total / data.count,
@@ -1056,7 +1056,7 @@ export default function TutorDashboard() {
                                 <div className="grid grid-cols-1 gap-2">
                                   {grades.course_grades.map((cg) => (
                                     <div
-                                      key={cg.modulo_id}
+                                      key={cg.course_id}
                                       className="flex items-center justify-between p-2 bg-muted/50 rounded"
                                     >
                                       <div className="flex-1">

@@ -168,7 +168,7 @@ export type Database = {
       };
       assignments: {
         Row: {
-          modulo_id: string | null;
+          course_id: string | null;
           created_at: string | null;
           description: string | null;
           due_date: string | null;
@@ -179,7 +179,7 @@ export type Database = {
           updated_at: string | null;
         };
         Insert: {
-          modulo_id?: string | null;
+          course_id?: string | null;
           created_at?: string | null;
           description?: string | null;
           due_date?: string | null;
@@ -190,7 +190,7 @@ export type Database = {
           updated_at?: string | null;
         };
         Update: {
-          modulo_id?: string | null;
+          course_id?: string | null;
           created_at?: string | null;
           description?: string | null;
           due_date?: string | null;
@@ -203,7 +203,7 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "assignments_course_id_fkey";
-            columns: ["modulo_id"];
+            columns: ["course_id"];
             isOneToOne: false;
             referencedRelation: "courses_old";
             referencedColumns: ["id"];
@@ -213,7 +213,7 @@ export type Database = {
       attendance: {
         Row: {
           classroom_id: string | null;
-          modulo_id: string | null;
+          course_id: string | null;
           created_at: string | null;
           date: string;
           id: string;
@@ -225,7 +225,7 @@ export type Database = {
         };
         Insert: {
           classroom_id?: string | null;
-          modulo_id?: string | null;
+          course_id?: string | null;
           created_at?: string | null;
           date: string;
           id?: string;
@@ -237,7 +237,7 @@ export type Database = {
         };
         Update: {
           classroom_id?: string | null;
-          modulo_id?: string | null;
+          course_id?: string | null;
           created_at?: string | null;
           date?: string;
           id?: string;
@@ -250,7 +250,7 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "attendance_course_id_fkey";
-            columns: ["modulo_id"];
+            columns: ["course_id"];
             isOneToOne: false;
             referencedRelation: "courses_old";
             referencedColumns: ["id"];
@@ -312,7 +312,7 @@ export type Database = {
           id: string;
           is_active: boolean | null;
           matricula_id: string | null;
-          modulo_id: string;
+          course_id: string;
           student_id: string;
           tipo_estudiante: string | null;
         };
@@ -321,7 +321,7 @@ export type Database = {
           id?: string;
           is_active?: boolean | null;
           matricula_id?: string | null;
-          modulo_id: string;
+          course_id: string;
           student_id: string;
           tipo_estudiante?: string | null;
         };
@@ -330,7 +330,7 @@ export type Database = {
           id?: string;
           is_active?: boolean | null;
           matricula_id?: string | null;
-          modulo_id?: string;
+          course_id?: string;
           student_id?: string;
           tipo_estudiante?: string | null;
         };
@@ -343,8 +343,8 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
-            foreignKeyName: "course_enrollments_modulo_id_fkey";
-            columns: ["modulo_id"];
+            foreignKeyName: "course_enrollments_course_id_fkey";
+            columns: ["course_id"];
             isOneToOne: false;
             referencedRelation: "modulos";
             referencedColumns: ["id"];
@@ -360,19 +360,19 @@ export type Database = {
       };
       course_enrollments_old: {
         Row: {
-          modulo_id: string | null;
+          course_id: string | null;
           enrolled_at: string | null;
           id: string;
           student_id: string | null;
         };
         Insert: {
-          modulo_id?: string | null;
+          course_id?: string | null;
           enrolled_at?: string | null;
           id?: string;
           student_id?: string | null;
         };
         Update: {
-          modulo_id?: string | null;
+          course_id?: string | null;
           enrolled_at?: string | null;
           id?: string;
           student_id?: string | null;
@@ -380,7 +380,7 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "course_enrollments_course_id_fkey";
-            columns: ["modulo_id"];
+            columns: ["course_id"];
             isOneToOne: false;
             referencedRelation: "courses_old";
             referencedColumns: ["id"];
@@ -396,7 +396,7 @@ export type Database = {
       };
       course_events: {
         Row: {
-          modulo_id: string;
+          course_id: string;
           created_at: string | null;
           created_by: string;
           description: string | null;
@@ -410,7 +410,7 @@ export type Database = {
           updated_at: string | null;
         };
         Insert: {
-          modulo_id: string;
+          course_id: string;
           created_at?: string | null;
           created_by: string;
           description?: string | null;
@@ -424,7 +424,7 @@ export type Database = {
           updated_at?: string | null;
         };
         Update: {
-          modulo_id?: string;
+          course_id?: string;
           created_at?: string | null;
           created_by?: string;
           description?: string | null;
@@ -440,7 +440,7 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "course_events_course_id_fkey";
-            columns: ["modulo_id"];
+            columns: ["course_id"];
             isOneToOne: false;
             referencedRelation: "courses_old";
             referencedColumns: ["id"];
@@ -479,7 +479,7 @@ export type Database = {
       };
       course_forum_topics: {
         Row: {
-          modulo_id: string;
+          course_id: string;
           created_at: string | null;
           created_by: string;
           description: string | null;
@@ -490,7 +490,7 @@ export type Database = {
           updated_at: string | null;
         };
         Insert: {
-          modulo_id: string;
+          course_id: string;
           created_at?: string | null;
           created_by: string;
           description?: string | null;
@@ -501,7 +501,7 @@ export type Database = {
           updated_at?: string | null;
         };
         Update: {
-          modulo_id?: string;
+          course_id?: string;
           created_at?: string | null;
           created_by?: string;
           description?: string | null;
@@ -515,7 +515,7 @@ export type Database = {
       };
       course_modules: {
         Row: {
-          modulo_id: string;
+          course_id: string;
           created_at: string | null;
           description: string | null;
           id: string;
@@ -525,7 +525,7 @@ export type Database = {
           updated_at: string | null;
         };
         Insert: {
-          modulo_id: string;
+          course_id: string;
           created_at?: string | null;
           description?: string | null;
           id?: string;
@@ -535,7 +535,7 @@ export type Database = {
           updated_at?: string | null;
         };
         Update: {
-          modulo_id?: string;
+          course_id?: string;
           created_at?: string | null;
           description?: string | null;
           id?: string;
@@ -587,21 +587,21 @@ export type Database = {
       };
       course_teachers: {
         Row: {
-          modulo_id: string;
+          course_id: string;
           created_at: string | null;
           id: string;
           is_primary: boolean | null;
           teacher_id: string;
         };
         Insert: {
-          modulo_id: string;
+          course_id: string;
           created_at?: string | null;
           id?: string;
           is_primary?: boolean | null;
           teacher_id: string;
         };
         Update: {
-          modulo_id?: string;
+          course_id?: string;
           created_at?: string | null;
           id?: string;
           is_primary?: boolean | null;
@@ -610,7 +610,7 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "course_teachers_course_id_fkey";
-            columns: ["modulo_id"];
+            columns: ["course_id"];
             isOneToOne: false;
             referencedRelation: "courses_old";
             referencedColumns: ["id"];
@@ -707,7 +707,7 @@ export type Database = {
       };
       course_weekly_sections: {
         Row: {
-          modulo_id: string;
+          course_id: string;
           created_at: string | null;
           description: string | null;
           end_date: string | null;
@@ -720,7 +720,7 @@ export type Database = {
           week_number: number;
         };
         Insert: {
-          modulo_id: string;
+          course_id: string;
           created_at?: string | null;
           description?: string | null;
           end_date?: string | null;
@@ -733,7 +733,7 @@ export type Database = {
           week_number: number;
         };
         Update: {
-          modulo_id?: string;
+          course_id?: string;
           created_at?: string | null;
           description?: string | null;
           end_date?: string | null;
@@ -748,7 +748,7 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "course_weekly_sections_course_id_fkey";
-            columns: ["modulo_id"];
+            columns: ["course_id"];
             isOneToOne: false;
             referencedRelation: "courses_old";
             referencedColumns: ["id"];
@@ -926,7 +926,7 @@ export type Database = {
       };
       exams: {
         Row: {
-          modulo_id: string | null;
+          course_id: string | null;
           created_at: string | null;
           description: string | null;
           duration_minutes: number;
@@ -937,7 +937,7 @@ export type Database = {
           title: string;
         };
         Insert: {
-          modulo_id?: string | null;
+          course_id?: string | null;
           created_at?: string | null;
           description?: string | null;
           duration_minutes: number;
@@ -948,7 +948,7 @@ export type Database = {
           title: string;
         };
         Update: {
-          modulo_id?: string | null;
+          course_id?: string | null;
           created_at?: string | null;
           description?: string | null;
           duration_minutes?: number;
@@ -961,7 +961,7 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "exams_course_id_fkey";
-            columns: ["modulo_id"];
+            columns: ["course_id"];
             isOneToOne: false;
             referencedRelation: "courses_old";
             referencedColumns: ["id"];
@@ -1133,7 +1133,7 @@ export type Database = {
           academic_year: string;
           aditional_teachers: string[] | null;
           code: string;
-          modulo_id: string;
+          course_id: string;
           created_at: string | null;
           description: string | null;
           end_date: string;
@@ -1151,7 +1151,7 @@ export type Database = {
           academic_year: string;
           aditional_teachers?: string[] | null;
           code: string;
-          modulo_id: string;
+          course_id: string;
           created_at?: string | null;
           description?: string | null;
           end_date: string;
@@ -1169,7 +1169,7 @@ export type Database = {
           academic_year?: string;
           aditional_teachers?: string[] | null;
           code?: string;
-          modulo_id?: string;
+          course_id?: string;
           created_at?: string | null;
           description?: string | null;
           end_date?: string;
@@ -1186,7 +1186,7 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "modulos_course_id_fkey";
-            columns: ["modulo_id"];
+            columns: ["course_id"];
             isOneToOne: false;
             referencedRelation: "courses";
             referencedColumns: ["id"];
@@ -1540,7 +1540,7 @@ export type Database = {
       };
       quizzes: {
         Row: {
-          modulo_id: string;
+          course_id: string;
           created_at: string | null;
           description: string | null;
           due_date: string | null;
@@ -1552,7 +1552,7 @@ export type Database = {
           updated_at: string | null;
         };
         Insert: {
-          modulo_id: string;
+          course_id: string;
           created_at?: string | null;
           description?: string | null;
           due_date?: string | null;
@@ -1564,7 +1564,7 @@ export type Database = {
           updated_at?: string | null;
         };
         Update: {
-          modulo_id?: string;
+          course_id?: string;
           created_at?: string | null;
           description?: string | null;
           due_date?: string | null;
@@ -1578,7 +1578,7 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "quizzes_course_id_fkey";
-            columns: ["modulo_id"];
+            columns: ["course_id"];
             isOneToOne: false;
             referencedRelation: "courses_old";
             referencedColumns: ["id"];
@@ -1587,7 +1587,7 @@ export type Database = {
       };
       registro_compra_materiales: {
         Row: {
-          modulo_id: string;
+          course_id: string;
           created_at: string | null;
           estado_pago: string | null;
           estudiante_id: string;
@@ -1601,7 +1601,7 @@ export type Database = {
           usuario_id: string;
         };
         Insert: {
-          modulo_id: string;
+          course_id: string;
           created_at?: string | null;
           estado_pago?: string | null;
           estudiante_id: string;
@@ -1615,7 +1615,7 @@ export type Database = {
           usuario_id: string;
         };
         Update: {
-          modulo_id?: string;
+          course_id?: string;
           created_at?: string | null;
           estado_pago?: string | null;
           estudiante_id?: string;
@@ -1631,7 +1631,7 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "registro_compra_materiales_course_id_fkey";
-            columns: ["modulo_id"];
+            columns: ["course_id"];
             isOneToOne: false;
             referencedRelation: "courses";
             referencedColumns: ["id"];
@@ -1697,7 +1697,7 @@ export type Database = {
         Row: {
           completed_at: string | null;
           completion_percentage: number | null;
-          modulo_id: string;
+          course_id: string;
           id: string;
           module_id: string | null;
           progress_type: string;
@@ -1707,7 +1707,7 @@ export type Database = {
         Insert: {
           completed_at?: string | null;
           completion_percentage?: number | null;
-          modulo_id: string;
+          course_id: string;
           id?: string;
           module_id?: string | null;
           progress_type: string;
@@ -1717,7 +1717,7 @@ export type Database = {
         Update: {
           completed_at?: string | null;
           completion_percentage?: number | null;
-          modulo_id?: string;
+          course_id?: string;
           id?: string;
           module_id?: string | null;
           progress_type?: string;

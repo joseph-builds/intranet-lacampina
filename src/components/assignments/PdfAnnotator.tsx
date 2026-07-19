@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Loader2, Type, Eraser, Pen, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, Type, Eraser, Pen, RotateCcw, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 // Imports de PDF
@@ -47,7 +47,8 @@ const PdfAnnotator = forwardRef<PdfAnnotatorRef, Props>(({
   const last = useRef<{ x: number; y: number } | null>(null);
   const [pageOverlays, setPageOverlays] = useState<Record<number, string>>({}); 
 
-  const SCALE = 1.5; 
+  // 🔥 SCALE DINAMICO
+  const [scale, setScale] = useState(1.1);
 
   useImperativeHandle(ref, () => ({
     savePdfOnly: async () => {
@@ -99,7 +100,7 @@ const PdfAnnotator = forwardRef<PdfAnnotatorRef, Props>(({
     if (!pdfDocJs || !baseCanvasRef.current || !overlayCanvasRef.current) return;
     const render = async () => {
         const page = await pdfDocJs.getPage(pageNum);
-        const viewport = page.getViewport({ scale: SCALE });
+        const viewport = page.getViewport({ scale: scale });
         
         const base = baseCanvasRef.current!;
         const overlay = overlayCanvasRef.current!;
@@ -122,7 +123,10 @@ const PdfAnnotator = forwardRef<PdfAnnotatorRef, Props>(({
         }
     };
     render();
-  }, [pdfDocJs, pageNum, pageOverlays]);
+  }, [pdfDocJs, pageNum, pageOverlays, scale]);
+
+  const handleZoomIn = () => setScale(prev => Math.min(prev + 0.2, 3.0));
+  const handleZoomOut = () => setScale(prev => Math.max(prev - 0.2, 0.5));
 
   const getPos = (e: React.PointerEvent | React.MouseEvent) => {
     const rect = overlayCanvasRef.current!.getBoundingClientRect();
@@ -265,11 +269,17 @@ const PdfAnnotator = forwardRef<PdfAnnotatorRef, Props>(({
                 if(ctx && overlayCanvasRef.current) ctx.clearRect(0,0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
                 setPageOverlays(prev => { const n = {...prev}; delete n[pageNum]; return n; });
             }} title="Limpiar Página"><RotateCcw className="w-4 h-4" /></Button>
+            
+            <div className="h-6 w-px bg-gray-300 mx-2" />
+            <Button variant="ghost" size="sm" onClick={handleZoomOut} title="Alejar"><ZoomOut className="w-4 h-4" /></Button>
+            <span className="text-xs font-medium w-8 text-center">{Math.round(scale * 100)}%</span>
+            <Button variant="ghost" size="sm" onClick={handleZoomIn} title="Acercar"><ZoomIn className="w-4 h-4" /></Button>
         </div>
-        <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => changePage(-1)} disabled={pageNum <= 1}><ChevronLeft className="w-4 h-4" /></Button>
-            <span className="text-sm font-medium w-12 text-center">{pageNum} / {pageCount}</span>
-            <Button variant="outline" size="sm" onClick={() => changePage(1)} disabled={pageNum >= pageCount}><ChevronRight className="w-4 h-4" /></Button>
+        <div className="flex items-center gap-2 bg-slate-100 px-3 py-1 rounded-md border">
+            <span className="text-xs font-semibold text-slate-500 uppercase mr-1">Página</span>
+            <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => changePage(-1)} disabled={pageNum <= 1}><ChevronLeft className="w-4 h-4" /></Button>
+            <span className="text-sm font-bold w-12 text-center">{pageNum} / {pageCount}</span>
+            <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => changePage(1)} disabled={pageNum >= pageCount}><ChevronRight className="w-4 h-4" /></Button>
         </div>
       </div>
       

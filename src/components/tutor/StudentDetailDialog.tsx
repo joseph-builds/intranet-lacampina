@@ -139,7 +139,7 @@ export function StudentDetailDialog({
           assignments!inner(
             title,
             max_score,
-            modulo_id,
+            course_id,
             courses!inner(
               name,
               code
@@ -148,7 +148,7 @@ export function StudentDetailDialog({
         `,
         )
         .eq("student_id", student.id)
-        .in("assignments.modulo_id", courseIds)
+        .in("assignments.course_id", courseIds)
         .not("score", "is", null)
         .order("graded_at", { ascending: false });
 
@@ -176,14 +176,14 @@ export function StudentDetailDialog({
           status,
           notes,
           recorded_at,
-          modulo_id,
+          course_id,
           classroom_id,
           courses(name, code)
         `,
         )
         .eq("student_id", student.id)
         .or(
-          `modulo_id.in.(${courseIds.join(",")}),classroom_id.eq.${classroomId}`,
+          `course_id.in.(${courseIds.join(",")}),classroom_id.eq.${classroomId}`,
         )
         .order("date", { ascending: false })
         .order("recorded_at", { ascending: false });

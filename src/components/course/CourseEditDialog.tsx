@@ -105,7 +105,7 @@ export function CourseEditDialog({
           )
         `,
         )
-        .eq("modulo_id", courseId);
+        .eq("course_id", courseId);
 
       if (error) throw error;
       setCourseTeachers(
@@ -124,7 +124,7 @@ export function CourseEditDialog({
 
     try {
       const { error } = await supabase.from("course_teachers").insert({
-        modulo_id: courseId,
+        course_id: courseId,
         teacher_id: teacherId,
         is_primary: false,
       });
@@ -144,7 +144,7 @@ export function CourseEditDialog({
       const { error } = await supabase
         .from("course_teachers")
         .delete()
-        .eq("modulo_id", courseId)
+        .eq("course_id", courseId)
         .eq("teacher_id", teacherId);
 
       if (error) throw error;

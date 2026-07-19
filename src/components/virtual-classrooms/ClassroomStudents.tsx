@@ -61,7 +61,7 @@ export function ClassroomStudents({ classroomId, canManage, onUpdate }: Classroo
       const { data, error } = await supabase
         .from('course_enrollments')
         .select(`
-          student:profiles!course_enrollments_student_id_fkey(
+          student:profiles!course_enrollments_student_id_fkey1(
             id,
             first_name,
             last_name,

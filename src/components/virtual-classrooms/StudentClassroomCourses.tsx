@@ -56,7 +56,7 @@ export function StudentClassroomCourses({ classroomId }: StudentClassroomCourses
       // Obtener inscripciones del estudiante actual
       const { data: enrollmentsData, error: enrollmentsError } = await supabase
         .from('course_enrollments')
-        .select('modulo_id')
+        .select('course_id')
         .eq('student_id', profile?.id);
 
       if (enrollmentsError) throw enrollmentsError;
@@ -64,14 +64,14 @@ export function StudentClassroomCourses({ classroomId }: StudentClassroomCourses
       // Obtener número de estudiantes por curso
       const { data: enrollmentCounts, error: countError } = await supabase
         .from('course_enrollments')
-        .select('modulo_id')
-        .in('modulo_id', (coursesData || []).map(c => c.id));
+        .select('course_id')
+        .in('course_id', (coursesData || []).map(c => c.id));
 
       if (countError) throw countError;
 
-      const enrolledCourseIds = new Set(enrollmentsData?.map(e => e.modulo_id) || []);
+      const enrolledCourseIds = new Set(enrollmentsData?.map(e => e.course_id) || []);
       const countsByType = enrollmentCounts?.reduce((acc, enrollment) => {
-        acc[enrollment.modulo_id] = (acc[enrollment.modulo_id] || 0) + 1;
+        acc[enrollment.course_id] = (acc[enrollment.course_id] || 0) + 1;
         return acc;
       }, {} as Record<string, number>) || {};
 
@@ -102,7 +102,7 @@ export function StudentClassroomCourses({ classroomId }: StudentClassroomCourses
       const { error } = await supabase
         .from('course_enrollments')
         .insert({
-          modulo_id: courseId,
+          course_id: courseId,
           student_id: profile.id
         });
 

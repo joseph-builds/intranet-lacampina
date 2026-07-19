@@ -39,26 +39,71 @@ export function AttendanceRecords({ courseId }: AttendanceRecordsProps) {
     try {
       setLoading(true);
       
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const selectQuery = () => supabase
+        .from('attendance')
+        .select(`
+          id,
+          date,
+          status,
+          notes,
+          student:profiles!attendance_student_id_fkey(
+            id,
+            first_name,
+            last_name,
+            email
+          )
+        `)
+        .order('date', { ascending: false });
 
-const response = await fetch(
-  `${supabaseUrl}/functions/v1/get-course-attendance?modulo_id=${courseId}`,
-  {
-    headers: {
-      Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
-    },
-  }
-);
+      let { data: rawRecords, error } = await selectQuery().eq('course_id', courseId);
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Error al cargar la asistencia');
+      if (error && error.code === '42703') {
+        console.warn("course_id column doesn't exist in attendance table, falling back to course_id");
+        const fallbackResult = await selectQuery().eq("course_id", courseId);
+        rawRecords = fallbackResult.data;
+        error = fallbackResult.error;
       }
 
-      const data = await response.json();
+      if (error) throw error;
 
-      setRecords(data.records || []);
-      setStats(data.stats || null);
+      const formattedRecords: AttendanceRecord[] = (rawRecords || []).map((r: any) => ({
+        id: r.id,
+        date: r.date,
+        status: r.status as any,
+        notes: r.notes,
+        student: r.student ? {
+          id: r.student.id,
+          first_name: r.student.first_name || '',
+          last_name: r.student.last_name || '',
+          email: r.student.email || ''
+        } : null
+      }));
+
+      // Calculate stats
+      const totalRecords = formattedRecords.length;
+      const uniqueDates = new Set(formattedRecords.map(r => r.date));
+      const totalClasses = uniqueDates.size;
+
+      const presentCount = formattedRecords.filter(r => r.status === 'present').length;
+      const lateCount = formattedRecords.filter(r => r.status === 'late').length;
+      const absentCount = formattedRecords.filter(r => r.status === 'absent').length;
+      const justifiedCount = formattedRecords.filter(r => r.status === 'justified').length;
+
+      const presentRate = totalRecords > 0 
+        ? Math.round(((presentCount + lateCount) / totalRecords) * 100) 
+        : 0;
+
+      const calculatedStats = {
+        total: totalRecords,
+        present: presentCount,
+        late: lateCount,
+        absent: absentCount,
+        justified: justifiedCount,
+        attendance_rate: presentRate.toString()
+      };
+
+      setRecords(formattedRecords);
+      setStats(calculatedStats);
     } catch (error) {
       console.error('Error fetching attendance:', error);
       toast.error('Error al cargar la asistencia');

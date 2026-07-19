@@ -43,7 +43,7 @@ interface Assignment {
   description: string;
   due_date: string;
   max_score: number;
-  modulo_id: string;
+  course_id: string;
   course: {
     id: string;
     name: string;
@@ -284,7 +284,7 @@ const AssignmentDetail = () => {
         const { error } = await supabase.functions.invoke("submit-assignment", {
           body: {
             assignmentTitle: assignment?.title,
-            courseId: assignment?.modulo_id,
+            courseId: assignment?.course_id,
             content: content.trim(),
             files: uploadedFiles,
           },
@@ -387,20 +387,16 @@ const AssignmentDetail = () => {
   ) => {
     setIsDownloading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("download-file", {
-        body: {
-          bucket: "course-documents",
-          filePath: filePath,
-          fileName: fileName,
-        },
-      });
+      const { data, error } = await supabase.storage
+        .from("course-documents")
+        .createSignedUrl(filePath, 60);
 
       if (error) throw error;
 
       // Download the file using the signed URL
       const link = document.createElement("a");
       link.href = data.signedUrl;
-      link.download = data.fileName || fileName;
+      link.download = fileName;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -427,20 +423,16 @@ const AssignmentDetail = () => {
   ) => {
     setIsDownloading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("download-file", {
-        body: {
-          bucket: "student-submissions",
-          filePath: filePath,
-          fileName: fileName,
-        },
-      });
+      const { data, error } = await supabase.storage
+        .from("student-submissions")
+        .createSignedUrl(filePath, 60);
 
       if (error) throw error;
 
       // Download the file using the signed URL
       const link = document.createElement("a");
       link.href = data.signedUrl;
-      link.download = data.fileName || fileName;
+      link.download = fileName;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -562,7 +554,7 @@ const AssignmentDetail = () => {
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
               <Link
-                to={`/courses/${assignment.modulo_id}`}
+                to={`/courses/${assignment.course_id}`}
                 className="hover:text-primary transition-colors"
               >
                 {assignment.course.code} - {assignment.course.name}

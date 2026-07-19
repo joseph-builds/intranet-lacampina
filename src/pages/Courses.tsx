@@ -63,39 +63,176 @@ const Courses = () => {
     try {
       setLoading(true);
       
-      // Use Edge Function to get courses based on user role
-      const { data, error } = await supabase.functions.invoke('get-student-courses', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
+      let coursesData: any[] = [];
+
+      if (profile.role === 'student') {
+        const { data: direct, error: dError } = await supabase
+          .from('course_enrollments')
+          .select(`
+            enrolled_at,
+            course:courses (
+              *,
+              teacher:profiles!courses_teacher_principal_id_fkey (
+                id, first_name, last_name, email
+              ),
+              classroom:virtual_classrooms!courses_classroom_id_fkey (
+                id, name, grade, education_level
+              )
+            )
+          `)
+          .eq('student_id', profile.id)
+          .eq('course.is_active', true);
+
+        if (dError) throw dError;
+        coursesData = direct?.map(e => ({
+          ...(e.course as any),
+          enrolled_at: e.enrolled_at,
+          enrollment_status: 'enrolled'
+        })) || [];
+
+        // Fetch courses via student_sections
+        const { data: sectionData, error: sError } = await supabase
+          .from('student_sections')
+          .select(`
+            created_at,
+            section:sections!inner (
+              section_courses (
+                base:base_courses (
+                  course:courses (
+                    *,
+                    teacher:profiles!courses_teacher_principal_id_fkey (
+                      id, first_name, last_name, email
+                    ),
+                    classroom:virtual_classrooms!courses_classroom_id_fkey (
+                      id, name, grade, education_level
+                    )
+                  )
+                )
+              )
+            )
+          `)
+          .eq('student_id', profile.id)
+          .eq('is_active', true);
+          
+        if (!sError && sectionData) {
+          sectionData.forEach(ss => {
+            const scs = (ss.section as any)?.section_courses || [];
+            scs.forEach((sc: any) => {
+              const course = sc.base?.course;
+              if (course && course.is_active && !coursesData.find(c => c.id === course.id)) {
+                coursesData.push({
+                  ...course,
+                  enrolled_at: ss.created_at,
+                  enrollment_status: 'enrolled'
+                });
+              }
+            });
+          });
         }
-      });
 
-      if (error) {
-        console.error('Error calling get-student-courses function:', error);
-        toast({
-          title: "Error",
-          description: "No se pudieron cargar los cursos",
-          variant: "destructive",
-        });
-        return;
+      } else if (profile.role === 'teacher') {
+        const { data: primary, error: pError } = await supabase
+          .from('courses')
+          .select(`
+            *,
+            teacher:profiles!courses_teacher_principal_id_fkey (
+              id, first_name, last_name, email
+            ),
+            classroom:virtual_classrooms!courses_classroom_id_fkey (
+              id, name, grade, education_level
+            )
+          `)
+          .eq('teacher_principal_id', profile.id)
+          .eq('is_active', true);
+
+        if (pError) throw pError;
+
+        const { data: additional, error: aError } = await supabase
+          .from('course_teachers')
+          .select(`
+            course:courses (
+              *,
+              teacher:profiles!courses_teacher_principal_id_fkey (
+                id, first_name, last_name, email
+              ),
+              classroom:virtual_classrooms!courses_classroom_id_fkey (
+                id, name, grade, education_level
+              )
+            )
+          `)
+          .eq('teacher_id', profile.id)
+          .eq('course.is_active', true);
+
+        if (aError) throw aError;
+
+        const { data: sectionCourses, error: scError } = await supabase
+          .from('section_courses')
+          .select(`
+            base:base_courses (
+              course:courses (
+                *,
+                teacher:profiles!courses_teacher_principal_id_fkey (
+                  id, first_name, last_name, email
+                ),
+                classroom:virtual_classrooms!courses_classroom_id_fkey (
+                  id, name, grade, education_level
+                )
+              )
+            )
+          `)
+          .eq('teacher_id', profile.id);
+
+        if (scError) throw scError;
+
+        const all = [
+          ...(primary || []), 
+          ...(additional?.map(a => a.course).filter(Boolean) || []),
+          ...(sectionCourses?.map(sc => {
+            if (sc.base?.course) {
+              // Inject the current user as the teacher because they are assigned via section_courses
+              sc.base.course.teacher = {
+                id: profile.id,
+                first_name: profile.first_name,
+                last_name: profile.last_name,
+                email: profile.email
+              };
+              return sc.base.course;
+            }
+            return null;
+          }).filter(Boolean) || [])
+        ];
+        
+        // unique
+        coursesData = all.reduce((acc, current) => {
+          if (!acc.find((item: any) => item.id === current.id)) {
+            acc.push(current);
+          }
+          return acc;
+        }, []);
+
+      } else {
+        // admin / directivo
+        const { data, error } = await supabase
+          .from('courses')
+          .select(`
+            *,
+            teacher:profiles!courses_teacher_principal_id_fkey (
+              id, first_name, last_name, email
+            ),
+            classroom:virtual_classrooms!courses_classroom_id_fkey (
+              id, name, grade, education_level
+            )
+          `)
+          .eq('is_active', true);
+
+        if (error) throw error;
+        coursesData = data || [];
       }
 
-      if (!data?.success) {
-        console.error('Error in function response:', data?.error);
-        toast({
-          title: "Error",
-          description: data?.error || "Error al obtener los cursos",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      console.log(`✅ Cursos cargados para ${data.user_role}:`, data.count);
-      setCourses(data.data || []);
+      setCourses(coursesData);
 
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error fetching courses:', error);
       toast({
         title: "Error",
         description: "Error interno al cargar los cursos",

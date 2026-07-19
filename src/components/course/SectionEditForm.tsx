@@ -65,7 +65,7 @@ export function SectionEditForm({
       const { data: existingWeek } = await supabase
         .from("course_weekly_sections")
         .select("id")
-        .eq("modulo_id", courseId)
+        .eq("course_id", courseId)
         .eq("week_number", formData.week_number)
         .neq("id", section.id)
         .single();

@@ -110,7 +110,7 @@ interface ActivityTimeline {
 }
 
 interface CourseDetail {
-  modulo_id: string;
+  course_id: string;
   course_name: string;
   course_code: string;
   student_count: number;
@@ -208,7 +208,7 @@ export default function TeacherDetailView() {
       const { data: coursesData, error: coursesError } = await supabase
         .from("courses")
         .select("id, name, code")
-        .eq("teacher_id", teacherId);
+        .eq("teacher_principal_id", teacherId);
 
       if (coursesError) throw coursesError;
 
@@ -220,8 +220,8 @@ export default function TeacherDetailView() {
       // First, get all assignments
       const { data: allAssignments } = await supabase
         .from("assignments")
-        .select("id, is_published, modulo_id, created_at")
-        .in("modulo_id", courseIds);
+        .select("id, is_published, course_id, created_at")
+        .in("course_id", courseIds);
 
       const assignmentIds = allAssignments?.map((a) => a.id) || [];
 
@@ -327,13 +327,13 @@ export default function TeacherDetailView() {
     const { data: exams } = await supabase
       .from("exams")
       .select("id")
-      .in("modulo_id", courseIds);
+      .in("course_id", courseIds);
 
     // Get attendance records
     const { data: attendance } = await supabase
       .from("attendance")
       .select("id")
-      .in("modulo_id", courseIds)
+      .in("course_id", courseIds)
       .eq("recorded_by", teacherId);
 
     // Get unique students count using direct SQL query via rpc
@@ -353,14 +353,14 @@ export default function TeacherDetailView() {
       const { data: coursesForCount } = await supabase
         .from("courses")
         .select("id")
-        .eq("teacher_id", teacherId);
+        .eq("teacher_principal_id", teacherId);
 
       if (coursesForCount && coursesForCount.length > 0) {
         const courseIdsForCount = coursesForCount.map((c) => c.id);
         const { data: enrollments } = await supabase
           .from("course_enrollments")
           .select("student_id")
-          .in("modulo_id", courseIdsForCount);
+          .in("course_id", courseIdsForCount);
 
         uniqueStudents = new Set(enrollments?.map((e) => e.student_id) || [])
           .size;
@@ -377,7 +377,7 @@ export default function TeacherDetailView() {
     const { data: activeCourses } = await supabase
       .from("courses")
       .select("id")
-      .eq("teacher_id", teacherId)
+      .eq("teacher_principal_id", teacherId)
       .eq("is_active", true);
 
     setMetrics({
@@ -457,7 +457,7 @@ export default function TeacherDetailView() {
     const { data: attendance } = await supabase
       .from("attendance")
       .select("date")
-      .in("modulo_id", courseIds)
+      .in("course_id", courseIds)
       .eq("recorded_by", teacherId)
       .gte("date", last30Days.toISOString());
 
@@ -526,7 +526,7 @@ export default function TeacherDetailView() {
 
         // Filter assignments for this course
         const assignments = allAssignments.filter(
-          (a) => a.modulo_id === course.id,
+          (a) => a.course_id === course.id,
         );
         const assignmentIds = assignments.map((a) => a.id);
 
@@ -552,7 +552,7 @@ export default function TeacherDetailView() {
         const { data: attendance } = await supabase
           .from("attendance")
           .select("status")
-          .eq("modulo_id", course.id);
+          .eq("course_id", course.id);
 
         const presentCount =
           attendance?.filter((a) => a.status === "present").length || 0;
@@ -561,7 +561,7 @@ export default function TeacherDetailView() {
           totalAttendance > 0 ? (presentCount / totalAttendance) * 100 : 0;
 
         return {
-          modulo_id: course.id,
+          course_id: course.id,
           course_name: course.name,
           course_code: course.code,
           student_count: enrollmentCount,
@@ -623,7 +623,7 @@ export default function TeacherDetailView() {
           .from("attendance")
           .select("status")
           .eq("student_id", student.student_id)
-          .in("modulo_id", courseIds);
+          .in("course_id", courseIds);
 
         const presentCount =
           attendance?.filter((a) => a.status === "present").length || 0;
@@ -1198,7 +1198,7 @@ export default function TeacherDetailView() {
                     </TableHeader>
                     <TableBody>
                       {courses.map((course) => (
-                        <TableRow key={course.modulo_id}>
+                        <TableRow key={course.course_id}>
                           <TableCell className="font-medium">
                             {course.course_name}
                           </TableCell>

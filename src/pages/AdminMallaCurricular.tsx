@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { BookOpen, Plus, Trash2, Layers, Loader2, Library } from 'lucide-react';
+import { BookOpen, Plus, Trash2, Layers, Loader2, Library, Tags, AlertCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
@@ -15,8 +15,18 @@ import { Switch } from '@/components/ui/switch';
 
 interface Nivel { id: string; name: string; level_order: number; }
 interface Grado { id: string; level_id: string; name: string; grade_order: number; }
-interface CursoCatalogo { id: string; name: string; code: string; }
-interface CursoBase { id: string; grade_id: string; course_id: string; name: string; area: string; is_mandatory: boolean; }
+interface CursoCatalogo { id: string; name: string; code: string; course_type: string | null; }
+
+// Modificamos la interfaz para incluir la relación con la tabla de cursos y saber si está activo
+interface CursoBase { 
+  id: string; 
+  grade_id: string; 
+  course_id: string; 
+  name: string; 
+  area: string; 
+  is_mandatory: boolean; 
+  courses?: { is_active: boolean }; 
+}
 
 const AdminMallaCurricular = () => {
   const { toast } = useToast();
@@ -31,15 +41,15 @@ const AdminMallaCurricular = () => {
   const [nivelActivo, setNivelActivo] = useState<string>('');
   const [gradoActivo, setGradoActivo] = useState<string>('');
   const [loading, setLoading] = useState(true);
-
+  
   // Estados de Modales
   const [isCursoModalOpen, setIsCursoModalOpen] = useState(false);
   const [isGradoModalOpen, setIsGradoModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-
+  
   // Formularios
   const [nuevoGradoNombre, setNuevoGradoNombre] = useState('');
-  const [formData, setFormData] = useState({ course_id: '', area: '', is_mandatory: true });
+  const [formData, setFormData] = useState({ course_id: '', is_mandatory: true });
 
   useEffect(() => {
     fetchEstructura();
@@ -61,8 +71,13 @@ const AdminMallaCurricular = () => {
   }, [gradoActivo]);
 
   const fetchCatalogoCursos = async () => {
-    const { data, error } = await supabase.from('courses').select('id, name, code').eq('is_active', true).order('name');
-    if (!error) setCatalogoCursos(data || []);
+    // Para agregar nuevos cursos, solo traemos los activos
+    const { data, error } = await supabase.from('courses').select('id, name, code, course_type').eq('is_active', true).order('name');
+    if (!error) {
+      setCatalogoCursos(data || []);
+    } else {
+      console.error("Error cargando catálogo:", error);
+    }
   };
 
   const fetchEstructura = async () => {
@@ -70,10 +85,10 @@ const AdminMallaCurricular = () => {
     try {
       const { data: dataNiveles } = await supabase.from('academic_levels').select('*').order('level_order');
       const { data: dataGrados } = await supabase.from('academic_grades').select('*').order('grade_order');
+      
       setNiveles(dataNiveles || []);
       setGrados(dataGrados || []);
       
-      // Asegurar que haya un nivel activo por defecto si no lo hay
       if (dataNiveles && dataNiveles.length > 0 && !nivelActivo) {
         setNivelActivo(dataNiveles[0].id);
       }
@@ -85,14 +100,28 @@ const AdminMallaCurricular = () => {
   };
 
   const fetchCursosPorGrado = async (gradeId: string) => {
-    const { data } = await supabase.from('base_courses').select('*').eq('grade_id', gradeId).order('name');
-    setCursosMalla(data || []);
+    // MEJORA: Hacemos un JOIN con la tabla 'courses' para traer la columna 'is_active' del catálogo general
+    const { data, error } = await supabase
+      .from('base_courses')
+      .select(`
+        *,
+        courses ( is_active )
+      `)
+      .eq('grade_id', gradeId)
+      .order('name');
+      
+    if (!error) {
+      setCursosMalla(data || []);
+    } else {
+      console.error("Error cargando malla:", error);
+    }
   };
 
   // ----- GESTIÓN DE GRADOS -----
   const handleCrearGrado = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nuevoGradoNombre.trim() || !nivelActivo) return;
+    
     setSaving(true);
     try {
       const gradosActuales = grados.filter(g => g.level_id === nivelActivo);
@@ -101,6 +130,7 @@ const AdminMallaCurricular = () => {
         name: nuevoGradoNombre.trim(),
         grade_order: gradosActuales.length + 1
       }]);
+      
       toast({ title: "Grado Creado", description: "El grado se añadió correctamente al nivel." });
       setIsGradoModalOpen(false);
       setNuevoGradoNombre('');
@@ -134,19 +164,22 @@ const AdminMallaCurricular = () => {
 
     setSaving(true);
     try {
+      const etiquetaAutogenerada = cursoSeleccionado.course_type || '-';
+
       const { error } = await supabase.from('base_courses').insert([{
         grade_id: gradoActivo,
         course_id: cursoSeleccionado.id,
         name: cursoSeleccionado.name,
-        area: formData.area.trim() || 'General',
+        area: etiquetaAutogenerada,
         is_mandatory: formData.is_mandatory
       }]);
 
       if (error) throw error;
+      
       toast({ title: "Éxito", description: "Asignatura agregada a la malla curricular." });
       fetchCursosPorGrado(gradoActivo);
       setIsCursoModalOpen(false);
-      setFormData({ course_id: '', area: '', is_mandatory: true });
+      setFormData({ course_id: '', is_mandatory: true });
     } catch (error) {
       toast({ title: "Error", description: "El curso ya existe en esta malla o hubo un problema.", variant: "destructive" });
     } finally {
@@ -160,6 +193,8 @@ const AdminMallaCurricular = () => {
     toast({ title: "Removido", description: "Curso quitado de la malla exitosamente." });
     fetchCursosPorGrado(gradoActivo);
   };
+
+  const cursoActualmenteSeleccionado = catalogoCursos.find(c => c.id === formData.course_id);
 
   if (loading) return <DashboardLayout><div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin w-8 h-8 text-blue-600" /></div></DashboardLayout>;
 
@@ -252,7 +287,10 @@ const AdminMallaCurricular = () => {
                 <CardDescription>Cursos obligatorios y electivos asignados a este grado.</CardDescription>
               </div>
               
-              <Dialog open={isCursoModalOpen} onOpenChange={setIsCursoModalOpen}>
+              <Dialog open={isCursoModalOpen} onOpenChange={(isOpen) => {
+                setIsCursoModalOpen(isOpen);
+                if (!isOpen) setFormData({ course_id: '', is_mandatory: true }); // Limpia al cerrar
+              }}>
                 <DialogTrigger asChild>
                   <Button disabled={!gradoActivo} className="bg-blue-600 hover:bg-blue-700 shrink-0 shadow-sm">
                     <Plus className="w-4 h-4 mr-2" /> Añadir Curso a Malla
@@ -261,20 +299,31 @@ const AdminMallaCurricular = () => {
                 <DialogContent>
                   <DialogHeader><DialogTitle>Añadir Curso a la Malla</DialogTitle></DialogHeader>
                   <form onSubmit={handleVincularCurso} className="space-y-5 mt-2">
+                    
                     <div className="space-y-2">
-                      <Label>Seleccionar Asignatura Base</Label>
+                      <Label>Seleccionar Asignatura del Catálogo</Label>
                       <Select required value={formData.course_id} onValueChange={val => setFormData({...formData, course_id: val})}>
                         <SelectTrigger><SelectValue placeholder="Elige un curso del catálogo general..." /></SelectTrigger>
-                        <SelectContent>
-                          {catalogoCursos.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.code})</SelectItem>)}
+                        <SelectContent className="max-h-60 overflow-y-auto">
+                          {catalogoCursos.length > 0 ? (
+                            catalogoCursos.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.code})</SelectItem>)
+                          ) : (
+                            <SelectItem value="none" disabled>No hay cursos activos registrados</SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
-                      <p className="text-xs text-gray-500">¿No encuentras el curso? Créalo primero en la pestaña "Catálogo de Cursos".</p>
                     </div>
+                    
                     <div className="space-y-2">
-                      <Label>Área Académica (Opcional)</Label>
-                      <Input value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} placeholder="Ej: Letras, Ciencias, Arte..." />
+                      <Label className="flex items-center gap-2">Etiqueta / Tipo <Tags className="w-3 h-3 text-gray-400"/></Label>
+                      <div className={`p-2.5 rounded-md border text-sm font-medium flex items-center h-10 ${cursoActualmenteSeleccionado ? 'bg-gray-50 border-gray-200 text-gray-700' : 'bg-gray-50/50 border-dashed border-gray-200 text-gray-400'}`}>
+                        {cursoActualmenteSeleccionado 
+                          ? (cursoActualmenteSeleccionado.course_type ? cursoActualmenteSeleccionado.course_type : '-') 
+                          : 'Selecciona un curso primero...'}
+                      </div>
+                      <p className="text-[10px] text-gray-400">Esta etiqueta se extrae automáticamente del catálogo. (Si no tiene, quedará en blanco)</p>
                     </div>
+
                     <div className="flex items-center justify-between p-4 bg-gray-50 border rounded-lg">
                       <div>
                         <Label className="font-bold text-gray-800">Curso Obligatorio</Label>
@@ -282,6 +331,7 @@ const AdminMallaCurricular = () => {
                       </div>
                       <Switch checked={formData.is_mandatory} onCheckedChange={checked => setFormData({...formData, is_mandatory: checked})} />
                     </div>
+
                     <Button type="submit" disabled={saving || !formData.course_id} className="w-full bg-blue-600">Guardar Asignación</Button>
                   </form>
                 </DialogContent>
@@ -294,30 +344,70 @@ const AdminMallaCurricular = () => {
                   <TableHeader className="bg-gray-50">
                     <TableRow>
                       <TableHead className="pl-6">Asignatura</TableHead>
-                      <TableHead>Área Curricular</TableHead>
-                      <TableHead className="text-center">Tipo</TableHead>
+                      <TableHead>Etiqueta / Tipo</TableHead>
+                      <TableHead className="text-center">Tipo de Matrícula</TableHead>
                       <TableHead className="text-right pr-6">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {cursosMalla.map((curso) => (
-                      <TableRow key={curso.id} className="hover:bg-gray-50/50">
-                        <TableCell className="font-semibold text-gray-800 flex items-center gap-2 pl-6">
-                          <BookOpen className="h-4 w-4 text-blue-500" /> {curso.name}
-                        </TableCell>
-                        <TableCell className="text-gray-600 text-sm">{curso.area}</TableCell>
-                        <TableCell className="text-center">
-                          <Badge variant="outline" className={curso.is_mandatory ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-50 text-gray-600 border-gray-200"}>
-                            {curso.is_mandatory ? 'Obligatorio' : 'Electivo'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right pr-6">
-                          <Button variant="ghost" size="sm" onClick={() => handleEliminarCursoMalla(curso.id)} className="text-red-600 hover:text-red-800 hover:bg-red-50 h-8 w-8 p-0">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {cursosMalla.map((curso) => {
+                      // VERIFICACIÓN: Comprobamos si el curso está inactivo o si fue eliminado físicamente
+                      const esInactivo = curso.courses && curso.courses.is_active === false;
+                      const fueEliminado = !curso.courses;
+
+                      return (
+                        <TableRow key={curso.id} className={`hover:bg-gray-50/50 ${esInactivo || fueEliminado ? 'bg-red-50/30' : ''}`}>
+                          <TableCell className="pl-6">
+                            <div className="flex flex-col gap-1">
+                              <div className="font-semibold text-gray-800 flex items-center gap-2">
+                                <BookOpen className={`h-4 w-4 ${esInactivo || fueEliminado ? 'text-gray-400' : 'text-blue-500'}`} /> 
+                                {/* TEXTO TACHADO Y GRIS SI ESTÁ INACTIVO */}
+                                <span className={esInactivo || fueEliminado ? 'line-through text-gray-400' : ''}>
+                                  {curso.name}
+                                </span>
+                              </div>
+                              {/* BADGE DE ALERTA DEBAJO DEL NOMBRE */}
+                              {(esInactivo || fueEliminado) && (
+                                <div className="flex items-center pl-6">
+                                  <Badge variant="outline" className="bg-red-50 text-red-600 border-red-200 text-[10px] py-0 h-5 px-1.5 flex items-center gap-1 shadow-sm">
+                                    <AlertCircle className="w-3 h-3" /> 
+                                    {fueEliminado ? 'Eliminado del catálogo' : 'Inactivo actualmente'}
+                                  </Badge>
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                          
+                          <TableCell>
+                            {!curso.area || curso.area === '-' ? (
+                              <span className="text-xs text-gray-400">-</span>
+                            ) : (
+                              <Badge variant="outline" className={`border-slate-200 ${esInactivo || fueEliminado ? 'bg-gray-50 text-gray-400' : 'bg-slate-50 text-slate-600'}`}>
+                                {curso.area}
+                              </Badge>
+                            )}
+                          </TableCell>
+                          
+                          <TableCell className="text-center">
+                            <Badge variant="outline" className={
+                              esInactivo || fueEliminado
+                                ? "bg-gray-50 text-gray-400 border-gray-200" // Opaco si está desactivado
+                                : curso.is_mandatory 
+                                  ? "bg-green-50 text-green-700 border-green-200" 
+                                  : "bg-purple-50 text-purple-700 border-purple-200"
+                            }>
+                              {curso.is_mandatory ? 'Obligatorio' : 'Electivo'}
+                            </Badge>
+                          </TableCell>
+                          
+                          <TableCell className="text-right pr-6">
+                            <Button variant="ghost" size="sm" onClick={() => handleEliminarCursoMalla(curso.id)} className="text-red-600 hover:text-red-800 hover:bg-red-50 h-8 w-8 p-0">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                     {cursosMalla.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={4} className="text-center py-16">

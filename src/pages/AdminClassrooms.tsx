@@ -9,14 +9,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { School, Plus, Users, Shuffle, Loader2, ArrowRight, Trash2, GraduationCap, ShieldAlert } from 'lucide-react';
+import { School, Plus, Users, Shuffle, Loader2, ArrowRight, Trash2, GraduationCap, ShieldAlert, CheckSquare, UserX } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface Nivel { id: string; name: string; }
 interface Grado { id: string; level_id: string; name: string; }
-interface Seccion { id: string; grade_id: string; name: string; room_number: string; academic_year: number; alumno_count?: number; }
-interface AlumnoEnGrado { id: string; first_name: string; last_name: string; email: string; section_id?: string; }
+interface Seccion { id: string; grade_id: string; name: string; room_number: string; academic_year: number; alumno_count?: number; tutor?: { first_name: string; last_name: string }; }
+interface AlumnoEnGrado { id: string; first_name: string; last_name: string; email: string; section_id?: string; is_active: boolean; }
 
 const CURRENT_YEAR = 2026;
 
@@ -29,18 +30,21 @@ const AdminClassrooms = () => {
   const [grados, setGrados] = useState<Grado[]>([]);
   const [secciones, setSecciones] = useState<Seccion[]>([]);
   const [alumnos, setAlumnos] = useState<AlumnoEnGrado[]>([]);
-
+  
   const [nivelActivo, setNivelActivo] = useState<string>('');
   const [gradoActivo, setGradoActivo] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [procesando, setProcesando] = useState(false);
-
+  
   const [isSeccionModalOpen, setIsSeccionModalOpen] = useState(false);
   const [formSeccion, setFormSeccion] = useState({ name: '', room_number: '' });
 
-  useEffect(() => {
-    initLoad();
-  }, []);
+  // Estados para selección masiva y filtros
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [bulkTargetSection, setBulkTargetSection] = useState<string>('');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'assigned' | 'unassigned'>('all');
+
+  useEffect(() => { initLoad(); }, []);
 
   useEffect(() => {
     if (nivelActivo && grados.length > 0) {
@@ -52,8 +56,12 @@ const AdminClassrooms = () => {
   }, [nivelActivo, grados]);
 
   useEffect(() => {
-    if (gradoActivo) fetchDataEstructura(gradoActivo);
-    else { setSecciones([]); setAlumnos([]); }
+    if (gradoActivo) {
+      fetchDataEstructura(gradoActivo);
+      setSelectedStudentIds([]); // Limpiar selección al cambiar de grado
+    } else { 
+      setSecciones([]); setAlumnos([]); 
+    }
   }, [gradoActivo]);
 
   const initLoad = async () => {
@@ -71,22 +79,26 @@ const AdminClassrooms = () => {
     }
   };
 
-  // OPTIMIZACIÓN: 3 Consultas planas cruzadas en memoria (Ultra rápido)
   const fetchDataEstructura = async (gradeId: string) => {
     setLoading(true);
     try {
-      // 1. Traer secciones del grado
+      // 1. Traer secciones del grado (INCLUYENDO TUTOR)
       const { data: dataSecciones } = await supabase.from('sections')
-        .select('*').eq('grade_id', gradeId).eq('academic_year', CURRENT_YEAR).order('name');
+        .select('*, tutor:profiles!tutor_id(first_name, last_name)')
+        .eq('grade_id', gradeId)
+        .eq('academic_year', CURRENT_YEAR)
+        .order('name');
       const secs = dataSecciones || [];
 
-      // 2. Traer todos los alumnos asignados a este grado
+      // 2. Traer TODOS los alumnos asignados a este grado (activos e inactivos)
       const { data: dataAlumnos } = await supabase.from('profiles')
-        .select('id, first_name, last_name, email')
-        .eq('role', 'student').eq('current_grade_id', gradeId).order('first_name');
+        .select('id, first_name, last_name, email, is_active')
+        .eq('role', 'student')
+        .eq('current_grade_id', gradeId)
+        .order('last_name');
       const alums = dataAlumnos || [];
 
-      // 3. Traer las matrículas (secciones) de este año
+      // 3. Traer las matrículas de este año
       const { data: matriculas } = await supabase.from('student_sections')
         .select('student_id, section_id')
         .eq('academic_year', CURRENT_YEAR)
@@ -104,7 +116,7 @@ const AdminClassrooms = () => {
       });
 
       setAlumnos(alumnosConSeccion);
-      setSecciones(seccionesConConteo);
+      setSecciones(seccionesConConteo as Seccion[]);
     } catch (error) {
       console.error("Error cargando estructura:", error);
     } finally {
@@ -125,14 +137,12 @@ const AdminClassrooms = () => {
 
     setProcesando(true);
     try {
-      // 1. Crear Sección
       const { data: nuevaSec, error: errSec } = await supabase.from('sections').insert([{
         grade_id: gradoActivo, name: formSeccion.name.trim(), room_number: formSeccion.room_number, academic_year: CURRENT_YEAR
       }]).select().single();
       
       if (errSec) throw errSec;
 
-      // 2. Traer Malla y Copiar a la Sección automáticamente
       const { data: cursosMalla } = await supabase.from('base_courses').select('id').eq('grade_id', gradoActivo);
       if (cursosMalla && cursosMalla.length > 0) {
         const instanciasCursos = cursosMalla.map(curso => ({ section_id: nuevaSec.id, base_course_id: curso.id }));
@@ -161,27 +171,47 @@ const AdminClassrooms = () => {
     }
   };
 
-  // ----- ASIGNACIÓN DE ALUMNOS -----
-  const handleAsignacionManual = async (studentId: string, newSectionId: string) => {
+  // ----- ASIGNACIÓN DE ALUMNOS (INDIVIDUAL Y MASIVA) -----
+  const handleAsignacionIndividual = async (studentId: string, newSectionId: string) => {
+    await procesarAsignacion([studentId], newSectionId);
+  };
+
+  const handleBulkAssign = async () => {
+    if (selectedStudentIds.length === 0 || !bulkTargetSection) return;
+    await procesarAsignacion(selectedStudentIds, bulkTargetSection);
+    setSelectedStudentIds([]); // Limpiar tras asignar
+    setBulkTargetSection('');
+  };
+
+  const procesarAsignacion = async (studentIds: string[], newSectionId: string) => {
+    setProcesando(true);
     try {
-      // 1. Borrar cualquier asignación previa de este año
-      await supabase.from('student_sections').delete().eq('student_id', studentId).eq('academic_year', CURRENT_YEAR);
+      // 1. Borrar asignaciones previas de estos alumnos en este año
+      await supabase.from('student_sections').delete().in('student_id', studentIds).eq('academic_year', CURRENT_YEAR);
       
-      // 2. Insertar la nueva (si no seleccionó "Sin asignar")
+      // 2. Insertar nueva asignación (si no es 'unassigned')
       if (newSectionId !== 'unassigned') {
-        await supabase.from('student_sections').insert([{ student_id: studentId, section_id: newSectionId, academic_year: CURRENT_YEAR }]);
+        const records = studentIds.map(id => ({ student_id: id, section_id: newSectionId, academic_year: CURRENT_YEAR }));
+        await supabase.from('student_sections').insert(records);
       }
-      toast({ title: "Aula actualizada", description: "El alumno fue movido exitosamente." });
+      
+      toast({ title: "Asignación actualizada", description: `Se movieron ${studentIds.length} alumno(s) correctamente.` });
       fetchDataEstructura(gradoActivo);
     } catch (error) {
-      toast({ title: "Error", description: "No se pudo cambiar el aula.", variant: "destructive" });
+      toast({ title: "Error", description: "Fallo al asignar aula.", variant: "destructive" });
+    } finally {
+      setProcesando(false);
     }
   };
 
+  const toggleStudentSelection = (id: string) => {
+    setSelectedStudentIds(prev => prev.includes(id) ? prev.filter(sId => sId !== id) : [...prev, id]);
+  };
+
   const handleReparticionAleatoria = async () => {
-    const sinAula = alumnos.filter(a => !a.section_id);
+    const sinAula = alumnosActivos.filter(a => !a.section_id);
     if (secciones.length === 0) return toast({ title: "Error", description: "Crea al menos una sección primero.", variant: "destructive" });
-    if (sinAula.length === 0) return toast({ title: "Info", description: "Todos los alumnos ya tienen sección." });
+    if (sinAula.length === 0) return toast({ title: "Info", description: "Todos los alumnos activos ya tienen sección." });
 
     setProcesando(true);
     try {
@@ -200,7 +230,18 @@ const AdminClassrooms = () => {
     }
   };
 
-  const alumnosSinAula = useMemo(() => alumnos.filter(a => !a.section_id).length, [alumnos]);
+  // Filtrado de alumnos para las vistas
+  const alumnosActivos = useMemo(() => alumnos.filter(a => a.is_active), [alumnos]);
+  const alumnosInactivos = useMemo(() => alumnos.filter(a => !a.is_active), [alumnos]);
+  
+  const alumnosActivosFiltrados = useMemo(() => {
+    if (filterStatus === 'assigned') return alumnosActivos.filter(a => a.section_id);
+    if (filterStatus === 'unassigned') return alumnosActivos.filter(a => !a.section_id);
+    return alumnosActivos;
+  }, [alumnosActivos, filterStatus]);
+
+  const alumnosSinAula = alumnosActivos.filter(a => !a.section_id).length;
+  const allFilteredSelected = alumnosActivosFiltrados.length > 0 && alumnosActivosFiltrados.every(a => selectedStudentIds.includes(a.id));
 
   if (loading && niveles.length === 0) return <DashboardLayout><div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin w-8 h-8 text-blue-600" /></div></DashboardLayout>;
 
@@ -214,150 +255,188 @@ const AdminClassrooms = () => {
             <h1 className="text-3xl font-bold flex items-center gap-3 text-gray-900">
               <School className="h-8 w-8 text-blue-600" /> Distribución de Aulas Virtuales
             </h1>
-            <p className="text-muted-foreground mt-1">Crea las secciones (Ej: "A", "B") y asigna a los alumnos matriculados en el grado.</p>
+            <p className="text-muted-foreground mt-1">Crea las secciones y asigna a los alumnos matriculados en el grado.</p>
           </div>
         </div>
 
         <Card className="border-0 shadow-sm bg-white">
-           <CardContent className="p-4 flex gap-4">
-             <div className="w-1/2">
-               <Label className="text-gray-600 mb-1 block">Nivel Académico</Label>
-               <Select value={nivelActivo} onValueChange={setNivelActivo}>
-                 <SelectTrigger><SelectValue/></SelectTrigger>
-                 <SelectContent>{niveles.map(n => <SelectItem key={n.id} value={n.id}>{n.name}</SelectItem>)}</SelectContent>
-               </Select>
-             </div>
-             <div className="w-1/2">
-               <Label className="text-gray-600 mb-1 block">Grado Académico</Label>
-               <Select value={gradoActivo} onValueChange={setGradoActivo}>
-                 <SelectTrigger><SelectValue/></SelectTrigger>
-                 <SelectContent>{grados.filter(g => g.level_id === nivelActivo).map(g => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}</SelectContent>
-               </Select>
-             </div>
-           </CardContent>
+          <CardContent className="p-4 flex gap-4">
+            <div className="w-1/2">
+              <Label className="text-gray-600 mb-1 block">Nivel Académico</Label>
+              <Select value={nivelActivo} onValueChange={setNivelActivo}>
+                <SelectTrigger><SelectValue/></SelectTrigger>
+                <SelectContent>{niveles.map(n => <SelectItem key={n.id} value={n.id}>{n.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="w-1/2">
+              <Label className="text-gray-600 mb-1 block">Grado Académico</Label>
+              <Select value={gradoActivo} onValueChange={setGradoActivo}>
+                <SelectTrigger><SelectValue/></SelectTrigger>
+                <SelectContent>{grados.filter(g => g.level_id === nivelActivo).map(g => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          </CardContent>
         </Card>
 
         {/* PARTE 1: GESTIÓN DE SECCIONES (TARJETAS) */}
-        <div>
-          <div className="flex justify-between items-end mb-4 mt-8">
-            <h2 className="text-xl font-bold text-gray-800">Secciones Activas ({secciones.length})</h2>
-            <Dialog open={isSeccionModalOpen} onOpenChange={setIsSeccionModalOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-blue-600"><Plus className="w-4 h-4 mr-2" /> Nueva Sección</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader><DialogTitle>Aperturar Nueva Sección</DialogTitle></DialogHeader>
-                <form onSubmit={handleCrearSeccion} className="space-y-4">
-                  <div>
-                    <Label>Nombre identificador *</Label>
-                    <Input required value={formSeccion.name} onChange={e => setFormSeccion({...formSeccion, name: e.target.value})} placeholder="Ej: A, Los Tigres, 4to-B" autoFocus/>
-                  </div>
-                  <div>
-                    <Label>Ubicación / Pabellón (Opcional)</Label>
-                    <Input value={formSeccion.room_number} onChange={e => setFormSeccion({...formSeccion, room_number: e.target.value})} placeholder="Ej: Aula 102 - 1er Piso" />
-                  </div>
-                  <Button type="submit" className="w-full bg-blue-600" disabled={procesando}>
-                    {procesando ? 'Configurando...' : 'Crear Aula y Cargar Malla'}
-                  </Button>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </div>
+        {gradoActivo && (
+          <div>
+            <div className="flex justify-between items-end mb-4 mt-8">
+              <h2 className="text-xl font-bold text-gray-800">Secciones Activas ({secciones.length})</h2>
+              <Dialog open={isSeccionModalOpen} onOpenChange={setIsSeccionModalOpen}>
+                <DialogTrigger asChild>
+                  <Button className="bg-blue-600"><Plus className="w-4 h-4 mr-2" /> Nueva Sección</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader><DialogTitle>Aperturar Nueva Sección</DialogTitle></DialogHeader>
+                  <form onSubmit={handleCrearSeccion} className="space-y-4">
+                    <div>
+                      <Label>Nombre identificador *</Label>
+                      <Input required value={formSeccion.name} onChange={e => setFormSeccion({...formSeccion, name: e.target.value})} placeholder="Ej: A, Los Tigres, 4to-B" autoFocus/>
+                    </div>
+                    <div>
+                      <Label>Ubicación / Pabellón (Opcional)</Label>
+                      <Input value={formSeccion.room_number} onChange={e => setFormSeccion({...formSeccion, room_number: e.target.value})} placeholder="Ej: Aula 102 - 1er Piso" />
+                    </div>
+                    <Button type="submit" className="w-full bg-blue-600" disabled={procesando}>
+                      {procesando ? 'Configurando...' : 'Crear Aula y Cargar Malla'}
+                    </Button>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {secciones.map((sec) => (
-              <Card key={sec.id} className="hover:shadow-md transition-shadow border-t-4 border-t-blue-500">
-                <CardHeader className="flex flex-row justify-between items-center pb-2">
-                  <CardTitle className="text-xl">Aula "{sec.name}"</CardTitle>
-                  <Button variant="ghost" size="sm" onClick={() => handleEliminarSeccion(sec.id)} className="text-red-400 hover:text-red-600 p-0 h-8 w-8"><Trash2 className="w-4 h-4"/></Button>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-black text-gray-800 flex items-center gap-2 mb-1">
-                    <Users className="text-blue-500 w-6 h-6"/> {sec.alumno_count} <span className="text-sm font-medium text-gray-500">Alumnos</span>
-                  </div>
-                  <p className="text-sm text-gray-500 mb-4">{sec.room_number || 'Ubicación no especificada'}</p>
-                  
-                  <Button variant="outline" className="w-full bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200" onClick={() => navigate(`/admin/section/${sec.id}`)}>
-                    Gestionar Profesores <ArrowRight className="w-4 h-4 ml-2"/>
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-            {secciones.length === 0 && !loading && (
-              <div className="col-span-full text-center py-8 bg-white rounded-lg border border-dashed">
-                <School className="w-12 h-12 mx-auto text-gray-300 mb-2"/>
-                <p className="text-gray-500 font-medium">Aún no has creado secciones para este grado.</p>
-              </div>
-            )}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {secciones.map((sec) => (
+                <Card key={sec.id} className="hover:shadow-md transition-shadow border-t-4 border-t-blue-500 flex flex-col">
+                  <CardHeader className="flex flex-row justify-between items-center pb-2">
+                    <CardTitle className="text-xl">Aula "{sec.name}"</CardTitle>
+                    <Button variant="ghost" size="sm" onClick={() => handleEliminarSeccion(sec.id)} className="text-red-400 hover:text-red-600 p-0 h-8 w-8"><Trash2 className="w-4 h-4"/></Button>
+                  </CardHeader>
+                  <CardContent className="flex-1 flex flex-col">
+                    <div className="text-3xl font-black text-gray-800 flex items-center gap-2 mb-1">
+                      <Users className="text-blue-500 w-6 h-6"/> {sec.alumno_count} <span className="text-sm font-medium text-gray-500">Alumnos</span>
+                    </div>
+                    <p className="text-sm text-gray-500 mb-2">{sec.room_number || 'Ubicación no especificada'}</p>
+                    <p className="text-xs font-medium text-gray-600 bg-gray-100 p-2 rounded-md mb-4 mt-auto">
+                      Tutor: {sec.tutor ? `${sec.tutor.first_name} ${sec.tutor.last_name}` : <span className="text-red-500 italic">Sin tutor asignado</span>}
+                    </p>
+                    
+                    <Button variant="outline" className="w-full bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200 mt-auto" onClick={() => navigate(`/admin/section/${sec.id}`)}>
+                      Gestionar Aula <ArrowRight className="w-4 h-4 ml-2"/>
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+              {secciones.length === 0 && !loading && (
+                <div className="col-span-full text-center py-8 bg-white rounded-lg border border-dashed">
+                  <School className="w-12 h-12 mx-auto text-gray-300 mb-2"/>
+                  <p className="text-gray-500 font-medium">Aún no has creado secciones para este grado.</p>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* PARTE 2: GESTIÓN MANUAL DE ALUMNOS (TABLA) */}
+        {/* PARTE 2: GESTIÓN DE ALUMNOS ACTIVOS (TABLA) */}
         {gradoActivo && (
           <Card className="mt-8 shadow-sm border-0 bg-white">
-            <CardHeader className="flex flex-row justify-between items-center border-b pb-4">
-              <div>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <GraduationCap className="w-5 h-5 text-indigo-600"/> Padrón de Alumnos del Grado
-                </CardTitle>
-                <CardDescription>Asigna en qué aula estudiará cada alumno matriculado en este grado.</CardDescription>
+            <CardHeader className="border-b pb-4 space-y-4">
+              <div className="flex flex-row justify-between items-start">
+                <div>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <GraduationCap className="w-5 h-5 text-indigo-600"/> Padrón de Alumnos Activos
+                  </CardTitle>
+                  <CardDescription>Asigna el aula virtual para los estudiantes regulares.</CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  <Badge variant={alumnosSinAula > 0 ? "destructive" : "secondary"} className="px-3 py-1 text-sm">
+                    {alumnosSinAula} Sin Asignar
+                  </Badge>
+                  <Button onClick={handleReparticionAleatoria} disabled={procesando || alumnosSinAula === 0 || secciones.length === 0} size="sm" className="bg-indigo-600 hover:bg-indigo-700">
+                    <Shuffle className="w-4 h-4 mr-2" /> Repartir Pendientes
+                  </Button>
+                </div>
               </div>
-              <div className="flex gap-2">
-                <Badge variant={alumnosSinAula > 0 ? "destructive" : "secondary"} className="px-3 text-sm">
-                  {alumnosSinAula} Sin Asignar
-                </Badge>
-                <Button onClick={handleReparticionAleatoria} disabled={procesando || alumnosSinAula === 0 || secciones.length === 0} size="sm" className="bg-indigo-600 hover:bg-indigo-700">
-                  <Shuffle className="w-4 h-4 mr-2" /> Repartir Pendientes
-                </Button>
+
+              {/* BARRA DE HERRAMIENTAS: Filtros y Acciones Masivas */}
+              <div className="flex flex-col md:flex-row justify-between items-center bg-gray-50 p-2 rounded-md border gap-4">
+                <div className="flex items-center gap-2">
+                  <Button variant={filterStatus === 'all' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterStatus('all')} className="h-8">Todos</Button>
+                  <Button variant={filterStatus === 'assigned' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterStatus('assigned')} className="h-8">Asignados</Button>
+                  <Button variant={filterStatus === 'unassigned' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterStatus('unassigned')} className="h-8">Sin Asignar</Button>
+                </div>
+                
+                {selectedStudentIds.length > 0 && (
+                  <div className="flex items-center gap-2 bg-blue-100 p-1.5 rounded-md border border-blue-200 animate-in fade-in">
+                    <span className="text-xs font-bold text-blue-800 px-2 flex items-center"><CheckSquare className="w-4 h-4 mr-1"/> {selectedStudentIds.length} selec.</span>
+                    <Select value={bulkTargetSection} onValueChange={setBulkTargetSection}>
+                      <SelectTrigger className="w-[160px] h-8 text-xs bg-white"><SelectValue placeholder="Mover a..."/></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="unassigned" className="text-red-600 font-medium">Quitar del aula</SelectItem>
+                        {secciones.map(s => <SelectItem key={s.id} value={s.id}>Aula "{s.name}"</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <Button size="sm" className="h-8 bg-blue-600 text-xs" disabled={!bulkTargetSection || procesando} onClick={handleBulkAssign}>Aplicar</Button>
+                  </div>
+                )}
               </div>
             </CardHeader>
+
             <CardContent className="p-0">
               <div className="max-h-[500px] overflow-y-auto">
                 <Table>
                   <TableHeader className="bg-gray-50 sticky top-0 z-10 shadow-sm">
                     <TableRow>
-                      <TableHead className="pl-6">Estudiante</TableHead>
+                      <TableHead className="w-12 text-center">
+                        <Checkbox 
+                          checked={allFilteredSelected}
+                          onCheckedChange={(checked) => {
+                            if (checked) setSelectedStudentIds(alumnosActivosFiltrados.map(a => a.id));
+                            else setSelectedStudentIds([]);
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead>Estudiante</TableHead>
                       <TableHead>Estado Actual</TableHead>
                       <TableHead className="text-right pr-6">Mover a Sección</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {alumnos.map((alumno) => (
-                      <TableRow key={alumno.id} className={!alumno.section_id ? 'bg-red-50/50' : 'hover:bg-gray-50'}>
-                        <TableCell className="pl-6">
-                          <div className="font-semibold text-gray-800">{alumno.first_name} {alumno.last_name}</div>
+                    {alumnosActivosFiltrados.map((alumno) => (
+                      <TableRow key={alumno.id} className={!alumno.section_id ? 'bg-red-50/30 hover:bg-red-50/50' : 'hover:bg-gray-50'}>
+                        <TableCell className="text-center">
+                          <Checkbox checked={selectedStudentIds.includes(alumno.id)} onCheckedChange={() => toggleStudentSelection(alumno.id)} />
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-semibold text-gray-800">{alumno.last_name}, {alumno.first_name}</div>
                           <div className="text-xs text-gray-500">{alumno.email}</div>
                         </TableCell>
                         <TableCell>
                           {alumno.section_id ? (
                             <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                              Aula {secciones.find(s => s.id === alumno.section_id)?.name || 'Error'}
+                              Aula {secciones.find(s => s.id === alumno.section_id)?.name || 'Desconocida'}
                             </Badge>
                           ) : (
-                            <span className="text-xs font-medium text-red-500 flex items-center"><ShieldAlert className="w-3 h-3 mr-1"/> Faltante</span>
+                            <span className="text-xs font-bold text-red-500 flex items-center"><ShieldAlert className="w-3 h-3 mr-1"/> Faltante</span>
                           )}
                         </TableCell>
                         <TableCell className="text-right pr-6">
-                          <Select 
-                            value={alumno.section_id || 'unassigned'} 
-                            onValueChange={(val) => handleAsignacionManual(alumno.id, val)}
-                          >
-                            <SelectTrigger className={`w-[180px] ml-auto h-8 text-sm ${!alumno.section_id ? 'border-red-300' : ''}`}>
+                          <Select value={alumno.section_id || 'unassigned'} onValueChange={(val) => handleAsignacionIndividual(alumno.id, val)}>
+                            <SelectTrigger className={`w-[160px] ml-auto h-8 text-sm ${!alumno.section_id ? 'border-red-300 bg-red-50' : ''}`}>
                               <SelectValue placeholder="Asignar a..." />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="unassigned" className="text-red-600">Quitar del aula</SelectItem>
-                              {secciones.map(s => <SelectItem key={s.id} value={s.id}>Aula {s.name}</SelectItem>)}
+                              {secciones.map(s => <SelectItem key={s.id} value={s.id}>Aula "{s.name}"</SelectItem>)}
                             </SelectContent>
                           </Select>
                         </TableCell>
                       </TableRow>
                     ))}
-                    {alumnos.length === 0 && (
+                    {alumnosActivosFiltrados.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={3} className="text-center py-12 text-gray-500">
-                          No hay alumnos registrados en la base de datos para este grado.
-                        </TableCell>
+                        <TableCell colSpan={4} className="text-center py-12 text-gray-500">No se encontraron alumnos activos con este filtro.</TableCell>
                       </TableRow>
                     )}
                   </TableBody>
@@ -366,6 +445,37 @@ const AdminClassrooms = () => {
             </CardContent>
           </Card>
         )}
+
+        {/* PARTE 3: ALUMNOS INACTIVOS / DESMATRICULADOS */}
+        {gradoActivo && alumnosInactivos.length > 0 && (
+          <Card className="mt-6 border-0 shadow-sm bg-gray-50 opacity-90 border-t-2 border-t-gray-400">
+            <CardHeader className="py-4">
+              <CardTitle className="text-base flex items-center gap-2 text-gray-600">
+                <UserX className="w-4 h-4"/> Alumnos Inactivos / Egresados ({alumnosInactivos.length})
+              </CardTitle>
+              <CardDescription>Estos alumnos pertenecen al historial de este grado pero están desmatriculados actualmente.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="max-h-[300px] overflow-y-auto">
+                <Table>
+                  <TableBody>
+                    {alumnosInactivos.map(alumno => (
+                      <TableRow key={alumno.id}>
+                        <TableCell className="pl-6 text-gray-500 font-medium">
+                          {alumno.last_name}, {alumno.first_name} <span className="text-xs block font-normal">{alumno.email}</span>
+                        </TableCell>
+                        <TableCell className="text-right pr-6">
+                          <Badge variant="secondary" className="bg-gray-200 text-gray-600">Inactivo / Desmatriculado</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
       </div>
     </DashboardLayout>
   );

@@ -3,22 +3,19 @@ import {
   BookOpen, 
   FileText, 
   School,
-  Shield,
   Layers, 
   ClipboardList,
   Users,
   UserCog,
-  BarChart3,
   Calendar,
-  MessageSquare,
+  Megaphone, // Cambiamos MessageSquare por Megaphone para "Anuncios"
   Library,
   Brain,
-  HelpCircle,
-  Settings,
-  Eye
+  HelpCircle
 } from 'lucide-react';
 
-export type UserRole = 'admin' | 'teacher' | 'student' | 'parent' | 'tutor' | 'directivo';
+// 1. ROLES LIMPIOS: Solo los 4 que realmente vas a usar en tu sistema
+export type UserRole = 'admin' | 'teacher' | 'student' | 'tutor';
 
 export interface NavItem {
   title: string;
@@ -27,83 +24,34 @@ export interface NavItem {
   roles: UserRole[];
 }
 
+// 2. NAVEGACIÓN PRINCIPAL (Para todos)
 export const navigationItems: NavItem[] = [
-  // Menú para padres en el orden solicitado
-  {
-    title: 'Panel Padres',
-    url: '/parent/admin',
-    icon: Users,
-    roles: ['parent']
-  },
-  {
-    title: 'Calendario',
-    url: '/parent/calendar',
-    icon: Calendar,
-    roles: ['parent']
-  },
-  {
-    title: 'Mensajes',
-    url: '/parent/messages',
-    icon: MessageSquare,
-    roles: ['parent']
-  },
-  {
-    title: 'Lista de hijos',
-    url: '/parent/children',
-    icon: Users,
-    roles: ['parent']
-  },
-  {
-    title: 'Notificaciones',
-    url: '/parent/notifications',
-    icon: MessageSquare,
-    roles: ['parent']
-  },
-  {
-    title: 'Documentos',
-    url: '/parent/documents',
-    icon: FileText,
-    roles: ['parent']
-  },
-  {
-    title: 'Datos personales',
-    url: '/parent/profile',
-    icon: UserCog,
-    roles: ['parent']
-  },
-  {
-    title: 'Soporte',
-    url: '/parent/support',
-    icon: HelpCircle,
-    roles: ['parent']
-  },
-  // Menú general para otros roles
   {
     title: 'Dashboard',
     url: '/',
     icon: Home,
-    roles: ['admin', 'teacher', 'student', 'tutor', 'directivo']
+    roles: ['admin', 'teacher', 'student', 'tutor']
   },
   {
     title: 'Calendario',
     url: '/calendar',
     icon: Calendar,
-    roles: ['admin', 'teacher', 'student', 'tutor', 'directivo']
+    roles: ['admin', 'teacher', 'student', 'tutor']
   },
   {
-    title: 'Mensajes',
-    url: '/messages',
-    icon: MessageSquare,
-    roles: ['admin', 'teacher', 'student', 'tutor', 'directivo']
+    title: 'Anuncios', // Antes era "Mensajes"
+    url: '/messages', // Mantenemos la URL por ahora para que no se rompa la ruta que ya tienes
+    icon: Megaphone,  // Icono de megáfono para comunicados
+    roles: ['admin', 'teacher', 'student', 'tutor']
   },
   {
     title: 'Soporte',
     url: '/support',
     icon: HelpCircle,
-    roles: ['admin', 'teacher', 'student', 'tutor', 'directivo']
+    roles: ['admin', 'teacher', 'student', 'tutor']
   },
   
-  // Dashboard Tutor
+  // Dashboard específico para Tutor
   {
     title: 'Dashboard',
     url: '/tutor-dashboard',
@@ -111,15 +59,7 @@ export const navigationItems: NavItem[] = [
     roles: ['tutor']
   },
   
-  // Dashboard Directivo
-  {
-    title: 'Supervisión Docente',
-    url: '/directivo-dashboard',
-    icon: Eye,
-    roles: ['directivo', 'admin']
-  },
-  
-  // Aulas Virtuales
+  // Aulas Virtuales (El de prueba de tu compañero)
   {
     title: 'Aulas Virtuales',
     url: '/virtual-classrooms',
@@ -127,33 +67,25 @@ export const navigationItems: NavItem[] = [
     roles: ['admin', 'teacher', 'student']
   },
   
-  // Cursos
+  // Cursos, Tareas, Exámenes y Biblioteca
   {
     title: 'Mis Cursos',
     url: '/courses',
     icon: BookOpen,
     roles: ['teacher', 'student']
   },
-  
-  // Tareas
   {
     title: 'Tareas',
     url: '/assignments',
     icon: FileText,
     roles: ['teacher', 'student', 'tutor']
   },
-  
-  // Exámenes
   {
     title: 'Exámenes',
     url: '/exams',
     icon: ClipboardList,
     roles: ['teacher', 'student']
   },
-  
-  // Calendario (duplicado eliminado)
-  
-  // Biblioteca
   {
     title: 'Biblioteca',
     url: '/library',
@@ -161,27 +93,22 @@ export const navigationItems: NavItem[] = [
     roles: ['admin', 'teacher', 'student']
   },
   
-  // Mensajes (duplicado eliminado)
-  
-  // Compañeros (solo estudiantes)
+  // Opciones exclusivas de Estudiantes
   {
     title: 'Compañeros',
     url: '/classmates',
     icon: Users,
     roles: ['student']
   },
-  
-  // Juegos Mentales
   {
     title: 'Juegos Mentales',
     url: '/mental-games',
     icon: Brain,
     roles: ['student']
   },
-  
-  // Soporte (duplicado eliminado)
 ];
 
+// 3. NAVEGACIÓN DE ADMINISTRACIÓN (Solo para el Admin)
 export const adminNavigationItems: NavItem[] = [
   {
     title: 'Gestión de Cursos',
@@ -201,7 +128,6 @@ export const adminNavigationItems: NavItem[] = [
     icon: Layers,
     roles: ['admin']
   },
-  
   {
     title: 'Importación Masiva',
     url: '/admin/bulk-import',
@@ -215,38 +141,24 @@ export const adminNavigationItems: NavItem[] = [
     roles: ['admin']
   },
   {
-    title: 'Aulas Virtuales',
+    title: 'Aulas Virtuales', // El oficial que estamos trabajando
     url: '/admin/classrooms',
     icon: School,
     roles: ['admin']
-  },
-  {
-    title: 'Reportes',
-    url: '/admin/reports',
-    icon: BarChart3,
-    roles: ['admin']
-  },
-  {
-    title: 'Configuración',
-    url: '/admin/settings',
-    icon: Settings,
-    roles: ['admin']
   }
+  // Eliminados: Reportes y Configuración (Configuración ya está fija en el AppSidebar)
 ];
 
 export function getNavigationForRole(role: UserRole, allRoles?: UserRole[]): NavItem[] {
-  // Use all roles if provided, otherwise just use the primary role
   const rolesToCheck = allRoles || [role];
   
   if (rolesToCheck.includes('admin')) {
-    // Combine all items that match any of the user's roles
     const matchingItems = navigationItems.filter(item => 
       item.roles.some(r => rolesToCheck.includes(r))
     );
     return [...matchingItems, ...adminNavigationItems];
   }
   
-  // Filter items that match any of the user's roles
   return navigationItems.filter(item => 
     item.roles.some(r => rolesToCheck.includes(r))
   );
@@ -255,10 +167,7 @@ export function getNavigationForRole(role: UserRole, allRoles?: UserRole[]): Nav
 export function canAccessRoute(role: UserRole, path: string, allRoles?: UserRole[]): boolean {
   const allItems = [...navigationItems, ...adminNavigationItems];
   const item = allItems.find(item => item.url === path);
-  
-  if (!item) return true; // Allow access to unregistered routes
-  
-  // Check if any of the user's roles match
+  if (!item) return true; 
   const rolesToCheck = allRoles || [role];
   return item.roles.some(r => rolesToCheck.includes(r));
 }

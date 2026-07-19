@@ -574,7 +574,7 @@ const AdminStudentManagement = () => {
             <p className="text-gray-600 mt-1">Administra cuentas, alumnos, secciones y su matrícula.</p>
           </div>
           <Button onClick={openCreateModal} className="bg-blue-600 hover:bg-blue-700 shadow-md">
-            <Plus className="w-4 h-4 mr-2" /> + Nuevo Estudiante
+            <Plus className="w-4 h-4 mr-2" />Nuevo Estudiante
           </Button>
         </div>
 

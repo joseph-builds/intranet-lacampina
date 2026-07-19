@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
-import { BookOpen, Edit, Trash2, Search, CheckCircle2, XCircle, Download, UploadCloud, FileSpreadsheet, Loader2, Info, AlertTriangle, CheckSquare, ShieldAlert } from 'lucide-react';
+import { BookOpen, Edit, Trash2, Search, CheckCircle2, XCircle, Download, UploadCloud, FileSpreadsheet, Loader2, Info, AlertTriangle, CheckSquare, ShieldAlert, ArrowUpDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -35,6 +35,8 @@ interface CourseFormData {
   description: string;
   course_type: string;
 }
+
+const normalizeStr = (str: string) => str ? str.trim().toLowerCase().replace(/\s+/g, ' ') : '';
 
 const AdminCourseManagement = () => {
   const { toast } = useToast();
@@ -66,12 +68,13 @@ const AdminCourseManagement = () => {
   const [bulkTypeValue, setBulkTypeValue] = useState('');
   const [bulkStatusValue, setBulkStatusValue] = useState<'active' | 'inactive'>('active');
   
-  // Filtros y Paginación
+  // Filtros, Paginación y Ordenamiento
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const [filterLevel, setFilterLevel] = useState<string>('all');
   const [filterGrade, setFilterGrade] = useState<string>('all');
   
+  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   
@@ -94,7 +97,7 @@ const AdminCourseManagement = () => {
 
       const { data: gradesData } = await supabase.from('academic_grades').select('name, level:academic_levels(name)').order('name');
       if (gradesData) setDbGrades(gradesData.map((g: any) => ({ name: g.name, level: g.level?.name })));
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error cargando filtros", error);
     }
   };
@@ -135,7 +138,7 @@ const AdminCourseManagement = () => {
       setCourses(formattedCourses as Course[]);
       setSelectedIds([]); 
     } catch (error: any) {
-      toast({ title: "Error", description: "Fallo al cargar cursos.", variant: "destructive" });
+      toast({ title: "Error al cargar", description: error?.message || "Fallo al cargar cursos.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -153,11 +156,10 @@ const AdminCourseManagement = () => {
     setIsEditModalOpen(true);
   };
 
-  // FILTRADO
   const filteredCourses = useMemo(() => {
     return courses.filter(course => {
-      const searchLower = searchTerm.toLowerCase();
-      const matchesSearch = course.name.toLowerCase().includes(searchLower) || course.code.toLowerCase().includes(searchLower) || (course.course_type && course.course_type.toLowerCase().includes(searchLower));
+      const searchLower = normalizeStr(searchTerm);
+      const matchesSearch = normalizeStr(course.name).includes(searchLower) || normalizeStr(course.code).includes(searchLower) || (course.course_type && normalizeStr(course.course_type).includes(searchLower));
       const matchesStatus = filterStatus === 'all' || (filterStatus === 'active' && course.is_active) || (filterStatus === 'inactive' && !course.is_active);
       const matchesLevel = filterLevel === 'all' || (course.grades_taught && course.grades_taught.some(g => g.level === filterLevel));
       const matchesGrade = filterGrade === 'all' || (course.grades_taught && course.grades_taught.some(g => g.level === filterLevel && g.grades.includes(filterGrade)));
@@ -166,16 +168,36 @@ const AdminCourseManagement = () => {
     });
   }, [courses, searchTerm, filterStatus, filterLevel, filterGrade]);
 
-  // PAGINACIÓN
-  const totalPages = Math.ceil(filteredCourses.length / itemsPerPage);
+  const requestSort = (key: keyof Course) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+    setSortConfig({ key, direction });
+  };
+
+  const sortedCourses = useMemo(() => {
+    let sortable = [...filteredCourses];
+    if (sortConfig !== null) {
+      sortable.sort((a, b) => {
+        const aValue = a[sortConfig.key as keyof Course]?.toString().toLowerCase() || '';
+        const bValue = b[sortConfig.key as keyof Course]?.toString().toLowerCase() || '';
+        if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    } else {
+      sortable.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return sortable;
+  }, [filteredCourses, sortConfig]);
+
+  const totalPages = Math.ceil(sortedCourses.length / itemsPerPage);
   const paginatedCourses = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredCourses.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredCourses, currentPage, itemsPerPage]);
+    return sortedCourses.slice(startIndex, startIndex + itemsPerPage);
+  }, [sortedCourses, currentPage, itemsPerPage]);
 
   useEffect(() => { setCurrentPage(1); }, [searchTerm, filterStatus, filterLevel, filterGrade, itemsPerPage]);
 
-  // SELECCIÓN MÚLTIPLE
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
       const pageIds = paginatedCourses.map(c => c.id);
@@ -187,39 +209,32 @@ const AdminCourseManagement = () => {
   };
 
   const handleSelectOne = (id: string, checked: boolean) => {
-    if (checked) {
-      setSelectedIds(prev => [...prev, id]);
-    } else {
-      setSelectedIds(prev => prev.filter(selectedId => selectedId !== id));
-    }
+    if (checked) setSelectedIds(prev => [...prev, id]);
+    else setSelectedIds(prev => prev.filter(selectedId => selectedId !== id));
   };
 
   const isAllPageSelected = paginatedCourses.length > 0 && paginatedCourses.every(c => selectedIds.includes(c.id));
 
-  // --- LÓGICA SEGURA DE ELIMINACIÓN MASIVA/INDIVIDUAL ---
-  // Estos memos calculan en tiempo real si de los cursos seleccionados para borrar, alguno está bloqueado.
-  const blockedFromDeletion = useMemo(() => {
-    return deletingCourses.filter(c => c.grades_taught && c.grades_taught.length > 0);
-  }, [deletingCourses]);
-
-  const safeToDelete = useMemo(() => {
-    return deletingCourses.filter(c => !c.grades_taught || c.grades_taught.length === 0);
-  }, [deletingCourses]);
+  const blockedFromDeletion = useMemo(() => deletingCourses.filter(c => c.grades_taught && c.grades_taught.length > 0), [deletingCourses]);
+  const safeToDelete = useMemo(() => deletingCourses.filter(c => !c.grades_taught || c.grades_taught.length === 0), [deletingCourses]);
 
   const handleBulkDelete = async () => {
     if (safeToDelete.length === 0) return;
     setSaving(true);
     try {
       const idsToDelete = safeToDelete.map(c => c.id);
-      const { error } = await supabase.from('courses').delete().in('id', idsToDelete);
-      if (error) throw error;
+      // Agregamos .select()
+      const { data, error } = await supabase.from('courses').delete().in('id', idsToDelete).select();
       
-      toast({ title: "Cursos eliminados", description: `Se eliminaron ${idsToDelete.length} curso(s) correctamente.` });
+      if (error) throw error;
+      if (!data || data.length === 0) throw new Error("Bloqueado por permisos (RLS). No se pudo eliminar.");
+      
+      toast({ title: "Cursos eliminados", description: `Se eliminaron ${data.length} curso(s) correctamente.` });
       setIsDeleteModalOpen(false);
       setDeletingCourses([]);
       fetchCourses();
-    } catch (error) {
-      toast({ title: "Error al eliminar", description: "Ocurrió un error en la base de datos.", variant: "destructive" });
+    } catch (error: any) {
+      toast({ title: "Error al eliminar", description: error?.message, variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -237,8 +252,8 @@ const AdminCourseManagement = () => {
       setIsBulkTypeModalOpen(false);
       setBulkTypeValue('');
       fetchCourses();
-    } catch (error) {
-      toast({ title: "Error", variant: "destructive" });
+    } catch (error: any) {
+      toast({ title: "Error", description: error?.message || "Fallo al actualizar tipos", variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -254,8 +269,8 @@ const AdminCourseManagement = () => {
       toast({ title: "Estados actualizados", description: `Se modificó el estado de ${selectedIds.length} curso(s).` });
       setIsBulkStatusModalOpen(false);
       fetchCourses();
-    } catch (error) {
-      toast({ title: "Error", variant: "destructive" });
+    } catch (error: any) {
+      toast({ title: "Error", description: error?.message || "Fallo al actualizar estados", variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -267,44 +282,66 @@ const AdminCourseManagement = () => {
 
   const clearQuickEditChanges = () => setQuickEditChanges({});
 
+  const checkDuplicates = (name: string, code: string, excludeId?: string) => {
+    const nameNorm = normalizeStr(name);
+    const codeNorm = normalizeStr(code);
+    return courses.some(c => c.id !== excludeId && (normalizeStr(c.name) === nameNorm || normalizeStr(c.code) === codeNorm));
+  };
+
   const saveAllQuickEdits = async () => {
     const updates = Object.entries(quickEditChanges);
     if (updates.length === 0) return;
+
+    for (const [id, changes] of updates) {
+      const course = courses.find(c => c.id === id);
+      if (!course) continue;
+      const newName = changes.name !== undefined ? changes.name : course.name;
+      const newCode = changes.code !== undefined ? changes.code : course.code;
+      
+      if (checkDuplicates(newName, newCode, id)) {
+        toast({ title: "Error", description: `El curso "${newName}" o código "${newCode}" ya existe.`, variant: "destructive" });
+        return; 
+      }
+    }
+
     setSaving(true);
     try {
-      await Promise.all(updates.map(([id, changes]) => supabase.from('courses').update(changes).eq('id', id)));
+      // Envía los cambios uno a uno y verifica errores
+      for (const [id, changes] of updates) {
+        const { error } = await supabase.from('courses').update(changes).eq('id', id);
+        if (error) throw error;
+      }
       toast({ title: 'Cambios guardados', description: 'Todos los cambios fueron guardados exitosamente.' });
       clearQuickEditChanges();
       setQuickEditMode(false);
       fetchCourses();
-    } catch (error) {
-      toast({ title: 'Error', description: 'No se pudieron guardar los cambios', variant: 'destructive' });
+    } catch (error: any) {
+      toast({ title: 'Error', description: error?.message || 'No se pudieron guardar los cambios', variant: 'destructive' });
     } finally {
       setSaving(false);
     }
   };
 
-  const checkDuplicates = (name: string, code: string, excludeId?: string) => {
-    const nameLower = name.trim().toLowerCase();
-    const codeLower = code.trim().toLowerCase();
-    return courses.some(c => c.id !== excludeId && (c.name.toLowerCase() === nameLower || c.code.toLowerCase() === codeLower));
-  };
-
   const handleToggleCourseStatus = async (course: Course, newStatus: boolean) => {
     try {
-      const { error } = await supabase.from('courses').update({ is_active: newStatus }).eq('id', course.id);
+      // Agregamos .select() al final
+      const { data, error } = await supabase.from('courses').update({ is_active: newStatus }).eq('id', course.id).select();
+      
       if (error) throw error;
+      // Validamos que realmente haya modificado 1 fila
+      if (!data || data.length === 0) throw new Error("Bloqueado por permisos (RLS). No se modificó nada.");
+      
       toast({ title: "Estado actualizado", description: `El curso ahora está ${newStatus ? 'activo' : 'inactivo'}.` });
       fetchCourses();
-    } catch (error) {
-      toast({ title: "Error", variant: "destructive" });
+    } catch (error: any) {
+      toast({ title: "Error al actualizar", description: error?.message, variant: "destructive" });
     }
   };
 
   const handleCreateCourse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.code) return toast({ title: "Campos requeridos", variant: "destructive" });
-    if (checkDuplicates(formData.name, formData.code)) return toast({ title: "Curso Duplicado", description: "Ya existe un curso con este nombre o código en el catálogo.", variant: "destructive" });
+    if (checkDuplicates(formData.name, formData.code)) return toast({ title: "Curso Duplicado", description: "Ya existe un curso con este nombre o código.", variant: "destructive" });
 
     setSaving(true);
     try {
@@ -318,14 +355,14 @@ const AdminCourseManagement = () => {
       resetForm();
       fetchCourses();
     } catch (error: any) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast({ title: "Error al crear", description: error?.message || error?.details, variant: "destructive" });
     } finally { setSaving(false); }
   };
 
   const handleEditCourse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingCourse) return;
-    if (checkDuplicates(formData.name, formData.code, editingCourse.id)) return toast({ title: "Curso Duplicado", variant: "destructive" });
+    if (checkDuplicates(formData.name, formData.code, editingCourse.id)) return toast({ title: "Curso Duplicado", description: "Ya existe otro curso con ese nombre o código.", variant: "destructive" });
 
     setSaving(true);
     try {
@@ -339,12 +376,11 @@ const AdminCourseManagement = () => {
       setEditingCourse(null);
       resetForm();
       fetchCourses();
-    } catch (error) {
-      toast({ title: "Error", variant: "destructive" });
+    } catch (error: any) {
+      toast({ title: "Error al editar", description: error?.message, variant: "destructive" });
     } finally { setSaving(false); }
   };
 
-  // PLANTILLA EXCEL
   const downloadTemplate = () => {
     const headers = "Nombre de Asignatura;Código;Descripción;Tipo de Curso\n";
     const example1 = "Álgebra Avanzada;ALG-02;Curso enfocado en ecuaciones;Matemática\n";
@@ -381,11 +417,17 @@ const AdminCourseManagement = () => {
           const name = cols[0], code = cols[1], description = cols[2] || null, course_type = cols[3] || null;
           if (!name || !code) continue;
 
-          const isDup = courses.some(c => c.name.toLowerCase() === name.toLowerCase() || c.code.toLowerCase() === code.toLowerCase()) || 
-                        toInsert.some(c => c.name.toLowerCase() === name.toLowerCase() || c.code.toLowerCase() === code.toLowerCase());
+          const nameNorm = normalizeStr(name);
+          const codeNorm = normalizeStr(code);
 
-          if (isDup) duplicates.push(code);
-          else toInsert.push({ name, code, description, course_type, is_active: true });
+          const isDupInDB = courses.some(c => normalizeStr(c.name) === nameNorm || normalizeStr(c.code) === codeNorm);
+          const isDupInList = toInsert.some(c => normalizeStr(c.name) === nameNorm || normalizeStr(c.code) === codeNorm);
+
+          if (isDupInDB || isDupInList) {
+            duplicates.push(code);
+          } else {
+            toInsert.push({ name, code, description, course_type, is_active: true });
+          }
         }
 
         if (toInsert.length > 0) {
@@ -396,7 +438,7 @@ const AdminCourseManagement = () => {
         toast({ title: "Importación finalizada", description: `Se agregaron ${toInsert.length} cursos. Se omitieron ${duplicates.length} duplicados.` });
         fetchCourses();
       } catch (error: any) {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
+        toast({ title: "Error", description: error?.message, variant: "destructive" });
       } finally {
         setIsUploading(false);
         e.target.value = ''; 
@@ -417,12 +459,11 @@ const AdminCourseManagement = () => {
     <DashboardLayout>
       <div className="container mx-auto px-4 py-8 space-y-6">
         
-        {/* DASHBOARD HEADER */}
         <div>
           <h1 className="text-3xl font-bold mb-1 flex items-center gap-2">
             <BookOpen className="h-8 w-8 text-blue-600"/> Catálogo General de Cursos
           </h1>
-          <p className="text-gray-600 mb-6">Administra las asignaturas base y clasifícalas por tipo. Luego podrás asignarlas a los diferentes grados.</p>
+          <p className="text-gray-600 mb-6">Administra las asignaturas base y clasifícalas por tipo.</p>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card className="hover:shadow-md transition-shadow border-l-4 border-l-blue-500">
@@ -437,14 +478,13 @@ const AdminCourseManagement = () => {
           </div>
         </div>
 
-        {/* BARRA DE FILTROS SUPERIOR */}
         <div className="bg-white p-4 rounded-lg shadow-sm border space-y-4">
           <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
             
             <div className="flex flex-wrap items-center gap-3 flex-1">
               <div className="relative min-w-[250px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input placeholder="Buscar por curso, código o tipo..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 w-full" />
+                <Input placeholder="Buscar por curso o código..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 w-full" />
               </div>
               <Select value={filterLevel} onValueChange={setFilterLevel}>
                 <SelectTrigger className="w-[160px]"><SelectValue placeholder="Niveles" /></SelectTrigger>
@@ -491,7 +531,6 @@ const AdminCourseManagement = () => {
             </div>
           </div>
 
-          {/* BARRA DE ACCIONES EN MASA */}
           {selectedIds.length > 0 && (
             <div className="bg-blue-50/50 p-3 flex flex-wrap items-center justify-between rounded-md border border-blue-200 animate-in fade-in slide-in-from-top-2">
               <div className="flex items-center gap-2 text-blue-700 font-medium">
@@ -512,7 +551,6 @@ const AdminCourseManagement = () => {
           )}
         </div>
 
-        {/* TABLA PRINCIPAL */}
         <Card className="border-0 shadow-sm rounded-lg overflow-hidden">
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -525,9 +563,24 @@ const AdminCourseManagement = () => {
                         onChange={(e) => handleSelectAll(e.target.checked)}
                       />
                     </TableHead>
-                    <TableHead className="w-24">Código</TableHead>
-                    <TableHead>Asignatura</TableHead>
-                    <TableHead>Etiqueta / Tipo</TableHead>
+                    <TableHead className="w-32 cursor-pointer hover:bg-gray-100 transition-colors group select-none" onClick={() => requestSort('code')}>
+                      <div className="flex items-center gap-1">
+                        Código
+                        <ArrowUpDown className={`w-3 h-3 ${sortConfig?.key === 'code' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} />
+                      </div>
+                    </TableHead>
+                    <TableHead className="cursor-pointer hover:bg-gray-100 transition-colors group select-none" onClick={() => requestSort('name')}>
+                      <div className="flex items-center gap-1">
+                        Asignatura
+                        <ArrowUpDown className={`w-3 h-3 ${sortConfig?.key === 'name' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} />
+                      </div>
+                    </TableHead>
+                    <TableHead className="cursor-pointer hover:bg-gray-100 transition-colors group select-none" onClick={() => requestSort('course_type')}>
+                      <div className="flex items-center gap-1">
+                        Etiqueta / Tipo
+                        <ArrowUpDown className={`w-3 h-3 ${sortConfig?.key === 'course_type' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} />
+                      </div>
+                    </TableHead>
                     <TableHead>Grados Asignados</TableHead>
                     <TableHead className="w-28 text-center">Estado</TableHead>
                     <TableHead className="w-24 text-right">Acciones</TableHead>
@@ -543,7 +596,7 @@ const AdminCourseManagement = () => {
                         />
                       </TableCell>
                       <TableCell className="font-mono text-sm text-gray-500">
-                        {quickEditMode ? <Input value={quickEditChanges[course.id]?.code ?? course.code} onChange={e => handleQuickEditChange(course.id, 'code', e.target.value)} className="h-8 text-sm w-20" /> : course.code}
+                        {quickEditMode ? <Input value={quickEditChanges[course.id]?.code ?? course.code} onChange={e => handleQuickEditChange(course.id, 'code', e.target.value)} className="h-8 text-sm w-24" /> : course.code}
                       </TableCell>
                       <TableCell>
                         {quickEditMode ? (
@@ -612,7 +665,7 @@ const AdminCourseManagement = () => {
             
             <div className="flex flex-col sm:flex-row items-center justify-between p-4 bg-white border-t">
               <div className="text-sm text-gray-500 mb-4 sm:mb-0">
-                Mostrando {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredCourses.length)} de {filteredCourses.length} cursos
+                Mostrando {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, sortedCourses.length)} de {sortedCourses.length} cursos
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="text-gray-600">Anterior</Button>
@@ -625,7 +678,7 @@ const AdminCourseManagement = () => {
           </CardContent>
         </Card>
 
-        {/* ZONA IMPORTACIÓN */}
+        {/* ZONA IMPORTACIÓN (Sin Cambios) */}
         <div className="pt-6">
           <Card className="border border-blue-100 bg-blue-50/20 shadow-sm">
             <CardHeader className="pb-3 border-b bg-white rounded-t-lg">
@@ -649,7 +702,7 @@ const AdminCourseManagement = () => {
                     <div className="bg-blue-100 text-blue-700 w-8 h-8 rounded-full flex items-center justify-center font-bold shrink-0">2</div>
                     <div>
                       <h4 className="font-semibold text-gray-800">Sube tu archivo completado</h4>
-                      <p className="text-sm text-gray-500">El sistema omitirá automáticamente los cursos duplicados.</p>
+                      <p className="text-sm text-gray-500">El sistema omitirá automáticamente los cursos duplicados, incluso los repetidos dentro del propio Excel.</p>
                     </div>
                   </div>
                 </div>
@@ -682,7 +735,6 @@ const AdminCourseManagement = () => {
         )}
       </div>
 
-      {/* --- MODALES --- */}
       <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Añadir Nueva Asignatura</DialogTitle></DialogHeader>
@@ -713,7 +765,6 @@ const AdminCourseManagement = () => {
         </DialogContent>
       </Dialog>
 
-      {/* MODAL ELIMINACIÓN SEGURA (Escudo de Malla Curricular) */}
       <Dialog open={isDeleteModalOpen} onOpenChange={(open) => { setIsDeleteModalOpen(open); if (!open) setDeletingCourses([]); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>

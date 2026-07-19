@@ -3,28 +3,15 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { BulkStudentImport } from '@/components/students/BulkStudentImport'; 
-import { Loader2, School, Users, FileSpreadsheet, ArrowRightLeft, AlertTriangle } from 'lucide-react';
+import { Loader2, Users, ArrowRightLeft, AlertTriangle, GraduationCap, CheckCircle2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-
-// --- INTERFACES ---
-interface VirtualClassroom {
-  id: string;
-  name: string;
-  grade: string;
-  level: string;
-  is_active: boolean;
-  room_number: string;
-  tutor?: { first_name: string; last_name: string };
-  enrollmentCount: number;
-}
 
 interface StudentPromotion {
   id: string;
@@ -37,22 +24,25 @@ const AdminBulkStudentImport = () => {
   const { profile } = useAuth();
   const { toast } = useToast();
   
-  // Estados para Importación Excel
-  const [classrooms, setClassrooms] = useState<VirtualClassroom[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedClassroom, setSelectedClassroom] = useState<VirtualClassroom | null>(null);
+  const [grades, setGrades] = useState<any[]>([]);
 
   // Estados para Promoción Masiva
-  const [grades, setGrades] = useState<any[]>([]);
   const [sourceGradeId, setSourceGradeId] = useState<string>('');
   const [targetGradeId, setTargetGradeId] = useState<string>('');
   const [studentsToPromote, setStudentsToPromote] = useState<StudentPromotion[]>([]);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   
-  // Seguridad de Promoción
-  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  // Estados para Egreso (Graduación)
+  const [graduateGradeId, setGraduateGradeId] = useState<string>('');
+  const [studentsToGraduate, setStudentsToGraduate] = useState<StudentPromotion[]>([]);
+  const [selectedGraduateIds, setSelectedGraduateIds] = useState<string[]>([]);
+
+  // Seguridad de Modales
+  const [isPromoteModalOpen, setIsPromoteModalOpen] = useState(false);
+  const [isGraduateModalOpen, setIsGraduateModalOpen] = useState(false);
   const [securityWord, setSecurityWord] = useState('');
-  const [isPromoting, setIsPromoting] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   if (profile?.role !== 'admin') {
     return (
@@ -71,76 +61,46 @@ const AdminBulkStudentImport = () => {
   }
 
   useEffect(() => {
-    fetchInitialData();
+    fetchGrades();
   }, []);
 
-  const fetchInitialData = async () => {
+  const fetchGrades = async () => {
     setLoading(true);
     try {
-      // 1. CARGAR AULAS (SECTIONS) REALES DE LA NUEVA BD
-      // CORRECCIÓN: Eliminamos la búsqueda de 'is_active' porque no existe en la tabla sections
-      const { data: sectionsData, error: sectionsError } = await supabase
-        .from('sections')
-        .select(`
-          id, name, room_number,
-          tutor:profiles!tutor_id(first_name, last_name),
-          grade:academic_grades(name, level:academic_levels(name))
-        `)
-        .order('name');
-
-      if (sectionsError) throw sectionsError;
-
-      // 2. OBTENER CONTEO DE ALUMNOS POR AULA
-      const { data: enrollmentsData } = await supabase
-        .from('student_sections')
-        .select('section_id');
-
-      const enrollmentCounts: Record<string, number> = {};
-      enrollmentsData?.forEach(e => {
-        enrollmentCounts[e.section_id] = (enrollmentCounts[e.section_id] || 0) + 1;
-      });
-
-      // Mapear al formato que espera tu componente BulkStudentImport
-      const formattedClassrooms = sectionsData?.map(sec => ({
-        id: sec.id,
-        name: sec.name,
-        is_active: true, // Lo fijamos en true visualmente para no romper tu diseño de UI
-        room_number: sec.room_number || 'No asignado',
-        grade: sec.grade?.name || 'Sin Grado',
-        level: sec.grade?.level?.name || 'Sin Nivel',
-        tutor: sec.tutor as any,
-        enrollmentCount: enrollmentCounts[sec.id] || 0
-      }));
-      setClassrooms(formattedClassrooms || []);
-
-      // 3. CARGAR GRADOS PARA LA PESTAÑA DE PROMOCIÓN
       const { data: gradesData } = await supabase
         .from('academic_grades')
         .select('id, name, level:academic_levels(name)')
         .order('name');
       setGrades(gradesData || []);
-
     } catch (error) {
-      console.error(error);
-      toast({ title: "Error", description: "No se pudieron cargar los datos.", variant: "destructive" });
+      toast({ title: "Error", description: "No se pudieron cargar los grados.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
 
-  // --- LÓGICA DE PROMOCIÓN MASIVA ---
-  
-  // Buscar alumnos cuando se selecciona un grado de origen
+  // --- LÓGICA DE PROMOCIÓN ---
   useEffect(() => {
     if (sourceGradeId) {
-      loadStudentsForPromotion(sourceGradeId);
+      loadStudents(sourceGradeId, setStudentsToPromote, setSelectedStudentIds);
     } else {
       setStudentsToPromote([]);
       setSelectedStudentIds([]);
     }
   }, [sourceGradeId]);
 
-  const loadStudentsForPromotion = async (gradeId: string) => {
+  // --- LÓGICA DE EGRESO ---
+  useEffect(() => {
+    if (graduateGradeId) {
+      loadStudents(graduateGradeId, setStudentsToGraduate, setSelectedGraduateIds);
+    } else {
+      setStudentsToGraduate([]);
+      setSelectedGraduateIds([]);
+    }
+  }, [graduateGradeId]);
+
+  // Función reutilizable para cargar alumnos por grado
+  const loadStudents = async (gradeId: string, setList: any, setSelection: any) => {
     const { data } = await supabase
       .from('profiles')
       .select('id, first_name, last_name, email')
@@ -149,56 +109,74 @@ const AdminBulkStudentImport = () => {
       .eq('is_active', true)
       .order('last_name');
       
-    setStudentsToPromote(data || []);
-    // Por defecto, seleccionamos a todos para que sea más rápido
-    setSelectedStudentIds((data || []).map(s => s.id));
+    setList(data || []);
+    setSelection((data || []).map((s: any) => s.id));
   };
 
-  const toggleStudentSelection = (studentId: string) => {
-    setSelectedStudentIds(prev => 
-      prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]
+  const toggleSelection = (studentId: string, currentSelection: string[], setSelection: any) => {
+    setSelection(
+      currentSelection.includes(studentId) 
+        ? currentSelection.filter(id => id !== studentId) 
+        : [...currentSelection, studentId]
     );
   };
 
   const handleExecutePromotion = async () => {
-    if (securityWord !== 'CONFIRMAR') {
-      return toast({ title: "Seguridad fallida", description: "Escribe CONFIRMAR exactamente para continuar.", variant: "destructive" });
-    }
+    if (securityWord !== 'CONFIRMAR') return toast({ title: "Seguridad fallida", variant: "destructive" });
     
-    setIsPromoting(true);
+    setIsProcessing(true);
     try {
-      // Actualizamos masivamente el grado actual de los alumnos seleccionados
-      const { error } = await supabase
-        .from('profiles')
-        .update({ current_grade_id: targetGradeId })
-        .in('id', selectedStudentIds);
-
+      const { error } = await supabase.from('profiles').update({ current_grade_id: targetGradeId }).in('id', selectedStudentIds);
       if (error) throw error;
 
-      toast({ title: "¡Promoción Exitosa!", description: `${selectedStudentIds.length} alumnos han sido promovidos de grado correctamente.` });
-      
-      // Limpiar estados
-      setIsConfirmModalOpen(false);
+      toast({ title: "¡Promoción Exitosa!", description: `${selectedStudentIds.length} alumnos promovidos.` });
+      setIsPromoteModalOpen(false);
       setSecurityWord('');
       setSourceGradeId('');
       setTargetGradeId('');
-      
     } catch (error) {
-      toast({ title: "Error crítico", description: "No se pudo realizar la promoción masiva.", variant: "destructive" });
+      toast({ title: "Error", description: "Fallo al promover.", variant: "destructive" });
     } finally {
-      setIsPromoting(false);
+      setIsProcessing(false);
     }
   };
 
-  if (loading) {
-    return (
-      <DashboardLayout>
-        <div className="flex items-center justify-center min-h-screen">
-          <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
-        </div>
-      </DashboardLayout>
-    );
-  }
+  const handleExecuteGraduation = async () => {
+    if (securityWord !== 'EGRESAR') return toast({ title: "Seguridad fallida", variant: "destructive" });
+    
+    setIsProcessing(true);
+    try {
+      // Pasamos a los alumnos a inactivos (egresados del sistema actual)
+      const { error } = await supabase.from('profiles').update({ is_active: false }).in('id', selectedGraduateIds);
+      if (error) throw error;
+
+      toast({ title: "¡Egreso Exitoso!", description: `${selectedGraduateIds.length} alumnos han sido marcados como egresados.` });
+      setIsGraduateModalOpen(false);
+      setSecurityWord('');
+      setGraduateGradeId('');
+    } catch (error) {
+      toast({ title: "Error", description: "Fallo al egresar alumnos.", variant: "destructive" });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // --- AGRUPACIÓN DE GRADOS PARA LOS SELECTS ---
+  const groupedGrades = grades.reduce((acc, grade) => {
+    const levelName = grade.level?.name || 'Sin Nivel';
+    if (!acc[levelName]) acc[levelName] = [];
+    acc[levelName].push(grade);
+    return acc;
+  }, {} as Record<string, any[]>);
+
+  const orderConfig = ['Inicial', 'Primaria', 'Secundaria'];
+  const sortedLevelKeys = Object.keys(groupedGrades).sort((a, b) => {
+    const indexA = orderConfig.findIndex(l => a.toLowerCase().includes(l.toLowerCase()));
+    const indexB = orderConfig.findIndex(l => b.toLowerCase().includes(l.toLowerCase()));
+    return (indexA === -1 ? 99 : indexA) - (indexB === -1 ? 99 : indexB);
+  });
+
+  if (loading) return <DashboardLayout><div className="flex justify-center items-center h-screen"><Loader2 className="w-10 h-10 animate-spin text-blue-600" /></div></DashboardLayout>;
 
   return (
     <DashboardLayout>
@@ -209,95 +187,56 @@ const AdminBulkStudentImport = () => {
             Operaciones Masivas de Estudiantes
           </h1>
           <p className="text-muted-foreground">
-            Central de procesos automáticos: importa matrículas desde Excel o promueve alumnos al siguiente año escolar.
+            Central de procesos automáticos de fin de año: promueve alumnos al siguiente grado o registra el egreso de las promociones salientes.
           </p>
         </div>
 
-        <Tabs defaultValue="import" className="w-full">
+        <Tabs defaultValue="promote" className="w-full">
           <TabsList className="grid w-full grid-cols-2 max-w-md mb-8">
-            <TabsTrigger value="import" className="font-medium"><FileSpreadsheet className="w-4 h-4 mr-2"/> Importar Excel</TabsTrigger>
             <TabsTrigger value="promote" className="font-medium"><ArrowRightLeft className="w-4 h-4 mr-2"/> Promoción de Grado</TabsTrigger>
+            <TabsTrigger value="graduate" className="font-medium text-amber-700 data-[state=active]:text-amber-700 data-[state=active]:bg-amber-50"><GraduationCap className="w-5 h-5 mr-2"/> Egreso Escolar</TabsTrigger>
           </TabsList>
 
           {/* ==========================================
-              PESTAÑA 1: IMPORTACIÓN DESDE EXCEL
-             ========================================== */}
-          <TabsContent value="import" className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <Card className="border-blue-100 bg-blue-50/30">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-xl text-blue-800">1. Selecciona el Aula Destino</CardTitle>
-                <CardDescription>Elige a qué aula (sección) pertenecerán los alumnos del Excel.</CardDescription>
-              </CardHeader>
-            </Card>
-
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {classrooms.map((classroom) => (
-                <Card
-                  key={classroom.id}
-                  className={`cursor-pointer transition-all hover:shadow-md border-t-4 ${
-                    selectedClassroom?.id === classroom.id ? 'border-t-blue-600 shadow-md ring-1 ring-blue-200 bg-blue-50/10' : 'border-t-gray-200'
-                  }`}
-                  onClick={() => setSelectedClassroom(classroom)}
-                >
-                  <CardContent className="p-5 space-y-3">
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center gap-2 font-bold text-lg text-gray-800">
-                        <School className="h-5 w-5 text-gray-500" /> {classroom.name}
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-sm"><span className="text-gray-500">Grado:</span><span className="font-medium">{classroom.grade}</span></div>
-                      <div className="flex justify-between text-sm"><span className="text-gray-500">Nivel:</span><span className="font-medium">{classroom.level}</span></div>
-                      <div className="flex justify-between text-sm"><span className="text-gray-500">Salón:</span><span className="font-medium">{classroom.room_number}</span></div>
-                      <div className="flex justify-between text-sm"><span className="text-gray-500">Alumnos Inscritos:</span><span className="font-bold text-blue-600">{classroom.enrollmentCount}</span></div>
-                    </div>
-
-                    {classroom.tutor && (
-                      <div className="text-xs text-gray-500 pt-3 border-t mt-3 flex items-center gap-1">
-                         Tutor: {classroom.tutor.first_name} {classroom.tutor.last_name}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            {classrooms.length === 0 && (
-              <div className="text-center py-12 bg-gray-50 rounded-lg border border-dashed">
-                <School className="h-12 w-12 mx-auto text-gray-300 mb-4" />
-                <p className="text-gray-500 font-medium">No hay aulas virtuales. Debes crear una sección primero.</p>
-              </div>
-            )}
-
-            {selectedClassroom && (
-              <div className="mt-8 border-t pt-8">
-                <BulkStudentImport classroom={selectedClassroom} onImportComplete={fetchInitialData} />
-              </div>
-            )}
-          </TabsContent>
-
-          {/* ==========================================
-              PESTAÑA 2: PROMOCIÓN MASIVA (NUEVA)
+              PESTAÑA 1: PROMOCIÓN DE GRADO
              ========================================== */}
           <TabsContent value="promote" className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-md shadow-sm">
+              <div className="flex items-center gap-2 text-amber-800 font-bold mb-1">
+                <AlertTriangle className="w-5 h-5" /> Importante: Orden de Promoción
+              </div>
+              <p className="text-sm text-amber-900">
+                Para evitar errores en cadena, realiza las promociones <strong>desde el grado más alto hacia el más bajo</strong>. 
+                Por ejemplo, primero promueve a los alumnos de 4to a 5to, luego a los de 3ro a 4to. 
+                De lo contrario, los alumnos recién promovidos podrían mezclarse y volver a ser trasladados por accidente.
+              </p>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              
-              {/* CONTROLES */}
+              {/* CONTROLES PROMOCIÓN */}
               <div className="space-y-6">
                 <Card className="border-0 shadow-sm">
                   <CardHeader className="bg-gray-50 border-b">
                     <CardTitle className="text-lg">Configuración de Traslado</CardTitle>
                   </CardHeader>
                   <CardContent className="p-6 space-y-6">
-                    
                     <div className="space-y-3">
                       <label className="text-sm font-bold text-gray-700">1. Grado de Origen (Actual)</label>
                       <Select value={sourceGradeId} onValueChange={setSourceGradeId}>
-                        <SelectTrigger className="border-blue-200 bg-blue-50/50 focus:ring-blue-500"><SelectValue placeholder="Selecciona el grado actual de los alumnos" /></SelectTrigger>
+                        <SelectTrigger className="border-blue-200 bg-blue-50/50 focus:ring-blue-500">
+                          <SelectValue placeholder="Selecciona el grado actual" />
+                        </SelectTrigger>
                         <SelectContent>
-                          {grades.map(g => (
-                            <SelectItem key={g.id} value={g.id}>{g.name} ({g.level?.name})</SelectItem>
+                          {sortedLevelKeys.map(level => (
+                            <SelectGroup key={level}>
+                              <SelectLabel className="bg-gray-50/80 text-gray-500 font-bold uppercase text-[11px] py-1 tracking-wider">{level}</SelectLabel>
+                              {groupedGrades[level].map(g => (
+                                /* SOLUCIÓN AL NOMBRE: Mostramos "1ro (Secundaria)" */
+                                <SelectItem key={g.id} value={g.id} className="pl-6 font-medium text-gray-700">
+                                  {g.name} ({level})
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
                           ))}
                         </SelectContent>
                       </Select>
@@ -308,39 +247,47 @@ const AdminBulkStudentImport = () => {
                     <div className="space-y-3">
                       <label className="text-sm font-bold text-gray-700">2. Grado Destino (A promover)</label>
                       <Select value={targetGradeId} onValueChange={setTargetGradeId}>
-                        <SelectTrigger className="border-green-200 bg-green-50/50 focus:ring-green-500"><SelectValue placeholder="Selecciona a qué grado pasarán" /></SelectTrigger>
+                        <SelectTrigger className="border-green-200 bg-green-50/50 focus:ring-green-500">
+                          <SelectValue placeholder="Selecciona a qué grado pasarán" />
+                        </SelectTrigger>
                         <SelectContent>
-                          {grades.map(g => (
-                            <SelectItem key={g.id} value={g.id} disabled={g.id === sourceGradeId}>{g.name} ({g.level?.name})</SelectItem>
+                          {sortedLevelKeys.map(level => (
+                            <SelectGroup key={level}>
+                              <SelectLabel className="bg-gray-50/80 text-gray-500 font-bold uppercase text-[11px] py-1 tracking-wider">{level}</SelectLabel>
+                              {groupedGrades[level].map(g => (
+                                <SelectItem key={g.id} value={g.id} disabled={g.id === sourceGradeId} className="pl-6 font-medium text-gray-700">
+                                  {g.name} ({level})
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
 
-                    <Button 
-                      className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                      disabled={!sourceGradeId || !targetGradeId || selectedStudentIds.length === 0}
-                      onClick={() => setIsConfirmModalOpen(true)}
-                    >
+                    <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white shadow-md" disabled={!sourceGradeId || !targetGradeId || selectedStudentIds.length === 0} onClick={() => setIsPromoteModalOpen(true)}>
                       Promover {selectedStudentIds.length} Alumnos
                     </Button>
                   </CardContent>
                 </Card>
               </div>
 
-              {/* LISTA DE ALUMNOS */}
+              {/* LISTA PROMOCIÓN */}
               <Card className="border-0 shadow-sm">
                 <CardHeader className="bg-gray-50 border-b flex flex-row items-center justify-between pb-3">
                   <div>
                     <CardTitle className="text-lg">Alumnos del Grado de Origen</CardTitle>
                     <CardDescription>Desmarca a los alumnos que repiten o no continúan.</CardDescription>
                   </div>
-                  <Badge variant="secondary" className="text-lg px-3 py-1 bg-white">{studentsToPromote.length}</Badge>
+                  <Badge variant="secondary" className="text-lg px-3 py-1 bg-white border border-gray-200">{studentsToPromote.length}</Badge>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <div className="max-h-[500px] overflow-y-auto">
+                  <div className="max-h-[400px] overflow-y-auto">
                     {studentsToPromote.length === 0 ? (
-                      <div className="p-8 text-center text-gray-500">Selecciona un grado de origen para ver a los alumnos.</div>
+                      <div className="p-12 text-center text-gray-400 flex flex-col items-center">
+                        <Users className="w-12 h-12 mb-3 text-gray-300" />
+                        Selecciona un grado de origen para ver a los alumnos.
+                      </div>
                     ) : (
                       <div className="divide-y">
                         {studentsToPromote.map(student => (
@@ -349,11 +296,7 @@ const AdminBulkStudentImport = () => {
                               <div className="font-semibold text-gray-800">{student.last_name}, {student.first_name}</div>
                               <div className="text-xs text-gray-500">{student.email}</div>
                             </div>
-                            <Checkbox 
-                              checked={selectedStudentIds.includes(student.id)} 
-                              onCheckedChange={() => toggleStudentSelection(student.id)}
-                              className="w-5 h-5 border-gray-300 data-[state=checked]:bg-green-600 data-[state=checked]:border-green-600"
-                            />
+                            <Checkbox checked={selectedStudentIds.includes(student.id)} onCheckedChange={() => toggleSelection(student.id, selectedStudentIds, setSelectedStudentIds)} className="w-5 h-5 border-gray-300 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"/>
                           </div>
                         ))}
                       </div>
@@ -361,43 +304,121 @@ const AdminBulkStudentImport = () => {
                   </div>
                 </CardContent>
               </Card>
+            </div>
+          </TabsContent>
 
+          {/* ==========================================
+              PESTAÑA 2: EGRESO MASIVO (NUEVO)
+             ========================================== */}
+          <TabsContent value="graduate" className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* CONTROLES EGRESO */}
+              <div className="space-y-6">
+                <Card className="border-0 shadow-sm border-t-4 border-t-amber-500">
+                  <CardHeader className="bg-amber-50/30 border-b">
+                    <CardTitle className="text-lg text-amber-900 flex items-center gap-2"><GraduationCap className="w-5 h-5"/> Egresar Promoción</CardTitle>
+                    <CardDescription>Pasa a estado inactivo a los alumnos que finalizan la secundaria.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-6 space-y-6">
+                    <div className="space-y-3">
+                      <label className="text-sm font-bold text-gray-700">Seleccionar Grado a Egresar (Ej: 5to Secundaria)</label>
+                      <Select value={graduateGradeId} onValueChange={setGraduateGradeId}>
+                        <SelectTrigger className="border-amber-200 bg-amber-50/50 focus:ring-amber-500">
+                          <SelectValue placeholder="Elige el grado que se gradúa..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {sortedLevelKeys.map(level => (
+                            <SelectGroup key={level}>
+                              <SelectLabel className="bg-gray-50/80 text-gray-500 font-bold uppercase text-[11px] py-1 tracking-wider">{level}</SelectLabel>
+                              {groupedGrades[level].map(g => (
+                                <SelectItem key={g.id} value={g.id} className="pl-6 font-medium text-gray-700">
+                                  {g.name} ({level})
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <Button className="w-full bg-amber-600 hover:bg-amber-700 text-white shadow-md" disabled={!graduateGradeId || selectedGraduateIds.length === 0} onClick={() => setIsGraduateModalOpen(true)}>
+                      Egresar {selectedGraduateIds.length} Alumnos
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* LISTA EGRESO */}
+              <Card className="border-0 shadow-sm">
+                <CardHeader className="bg-gray-50 border-b flex flex-row items-center justify-between pb-3">
+                  <div>
+                    <CardTitle className="text-lg">Candidatos a Egreso</CardTitle>
+                    <CardDescription>Alumnos seleccionados pasarán al archivo histórico.</CardDescription>
+                  </div>
+                  <Badge variant="secondary" className="text-lg px-3 py-1 bg-white border border-gray-200 text-amber-600">{studentsToGraduate.length}</Badge>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="max-h-[400px] overflow-y-auto">
+                    {studentsToGraduate.length === 0 ? (
+                      <div className="p-12 text-center text-gray-400 flex flex-col items-center">
+                        <CheckCircle2 className="w-12 h-12 mb-3 text-gray-300" />
+                        Selecciona el grado saliente para ver a los alumnos a egresar.
+                      </div>
+                    ) : (
+                      <div className="divide-y">
+                        {studentsToGraduate.map(student => (
+                          <div key={student.id} className="p-4 flex items-center justify-between hover:bg-amber-50/30 transition-colors">
+                            <div>
+                              <div className="font-semibold text-gray-800">{student.last_name}, {student.first_name}</div>
+                              <div className="text-xs text-gray-500">{student.email}</div>
+                            </div>
+                            <Checkbox checked={selectedGraduateIds.includes(student.id)} onCheckedChange={() => toggleSelection(student.id, selectedGraduateIds, setSelectedGraduateIds)} className="w-5 h-5 border-gray-300 data-[state=checked]:bg-amber-600 data-[state=checked]:border-amber-600"/>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
         </Tabs>
 
-        {/* MODAL DE SEGURIDAD PARA PROMOCIÓN */}
-        <Dialog open={isConfirmModalOpen} onOpenChange={(open) => { if(!open) { setIsConfirmModalOpen(false); setSecurityWord(''); } }}>
+        {/* MODAL CONFIRMAR PROMOCIÓN */}
+        <Dialog open={isPromoteModalOpen} onOpenChange={(open) => { if(!open) { setIsPromoteModalOpen(false); setSecurityWord(''); } }}>
           <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-red-600 flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5"/> Advertencia de Seguridad
-              </DialogTitle>
-            </DialogHeader>
+            <DialogHeader><DialogTitle className="text-blue-600">Confirmar Promoción de Grado</DialogTitle></DialogHeader>
             <div className="py-4 space-y-4">
-              <p className="text-gray-700 text-sm">
-                Estás a punto de cambiar el grado actual de <strong>{selectedStudentIds.length} alumnos</strong>. 
-                Esta acción modificará sus mallas curriculares y estado en el sistema.
-              </p>
-              <div className="bg-red-50 p-3 rounded text-sm text-red-800 border border-red-200">
-                Para confirmar la promoción masiva, escribe la palabra <strong>CONFIRMAR</strong> (en mayúsculas) en la caja de abajo.
+              <p className="text-gray-700 text-sm">Estás a punto de cambiar el grado actual de <strong>{selectedStudentIds.length} alumnos</strong>.</p>
+              <div className="bg-blue-50 p-3 rounded text-sm text-blue-800 border border-blue-200">
+                Escribe <strong>CONFIRMAR</strong> para proceder con el traslado masivo.
               </div>
-              <Input 
-                value={securityWord} 
-                onChange={e => setSecurityWord(e.target.value)} 
-                placeholder="Escribe CONFIRMAR" 
-                className="text-center font-bold tracking-widest border-red-300 focus-visible:ring-red-500"
-              />
+              <Input value={securityWord} onChange={e => setSecurityWord(e.target.value)} placeholder="CONFIRMAR" className="text-center font-bold tracking-widest uppercase" />
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsConfirmModalOpen(false)} disabled={isPromoting}>Cancelar</Button>
-              <Button 
-                type="button" 
-                className="bg-red-600 hover:bg-red-700 text-white" 
-                disabled={securityWord !== 'CONFIRMAR' || isPromoting}
-                onClick={handleExecutePromotion}
-              >
-                {isPromoting ? 'Ejecutando...' : 'Ejecutar Promoción Masiva'}
+              <Button type="button" variant="outline" onClick={() => setIsPromoteModalOpen(false)} disabled={isProcessing}>Cancelar</Button>
+              <Button className="bg-blue-600 hover:bg-blue-700 text-white" disabled={securityWord !== 'CONFIRMAR' || isProcessing} onClick={handleExecutePromotion}>
+                {isProcessing ? 'Ejecutando...' : 'Ejecutar Promoción'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* MODAL CONFIRMAR EGRESO */}
+        <Dialog open={isGraduateModalOpen} onOpenChange={(open) => { if(!open) { setIsGraduateModalOpen(false); setSecurityWord(''); } }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader><DialogTitle className="text-amber-600 flex items-center gap-2"><AlertTriangle className="w-5 h-5"/> Confirmar Egreso de Alumnos</DialogTitle></DialogHeader>
+            <div className="py-4 space-y-4">
+              <p className="text-gray-700 text-sm">Vas a egresar a <strong>{selectedGraduateIds.length} alumnos</strong>. Sus cuentas pasarán a estado inactivo (solo lectura para certificados).</p>
+              <div className="bg-amber-50 p-3 rounded text-sm text-amber-800 border border-amber-200">
+                Escribe <strong>EGRESAR</strong> para concluir su ciclo escolar en el sistema.
+              </div>
+              <Input value={securityWord} onChange={e => setSecurityWord(e.target.value)} placeholder="EGRESAR" className="text-center font-bold tracking-widest uppercase" />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsGraduateModalOpen(false)} disabled={isProcessing}>Cancelar</Button>
+              <Button className="bg-amber-600 hover:bg-amber-700 text-white" disabled={securityWord !== 'EGRESAR' || isProcessing} onClick={handleExecuteGraduation}>
+                {isProcessing ? 'Procesando...' : 'Egresar Alumnos'}
               </Button>
             </DialogFooter>
           </DialogContent>

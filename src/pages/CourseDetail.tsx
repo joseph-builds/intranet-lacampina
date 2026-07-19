@@ -124,12 +124,14 @@ export default function CourseDetail() {
 
   const fetchStudents = async () => {
     try {
-      const { data, error } = await supabase
+      setLoading(true);
+      // 1. Fetch from course_enrollments
+      const { data: directEnrollments, error: deError } = await supabase
         .from("course_enrollments")
         .select(
           `
           enrolled_at,
-          student:profiles!course_enrollments_student_id_fkey(
+          student:profiles!course_enrollments_student_id_fkey1(
             id,
             first_name,
             last_name,
@@ -137,17 +139,14 @@ export default function CourseDetail() {
           )
         `,
         )
-        .eq("modulo_id", id);
+        .eq("course_id", id);
 
-      if (error) throw error;
+      if (deError) throw deError;
 
-      const enrolledStudents =
-        data
+      let students =
+        directEnrollments
           ?.map((enrollment) => {
-            if (!enrollment.student) {
-              console.warn("Enrollment without student data:", enrollment);
-              return null;
-            }
+            if (!enrollment.student) return null;
             return {
               ...(enrollment.student as any),
               enrolled_at: enrollment.enrolled_at,
@@ -155,7 +154,43 @@ export default function CourseDetail() {
           })
           .filter((student): student is Student => student !== null) || [];
 
-      setStudents(enrolledStudents);
+      // 2. Fetch from student_sections via section_courses -> base_courses
+      const { data: sectionCourses, error: scError } = await supabase
+        .from("section_courses")
+        .select("section_id, base_course:base_courses!inner(course_id)")
+        .eq("base_courses.course_id", id);
+
+      if (!scError && sectionCourses && sectionCourses.length > 0) {
+        const sectionIds = sectionCourses.map(sc => sc.section_id);
+        const { data: sectionStudentsData, error: ssError } = await supabase
+          .from("student_sections")
+          .select(`
+            created_at,
+            student:profiles!student_sections_student_id_fkey(
+              id, first_name, last_name, email
+            )
+          `)
+          .in("section_id", sectionIds)
+          .eq("is_active", true);
+
+        if (!ssError && sectionStudentsData) {
+          const sectionStudents = sectionStudentsData
+            .map(ss => {
+              if (!ss.student) return null;
+              // Check for duplicates
+              if (students.find(s => s.id === (ss.student as any).id)) return null;
+              return {
+                ...(ss.student as any),
+                enrolled_at: ss.created_at,
+              };
+            })
+            .filter((student): student is Student => student !== null);
+          
+          students = [...students, ...sectionStudents];
+        }
+      }
+
+      setStudents(students);
     } catch (error) {
       console.error("Error fetching students:", error);
       toast.error("Error al cargar los estudiantes");
@@ -178,12 +213,35 @@ export default function CourseDetail() {
           )
         `,
         )
-        .eq("modulo_id", id);
+        .eq("course_id", id);
 
       if (error) throw error;
-      setAdditionalTeachers(
-        data?.map((item) => item.teacher).filter(Boolean) || [],
-      );
+
+      let teachers = data
+          ?.map((ct) => ct.teacher as unknown as Teacher)
+          .filter(Boolean) || [];
+          
+      // Also fetch teachers assigned via section_courses
+      const { data: sectionTeachersData, error: stError } = await supabase
+        .from("section_courses")
+        .select(`
+          teacher:profiles!section_courses_teacher_id_fkey(
+            id, first_name, last_name, email
+          ),
+          base_course:base_courses!inner(
+            course_id
+          )
+        `)
+        .eq("base_courses.course_id", id);
+        
+      if (!stError && sectionTeachersData) {
+        const sectionTeachers = sectionTeachersData
+          .map((st) => st.teacher as unknown as Teacher)
+          .filter(Boolean);
+        teachers = [...teachers, ...sectionTeachers];
+      }
+
+      setAdditionalTeachers(teachers);
     } catch (error) {
       console.error("Error fetching additional teachers:", error);
     }
@@ -265,8 +323,8 @@ export default function CourseDetail() {
                 <div className="flex-1">
                   <p className="text-sm text-muted-foreground">Profesores</p>
                   <p className="font-medium">
-                    {course.teacher?.first_name || "Sin asignar"}{" "}
-                    {course.teacher?.last_name || ""}
+                    {course.teacher?.first_name || (additionalTeachers.length > 0 ? additionalTeachers[0].first_name : "Sin asignar")}{" "}
+                    {course.teacher?.last_name || (additionalTeachers.length > 0 ? additionalTeachers[0].last_name : "")}
                     {course.teacher && (
                       <Badge variant="secondary" className="ml-2">
                         Principal

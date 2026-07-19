@@ -17,7 +17,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { format, isAfter, isBefore, addMinutes } from "date-fns";
 import { es } from "date-fns/locale";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useExamMonitor } from "@/hooks/useExamMonitor";
 import {
   AlertDialog,
@@ -28,6 +28,22 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 
 interface Exam {
   id: string;
@@ -36,7 +52,7 @@ interface Exam {
   start_time: string;
   duration_minutes: number;
   max_score: number;
-  modulo_id: string;
+  course_id: string;
   source: "exam" | "weekly_resource";
   course: {
     id: string;
@@ -55,8 +71,13 @@ const Exams = () => {
   const { toast } = useToast();
   const [exams, setExams] = useState<Exam[]>([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
   const [activeExam, setActiveExam] = useState<string | null>(null);
   const [showClosedDialog, setShowClosedDialog] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [teacherCourses, setTeacherCourses] = useState<{id: string, name: string}[]>([]);
+  const [selectedCourseId, setSelectedCourseId] = useState("");
+  const [loadingCourses, setLoadingCourses] = useState(false);
 
   const { abandonCount, maxAbandonAttempts } = useExamMonitor({
     examId: activeExam || "",
@@ -79,7 +100,7 @@ const Exams = () => {
     const { data: quizData } = await supabase
       .from("quizzes")
       .select("id")
-      .eq("modulo_id", courseId)
+      .eq("course_id", courseId)
       .eq("title", quizTitle)
       .maybeSingle();
 
@@ -100,12 +121,47 @@ const Exams = () => {
     fetchExams();
   }, [profile]);
 
+  const fetchTeacherCourses = async () => {
+    if (!profile?.id) return;
+    setLoadingCourses(true);
+    try {
+      const { data: directCourses } = await supabase
+        .from("courses")
+        .select("id, name")
+        .eq("teacher_principal_id", profile.id)
+        .eq("is_active", true);
+
+      const { data: sectionCourses } = await supabase
+        .from("section_courses")
+        .select(`base_course:base_courses!inner(course_id, courses!inner(id, name))`)
+        .eq("teacher_id", profile.id);
+
+      let allCourses = directCourses || [];
+      if (sectionCourses) {
+        const additional = sectionCourses
+          .map((sc: any) => sc.base_course?.courses)
+          .filter(Boolean);
+        const newCourses = additional.filter(ac => !allCourses.find(c => c.id === ac.id));
+        allCourses = [...allCourses, ...newCourses];
+      }
+      setTeacherCourses(allCourses);
+    } catch(err) {
+      console.error(err);
+    } finally {
+      setLoadingCourses(false);
+    }
+  };
+
+  useEffect(() => {
+    if (createDialogOpen) fetchTeacherCourses();
+  }, [createDialogOpen]);
+
   const fetchExams = async () => {
     if (!profile) return;
 
     try {
-      // Fetch from exams table
-      const { data: examsData, error: examsError } = await supabase
+      // Build queries for exams and weekly resources
+      let examsQuery = supabase
         .from("exams")
         .select(
           `
@@ -117,13 +173,9 @@ const Exams = () => {
           )
         `,
         )
-        .eq("is_published", true)
         .order("start_time", { ascending: true });
 
-      if (examsError) throw examsError;
-
-      // Fetch from weekly resources (exam type)
-      const { data: weeklyExams, error: weeklyError } = await supabase
+      let weeklyQuery = supabase
         .from("course_weekly_resources")
         .select(
           `
@@ -138,17 +190,31 @@ const Exams = () => {
         `,
         )
         .eq("resource_type", "exam")
-        .eq("is_published", true)
         .order("assignment_deadline", { ascending: true });
 
-      if (weeklyError) throw weeklyError;
+      // If user is a student, only show published exams
+      if (profile.role === "student") {
+        examsQuery = examsQuery.eq("is_published", true);
+        weeklyQuery = weeklyQuery.eq("is_published", true);
+      }
+
+      const [examsResponse, weeklyResponse] = await Promise.all([
+        examsQuery,
+        weeklyQuery
+      ]);
+
+      if (examsResponse.error) throw examsResponse.error;
+      if (weeklyResponse.error) throw weeklyResponse.error;
+
+      const examsData = examsResponse.data;
+      const weeklyExams = weeklyResponse.data;
 
       // Combine both sources and check submissions for students
       const combinedExams: Exam[] = await Promise.all([
         ...(examsData || []).map(async (exam) => {
           const submission =
             profile?.role === "student"
-              ? await checkExamSubmission(exam.id, exam.title, exam.modulo_id)
+              ? await checkExamSubmission(exam.id, exam.title, exam.course_id)
               : null;
 
           return {
@@ -158,7 +224,7 @@ const Exams = () => {
             start_time: exam.start_time,
             duration_minutes: exam.duration_minutes,
             max_score: exam.max_score,
-            modulo_id: exam.modulo_id,
+            course_id: exam.course_id,
             source: "exam" as const,
             course: exam.course,
             submission,
@@ -182,7 +248,7 @@ const Exams = () => {
               resource.assignment_deadline || new Date().toISOString(),
             duration_minutes: 60, // Default duration
             max_score: resource.max_score || 100,
-            modulo_id: resource.section.course.id,
+            course_id: resource.section.course.id,
             source: "weekly_resource" as const,
             course: resource.section.course,
             submission,
@@ -270,7 +336,7 @@ const Exams = () => {
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-foreground">Exámenes</h1>
           {profile?.role === "teacher" && (
-            <Button className="bg-gradient-primary shadow-glow">
+            <Button className="bg-gradient-primary shadow-glow" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="w-4 h-4 mr-2" />
               Crear Examen
             </Button>
@@ -364,7 +430,7 @@ const Exams = () => {
 
                     <div className="flex gap-2">
                       <Button className="flex-1" variant="outline" asChild>
-                        <Link to={`/courses/${exam.modulo_id}`}>Ver Curso</Link>
+                        <Link to={`/courses/${exam.course_id}`}>Ver Curso</Link>
                       </Button>
 
                       {profile?.role === "student" && (
@@ -430,13 +496,10 @@ const Exams = () => {
       <AlertDialog open={showClosedDialog} onOpenChange={setShowClosedDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
-              <XCircle className="w-5 h-5" />
-              Examen Cerrado
-            </AlertDialogTitle>
+            <AlertDialogTitle>Examen Cerrado Automáticamente</AlertDialogTitle>
             <AlertDialogDescription>
-              El examen se ha cerrado automáticamente porque saliste de la
-              página demasiadas veces. Esto ha sido registrado en el sistema.
+              El examen ha sido cerrado porque superaste el límite máximo de {maxAbandonAttempts} intentos de salir de la pantalla o cambiar de pestaña.
+              Tu intento ha sido registrado automáticamente.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -446,6 +509,32 @@ const Exams = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Crear Examen</DialogTitle>
+            <DialogDescription>Selecciona el curso para el cual deseas crear el examen.</DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label>Curso</Label>
+            <Select value={selectedCourseId} onValueChange={setSelectedCourseId}>
+              <SelectTrigger className="w-full mt-2">
+                <SelectValue placeholder={loadingCourses ? "Cargando cursos..." : "Selecciona un curso"} />
+              </SelectTrigger>
+              <SelectContent>
+                {teacherCourses.map(c => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancelar</Button>
+            <Button disabled={!selectedCourseId} onClick={() => navigate(`/courses/${selectedCourseId}/create-exam`)}>Continuar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 };

@@ -60,8 +60,8 @@ export function BulkStudentEnrollment({ classroomId, courses, onUpdate }: BulkSt
       const courseIds = courses.map(c => c.id);
       const { data: enrollments, error: enrollError } = await supabase
         .from('course_enrollments')
-        .select('student_id, modulo_id')
-        .in('modulo_id', courseIds);
+        .select('student_id, course_id')
+        .in('course_id', courseIds);
 
       if (enrollError) throw enrollError;
 
@@ -131,8 +131,8 @@ export function BulkStudentEnrollment({ classroomId, courses, onUpdate }: BulkSt
       // Check for existing enrollments for all courses
       const { data: existingEnrollments } = await supabase
         .from('course_enrollments')
-        .select('student_id, modulo_id')
-        .in('modulo_id', courseIds)
+        .select('student_id, course_id')
+        .in('course_id', courseIds)
         .in('student_id', selectedStudents);
 
       // Create enrollment records for all students in all courses (excluding existing ones)
@@ -140,13 +140,13 @@ export function BulkStudentEnrollment({ classroomId, courses, onUpdate }: BulkSt
       for (const studentId of selectedStudents) {
         for (const courseId of courseIds) {
           const alreadyEnrolled = existingEnrollments?.some(
-            e => e.student_id === studentId && e.modulo_id === courseId
+            e => e.student_id === studentId && e.course_id === courseId
           );
           
           if (!alreadyEnrolled) {
             enrollmentData.push({
               student_id: studentId,
-              modulo_id: courseId
+              course_id: courseId
             });
           }
         }

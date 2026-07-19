@@ -310,57 +310,58 @@ export function CourseWeeklySection({ section, courseId, canEdit, onUpdateSectio
                 </Button>
               )}
 
-              {/* Resource Form Modal */}
-              {showResourceForm && (
-                <ResourceForm
-                  sectionId={section.id}
-                  onClose={() => setShowResourceForm(false)}
-                  onSuccess={() => {
-                    setShowResourceForm(false);
-                    // Refresh the section data
-                    onUpdateSection?.(section);
-                  }}
-                />
-              )}
-
-              {/* Resource Detail Modal */}
-              {selectedResource && (
-                <ResourceDetailModal
-                  resource={selectedResource}
-                  isOpen={!!selectedResource}
-                  onClose={() => setSelectedResource(null)}
-                />
-              )}
-
-              {/* Section Edit Form */}
-              {showSectionEditForm && (
-                <SectionEditForm
-                  section={section}
-                  courseId={courseId}
-                  onClose={() => setShowSectionEditForm(false)}
-                  onSuccess={() => {
-                    setShowSectionEditForm(false);
-                    onUpdateSection?.(section);
-                  }}
-                />
-              )}
-
-              {/* Resource Edit Form */}
-              {editingResource && (
-                <ResourceEditForm
-                  resource={editingResource}
-                  sectionId={section.id}
-                  onClose={() => setEditingResource(null)}
-                  onSuccess={() => {
-                    setEditingResource(null);
-                    onUpdateSection?.(section);
-                  }}
-                />
-              )}
             </div>
           </CardContent>
         </CollapsibleContent>
       </Collapsible>
+
+      {/* Resource Form Modal */}
+      {showResourceForm && (
+        <ResourceForm
+          sectionId={section.id}
+          onClose={() => setShowResourceForm(false)}
+          onSuccess={() => {
+            setShowResourceForm(false);
+            // Refresh the section data
+            onUpdateSection?.(section);
+          }}
+        />
+      )}
+
+      {/* Resource Detail Modal */}
+      {selectedResource && (
+        <ResourceDetailModal
+          resource={selectedResource}
+          isOpen={!!selectedResource}
+          onClose={() => setSelectedResource(null)}
+        />
+      )}
+
+      {/* Section Edit Form */}
+      {showSectionEditForm && (
+        <SectionEditForm
+          section={section}
+          courseId={courseId}
+          onClose={() => setShowSectionEditForm(false)}
+          onSuccess={() => {
+            setShowSectionEditForm(false);
+            onUpdateSection?.(section);
+          }}
+        />
+      )}
+
+      {/* Resource Edit Form */}
+      {editingResource && (
+        <ResourceEditForm
+          resource={editingResource}
+          sectionId={section.id}
+          onClose={() => setEditingResource(null)}
+          onSuccess={() => {
+            setEditingResource(null);
+            onUpdateSection?.(section);
+          }}
+        />
+      )}
     </Card>
   );
 }

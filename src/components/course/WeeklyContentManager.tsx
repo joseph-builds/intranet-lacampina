@@ -75,7 +75,7 @@ export function WeeklyContentManager({
           resources:course_weekly_resources(*)
         `,
         )
-        .eq("modulo_id", courseId)
+        .eq("course_id", courseId)
         .order("week_number", { ascending: true });
 
       if (sectionsError) throw sectionsError;

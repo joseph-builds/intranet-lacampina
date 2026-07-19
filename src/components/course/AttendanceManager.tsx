@@ -83,12 +83,13 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
   const fetchStudents = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      // 1. Fetch from course_enrollments
+      const { data: directEnrollments, error: deError } = await supabase
         .from("course_enrollments")
         .select(
           `
           student_id,
-          student:profiles!course_enrollments_student_id_fkey(
+          student:profiles!course_enrollments_student_id_fkey1(
             id,
             first_name,
             last_name,
@@ -96,13 +97,45 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
           )
         `,
         )
-        .eq("modulo_id", courseId);
+        .eq("course_id", courseId);
 
-      if (error) throw error;
+      if (deError) throw deError;
 
-      const enrolledStudents = (data || [])
+      let enrolledStudents = (directEnrollments || [])
         .filter((e) => e.student)
         .map((e) => e.student) as unknown as Student[];
+
+      // 2. Fetch from student_sections via section_courses
+      const { data: sectionCourses, error: scError } = await supabase
+        .from("section_courses")
+        .select("section_id, base_course:base_courses!inner(course_id)")
+        .eq("base_courses.course_id", courseId);
+
+      if (!scError && sectionCourses && sectionCourses.length > 0) {
+        const sectionIds = sectionCourses.map(sc => sc.section_id);
+        const { data: sectionStudentsData, error: ssError } = await supabase
+          .from("student_sections")
+          .select(`
+            student:profiles!student_sections_student_id_fkey(
+              id, first_name, last_name, email
+            )
+          `)
+          .in("section_id", sectionIds)
+          .eq("is_active", true);
+
+        if (!ssError && sectionStudentsData) {
+          const sectionStudents = sectionStudentsData
+            .map(ss => ss.student)
+            .filter((student): student is Student => {
+              if (!student) return false;
+              // Check for duplicates
+              if (enrolledStudents.find(s => s.id === (student as any).id)) return false;
+              return true;
+            }) as unknown as Student[];
+          
+          enrolledStudents = [...enrolledStudents, ...sectionStudents];
+        }
+      }
 
       setStudents(enrolledStudents);
     } catch (error) {
@@ -121,7 +154,7 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
       const { data, error } = await supabase
         .from("attendance")
         .select("student_id, status, notes")
-        .eq("modulo_id", courseId)
+        .eq("course_id", courseId)
         .eq("date", dateStr);
 
       if (error) throw error;
@@ -178,7 +211,7 @@ export function AttendanceManager({ courseId }: AttendanceManagerProps) {
         "create-attendance-records",
         {
           body: {
-            modulo_id: courseId,
+            course_id: courseId,
             date: dateStr,
             attendance_records: attendanceRecords,
           },

@@ -47,84 +47,147 @@ const Classmates = () => {
     if (!profile?.id) return;
 
     try {
-      // Step 1: Get all courses the current student is enrolled in
-      const { data: myEnrollments, error: enrollError } = await supabase
-        .from("course_enrollments")
-        .select(`
-          modulo_id,
-          modulos!course_enrollments_modulo_id_fkey (
-            id,
-            name,
-            code
-          )
-        `)
-        .eq("student_id", profile.id)
-        .eq("is_active", true);
-
-      if (enrollError) throw enrollError;
-
-      const myCourseIds = myEnrollments?.map((e) => e.modulo_id) || [];
-      if (myCourseIds.length === 0) {
-        setLoading(false);
-        return;
-      }
-
-      // Step 2: Find all students enrolled in the same courses (excluding current user)
-      const { data: sameCourseStudents, error: studentsError } = await supabase
-        .from("course_enrollments")
-        .select(`
-          student_id,
-          modulo_id,
-          student:profiles!course_enrollments_student_id_fkey (
-            id,
-            first_name,
-            last_name,
-            email,
-            avatar_url,
-            student_code
-          ),
-          course:modulos!course_enrollments_modulo_id_fkey (
-            id,
-            name,
-            code
-          )
-        `)
-        .in("modulo_id", myCourseIds)
-        .neq("student_id", profile.id)
-        .eq("is_active", true);
-
-      if (studentsError) throw studentsError;
-
-      // Step 3: Aggregate by student, collecting shared courses
       const classmatesMap = new Map<string, Classmate>();
 
-      sameCourseStudents?.forEach((enrollment) => {
-        if (!enrollment.student) return;
-        const student = enrollment.student as any;
-        const course = enrollment.course as any;
+      // --- Query 1: Course Enrollments (Classmates sharing same modulos) ---
+      try {
+        const { data: myEnrollments, error: enrollError } = await supabase
+          .from("course_enrollments")
+          .select(`
+            course_id
+          `)
+          .eq("student_id", profile.id)
+          .eq("is_active", true);
 
-        if (!classmatesMap.has(student.id)) {
-          classmatesMap.set(student.id, {
-            id: student.id,
-            first_name: student.first_name || "",
-            last_name: student.last_name || "",
-            email: student.email || "",
-            avatar_url: student.avatar_url || null,
-            student_code: student.student_code || null,
-            shared_courses: [],
-            shared_classrooms: [],
+        if (enrollError) throw enrollError;
+
+        const myCourseIds = myEnrollments?.map((e) => e.course_id) || [];
+        if (myCourseIds.length > 0) {
+          const { data: sameCourseStudents, error: studentsError } = await supabase
+            .from("course_enrollments")
+            .select(`
+              student_id,
+              course_id,
+              student:profiles!course_enrollments_student_id_fkey1 (
+                id,
+                first_name,
+                last_name,
+                email,
+                avatar_url,
+                student_code
+              ),
+              course:modulos!course_enrollments_course_id_fkey (
+                id,
+                name,
+                code
+              )
+            `)
+            .in("course_id", myCourseIds)
+            .neq("student_id", profile.id)
+            .eq("is_active", true);
+
+          if (studentsError) throw studentsError;
+
+          sameCourseStudents?.forEach((enrollment) => {
+            if (!enrollment.student) return;
+            const student = enrollment.student as any;
+            const course = enrollment.course as any;
+
+            if (!classmatesMap.has(student.id)) {
+              classmatesMap.set(student.id, {
+                id: student.id,
+                first_name: student.first_name || "",
+                last_name: student.last_name || "",
+                email: student.email || "",
+                avatar_url: student.avatar_url || null,
+                student_code: student.student_code || null,
+                shared_courses: [],
+                shared_classrooms: [],
+              });
+            }
+
+            const classmate = classmatesMap.get(student.id)!;
+            if (course && !classmate.shared_courses.find((c) => c.id === course.id)) {
+              classmate.shared_courses.push({
+                id: course.id,
+                name: course.name,
+                code: course.code,
+              });
+            }
           });
         }
+      } catch (courseErr) {
+        console.error("Error fetching course-based classmates:", courseErr);
+      }
 
-        const classmate = classmatesMap.get(student.id)!;
-        if (!classmate.shared_courses.find((c) => c.id === course.id)) {
-          classmate.shared_courses.push({
-            id: course.id,
-            name: course.name,
-            code: course.code,
+      // --- Query 2: Sections/Aulas (Classmates sharing same sections) ---
+      try {
+        const { data: mySections, error: mySectionsError } = await supabase
+          .from("student_sections")
+          .select("section_id")
+          .eq("student_id", profile.id);
+
+        if (mySectionsError) throw mySectionsError;
+
+        const mySectionIds = mySections?.map((s) => s.section_id) || [];
+        if (mySectionIds.length > 0) {
+          const { data: sameSectionStudents, error: sectionStudentsError } = await supabase
+            .from("student_sections")
+            .select(`
+              student_id,
+              section_id,
+              section:sections (
+                id,
+                name,
+                grade:academic_grades (
+                  id,
+                  name
+                )
+              ),
+              student:profiles (
+                id,
+                first_name,
+                last_name,
+                email,
+                avatar_url,
+                student_code
+              )
+            `)
+            .in("section_id", mySectionIds)
+            .neq("student_id", profile.id);
+
+          if (sectionStudentsError) throw sectionStudentsError;
+
+          sameSectionStudents?.forEach((enrollment) => {
+            if (!enrollment.student) return;
+            const student = enrollment.student as any;
+            const section = enrollment.section as any;
+
+            if (!classmatesMap.has(student.id)) {
+              classmatesMap.set(student.id, {
+                id: student.id,
+                first_name: student.first_name || "",
+                last_name: student.last_name || "",
+                email: student.email || "",
+                avatar_url: student.avatar_url || null,
+                student_code: student.student_code || null,
+                shared_courses: [],
+                shared_classrooms: [],
+              });
+            }
+
+            const classmate = classmatesMap.get(student.id)!;
+            if (section && !classmate.shared_classrooms.find((c) => c.id === section.id)) {
+              classmate.shared_classrooms.push({
+                id: section.id,
+                name: `${section.grade?.name || ""} - ${section.name}`,
+              });
+            }
           });
         }
-      });
+      } catch (sectionErr) {
+        console.error("Error fetching section-based classmates:", sectionErr);
+      }
 
       setClassmates(Array.from(classmatesMap.values()));
     } catch (error) {
@@ -142,7 +205,8 @@ const Classmates = () => {
       cm.last_name.toLowerCase().includes(query) ||
       `${cm.first_name} ${cm.last_name}`.toLowerCase().includes(query) ||
       cm.email.toLowerCase().includes(query) ||
-      cm.shared_courses.some((c) => c.name.toLowerCase().includes(query))
+      cm.shared_courses.some((c) => c.name.toLowerCase().includes(query)) ||
+      cm.shared_classrooms.some((c) => c.name.toLowerCase().includes(query))
     );
   });
 
@@ -194,7 +258,7 @@ const Classmates = () => {
               <h1 className="text-3xl font-bold text-foreground">Compañeros</h1>
               <p className="text-muted-foreground text-sm mt-1">
                 {classmates.length > 0
-                  ? `Tienes ${classmates.length} compañero${classmates.length !== 1 ? "s" : ""} en tus cursos`
+                  ? `Tienes ${classmates.length} compañero${classmates.length !== 1 ? "s" : ""} en tu red`
                   : "Conéctate con tus compañeros de clase"}
               </p>
             </div>
@@ -205,7 +269,7 @@ const Classmates = () => {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
           <Input
-            placeholder="Buscar compañeros por nombre, email o curso..."
+            placeholder="Buscar compañeros por nombre, email, curso o aula..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10 h-12 bg-gradient-card border-2 border-input focus:border-primary transition-all duration-200 rounded-xl"
@@ -266,7 +330,7 @@ const Classmates = () => {
                 No hay compañeros aún
               </h3>
               <p className="text-muted-foreground max-w-md mx-auto">
-                Aún no tienes compañeros en tus cursos. Cuando estés inscrito en cursos con otros estudiantes, aparecerán aquí.
+                Aún no tienes compañeros asignados. Cuando estés en el mismo aula o inscrito en cursos con otros estudiantes, aparecerán aquí.
               </p>
             </CardContent>
           </Card>
@@ -320,9 +384,30 @@ const Classmates = () => {
                     </div>
                   </div>
 
-                  {/* Shared Courses */}
-                  {classmate.shared_courses.length > 0 && (
+                  {/* Shared Classrooms */}
+                  {classmate.shared_classrooms && classmate.shared_classrooms.length > 0 && (
                     <div className="mt-4 pt-3 border-t border-border/50">
+                      <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                        <School className="w-3 h-3" />
+                        Aulas compartidas
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {classmate.shared_classrooms.map((classroom) => (
+                          <Badge
+                            key={classroom.id}
+                            variant="outline"
+                            className="text-xs bg-secondary/5 text-secondary border-secondary/20"
+                          >
+                            {classroom.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Shared Courses */}
+                  {classmate.shared_courses && classmate.shared_courses.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-border/50">
                       <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
                         <BookOpen className="w-3 h-3" />
                         Cursos en común ({classmate.shared_courses.length})

@@ -76,7 +76,7 @@ const Index = () => {
           .eq("student_id", profile!.id),
         supabase
           .from("course_enrollments")
-          .select("modulo_id")
+          .select("course_id")
           .eq("student_id", profile!.id),
         supabase
           .from("attendance")
@@ -84,7 +84,7 @@ const Index = () => {
           .eq("student_id", profile!.id),
       ]);
 
-      const courseIds = enrollments?.map((e) => e.modulo_id) || [];
+      const courseIds = enrollments?.map((e) => e.course_id) || [];
 
       // Calculate attendance rate
       let attendanceRate = 0;
@@ -105,13 +105,13 @@ const Index = () => {
             supabase
               .from("assignments")
               .select("id")
-              .in("modulo_id", courseIds)
+              .in("course_id", courseIds)
               .eq("is_published", true)
               .gt("due_date", new Date().toISOString()),
             supabase
               .from("exams")
               .select("*", { count: "exact", head: true })
-              .in("modulo_id", courseIds)
+              .in("course_id", courseIds)
               .eq("is_published", true)
               .gt("start_time", new Date().toISOString()),
           ]);

@@ -1,5 +1,5 @@
 // TODO: Este componente requiere que se creen las siguientes tablas en Supabase:
-// - attendance (con campos: id, student_id, modulo_id, date, status, notes)
+// - attendance (con campos: id, student_id, course_id, date, status, notes)
 
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';

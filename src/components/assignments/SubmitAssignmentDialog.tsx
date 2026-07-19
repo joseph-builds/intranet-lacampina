@@ -24,7 +24,7 @@ interface SubmitAssignmentDialogProps {
     description: string;
     due_date: string;
     max_score: number;
-    modulo_id: string;
+    course_id: string;
   };
   onSubmitSuccess: () => void;
 }
@@ -66,14 +66,14 @@ export const SubmitAssignmentDialog = ({
         const newFilePath = `assignment-submissions/${assignment.id}/${timestamp}.${fileExt}`;
 
         const { error: uploadError } = await supabase.storage
-          .from("course-files")
+          .from("student-submissions")
           .upload(newFilePath, selectedFile);
 
         if (uploadError) throw uploadError;
 
         const {
           data: { publicUrl },
-        } = supabase.storage.from("course-files").getPublicUrl(newFilePath);
+        } = supabase.storage.from("student-submissions").getPublicUrl(newFilePath);
 
         fileUrl = publicUrl;
         filePath = newFilePath;
@@ -88,13 +88,21 @@ export const SubmitAssignmentDialog = ({
         {
           body: {
             assignmentTitle: assignment.title,
-            courseId: assignment.modulo_id,
+            courseId: assignment.course_id,
             content: content.trim(),
             fileUrl,
             filePath,
             fileName,
             fileSize,
             mimeType,
+            // also provide the files array format for newer versions of the edge function
+            files: fileUrl ? [{
+              fileUrl,
+              filePath,
+              fileName,
+              fileSize,
+              mimeType,
+            }] : [],
           },
         },
       );

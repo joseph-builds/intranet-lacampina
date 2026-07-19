@@ -51,10 +51,10 @@ export function RecentActivity() {
       // Get enrolled courses
       const { data: enrollments } = await supabase
         .from("course_enrollments")
-        .select("modulo_id, modulos!inner(course_id, courses(name))")
+        .select("course_id, modulos!inner(course_id, courses(name))")
         .eq("student_id", profile!.id);
 
-      const courseIds = enrollments?.map((e) => e.modulo_id) || [];
+      const courseIds = enrollments?.map((e) => e.course_id) || [];
 
       if (courseIds.length === 0) {
         setActivities([]);
@@ -113,7 +113,7 @@ export function RecentActivity() {
           )
         `,
         )
-        .in("modulo_id", courseIds)
+        .in("course_id", courseIds)
         .eq("is_published", true)
         .gt("due_date", new Date().toISOString())
         .order("due_date", { ascending: true })
@@ -161,7 +161,7 @@ export function RecentActivity() {
           )
         `,
         )
-        .in("modulo_id", courseIds)
+        .in("course_id", courseIds)
         .eq("is_published", true)
         .gt("start_time", new Date().toISOString())
         .order("start_time", { ascending: true })

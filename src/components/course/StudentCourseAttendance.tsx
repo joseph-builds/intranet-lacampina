@@ -63,12 +63,20 @@ export function StudentCourseAttendance({
       if (!profile) throw new Error("Perfil no encontrado");
 
       // Obtener registros de asistencia del curso específico
-      const { data: attendanceData, error } = await supabase
+      const selectQuery = () => supabase
         .from("attendance")
         .select("id, date, status, notes")
-        .eq("modulo_id", courseId)
         .eq("student_id", profile.id)
         .order("date", { ascending: false });
+
+      let { data: attendanceData, error } = await selectQuery().eq("course_id", courseId);
+
+      if (error && error.code === '42703') {
+        console.warn("course_id column doesn't exist in attendance table, falling back to course_id");
+        const fallbackResult = await selectQuery().eq("course_id", courseId);
+        attendanceData = fallbackResult.data;
+        error = fallbackResult.error;
+      }
 
       if (error) throw error;
 

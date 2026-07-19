@@ -45,7 +45,7 @@ export function CourseAssignmentsReview({
       const { data: assignmentsData, error: assignmentsError } = await supabase
         .from("assignments")
         .select("id, title, description, due_date, max_score, created_at")
-        .eq("modulo_id", courseId)
+        .eq("course_id", courseId)
         .order("created_at", { ascending: false });
 
       if (assignmentsError) throw assignmentsError;

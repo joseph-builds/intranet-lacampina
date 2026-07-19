@@ -73,7 +73,7 @@ const ExamSubmissionsPage = () => {
       // Get exam info
       const { data: examData, error: examError } = await supabase
         .from("exams")
-        .select("title, max_score, modulo_id")
+        .select("title, max_score, course_id")
         .eq("id", examId)
         .single();
 
@@ -85,19 +85,19 @@ const ExamSubmissionsPage = () => {
       const { data: quizData, error: quizError } = await supabase
         .from("quizzes")
         .select("id")
-        .eq("modulo_id", examData.modulo_id)
+        .eq("course_id", examData.course_id)
         .eq("title", examData.title)
         .maybeSingle();
 
       if (quizError) throw quizError;
 
-      // Get all enrolled students
+      // Get all enrolled students (from both direct course_enrollments and student_sections)
       const { data: enrollments, error: enrollError } = await supabase
         .from("course_enrollments")
         .select(
           `
           student_id,
-          student:profiles!course_enrollments_student_id_fkey (
+          student:profiles!course_enrollments_student_id_fkey1 (
             id,
             first_name,
             last_name,
@@ -105,13 +105,45 @@ const ExamSubmissionsPage = () => {
           )
         `,
         )
-        .eq("modulo_id", courseId);
+        .eq("course_id", courseId);
 
       if (enrollError) throw enrollError;
 
-      const students = (enrollments || [])
+      let students = (enrollments || [])
         .map((e: any) => e.student)
         .filter(Boolean);
+
+      // Fetch from student_sections via section_courses
+      const { data: sectionCourses, error: scError } = await supabase
+        .from("section_courses")
+        .select("section_id, base_course:base_courses!inner(course_id)")
+        .eq("base_courses.course_id", courseId);
+
+      if (!scError && sectionCourses && sectionCourses.length > 0) {
+        const sectionIds = sectionCourses.map(sc => sc.section_id);
+        const { data: sectionStudentsData, error: ssError } = await supabase
+          .from("student_sections")
+          .select(`
+            student:profiles!student_sections_student_id_fkey(
+              id, first_name, last_name, email
+            )
+          `)
+          .in("section_id", sectionIds)
+          .eq("is_active", true);
+
+        if (!ssError && sectionStudentsData) {
+          const sectionStudents = sectionStudentsData
+            .map(ss => ss.student)
+            .filter((student) => {
+              if (!student) return false;
+              if (students.find(s => s.id === (student as any).id)) return false;
+              return true;
+            });
+          
+          students = [...students, ...sectionStudents];
+        }
+      }
+
       setEnrolledStudents(students);
 
       // Get submissions if quiz exists

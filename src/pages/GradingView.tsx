@@ -143,7 +143,7 @@ export default function GradingView() {
 
             <div className="flex-1 flex overflow-hidden">
                 {/* Panel Izquierdo: PDF */}
-                <div className="flex-1 relative border-r bg-gray-100">
+                <div className="flex-1 min-w-0 relative border-r bg-gray-100">
                     {pdfUrl ? (
                         <PdfAnnotator 
                             ref={annotatorRef}
@@ -161,7 +161,7 @@ export default function GradingView() {
                 </div>
 
                 {/* Panel Derecho: Notas */}
-                <div className="w-80 bg-white p-6 shadow-xl z-10 flex flex-col gap-6 overflow-y-auto">
+                <div className="w-80 shrink-0 bg-white p-6 shadow-xl z-10 flex flex-col gap-6 overflow-y-auto">
                     <div>
                         <h2 className="text-lg font-bold flex items-center gap-2 mb-4">
                             <span className="w-1 h-6 bg-blue-600 rounded-full block"></span>

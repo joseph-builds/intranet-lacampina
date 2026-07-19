@@ -40,7 +40,7 @@ interface ExamData {
   start_time: string;
   duration_minutes: number;
   max_score: number;
-  modulo_id: string;
+  course_id: string;
   quiz_id: string;
 }
 
@@ -111,7 +111,7 @@ const ExamTaking = () => {
       const { data: quizData, error: quizError } = await supabase
         .from("quizzes")
         .select("id")
-        .eq("modulo_id", examData.modulo_id)
+        .eq("course_id", examData.course_id)
         .eq("title", examData.title)
         .single();
 
@@ -119,15 +119,11 @@ const ExamTaking = () => {
 
       setExam({ ...examData, quiz_id: quizData.id });
 
-      // Check if student is enrolled
-      const { data: enrollment } = await supabase
-        .from("course_enrollments")
-        .select("id")
-        .eq("modulo_id", examData.modulo_id)
-        .eq("student_id", profile.id)
-        .single();
+      // Check if student is enrolled using the new RPC function
+      const { data: isEnrolled, error: rpcError } = await supabase
+        .rpc('is_student_of_course', { course_id: examData.course_id });
 
-      if (!enrollment) {
+      if (!isEnrolled) {
         toast.error("No estás inscrito en este curso");
         navigate("/exams");
         return;
@@ -216,15 +212,31 @@ const ExamTaking = () => {
         };
       });
 
-      // Convertir puntaje numérico a letra
-      const finalLetterGrade =
-        totalScore >= 18
-          ? "AD"
-          : totalScore >= 15
-            ? "A"
-            : totalScore >= 12
-              ? "B"
-              : "C";
+      // Calcular puntaje total posible
+      let totalPossiblePoints = 0;
+      questions.forEach((q) => {
+        totalPossiblePoints += q.points || 0;
+      });
+
+      // Convertir puntaje numérico a letra (Basado en porcentaje)
+      let finalLetterGrade = "C";
+      if (totalPossiblePoints > 0) {
+        const percentage = (totalScore / totalPossiblePoints) * 100;
+        if (percentage >= 90) finalLetterGrade = "AD"; // 90-100% (18-20)
+        else if (percentage >= 75) finalLetterGrade = "A"; // 75-89% (15-17)
+        else if (percentage >= 55) finalLetterGrade = "B"; // 55-74% (11-14)
+        else finalLetterGrade = "C"; // < 55% (0-10)
+      } else {
+        // Fallback al sistema estricto de 20 puntos si algo falla
+        finalLetterGrade =
+          totalScore >= 18
+            ? "AD"
+            : totalScore >= 15
+              ? "A"
+              : totalScore >= 12
+                ? "B"
+                : "C";
+      }
 
       // Submit to database
       const { error } = await supabase.from("quiz_submissions").insert({

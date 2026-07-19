@@ -188,10 +188,10 @@ export function ResourceForm({
 
       // Si es una tarea, crear el registro en la tabla assignments
       if (formData.resource_type === "assignment") {
-        // Obtener el modulo_id de la sección
+        // Obtener el course_id de la sección
         const { data: sectionData, error: sectionError } = await supabase
           .from("course_weekly_sections")
-          .select("modulo_id")
+          .select("course_id")
           .eq("id", sectionId)
           .single();
 
@@ -201,7 +201,7 @@ export function ResourceForm({
         const { data: assignmentData, error: assignmentError } = await supabase
           .from("assignments")
           .insert({
-            modulo_id: sectionData.modulo_id,
+            course_id: sectionData.course_id,
             title: formData.title.trim(),
             description: formData.description.trim() || null,
             due_date: deadlineISO,

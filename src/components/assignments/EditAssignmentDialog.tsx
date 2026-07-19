@@ -77,7 +77,7 @@ export function EditAssignmentDialog({
   const [resourceId, setResourceId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
-    modulo_id: "",
+    course_id: "",
     title: "",
     description: "",
     due_date: null as Date | null,
@@ -117,7 +117,7 @@ export function EditAssignmentDialog({
 
       if (assignment) {
         setFormData({
-          modulo_id: assignment.modulo_id,
+          course_id: assignment.course_id,
           title: assignment.title,
           description: assignment.description || "",
           due_date: new Date(assignment.due_date),
@@ -251,7 +251,7 @@ export function EditAssignmentDialog({
       const { error: assignmentError } = await supabase
         .from("assignments")
         .update({
-          modulo_id: formData.modulo_id,
+          course_id: formData.course_id,
           title: formData.title.trim(),
           description: formData.description.trim() || null,
           due_date: formData.due_date.toISOString(),
@@ -285,7 +285,7 @@ export function EditAssignmentDialog({
         const { data: sections } = await supabase
           .from("course_weekly_sections")
           .select("id")
-          .eq("modulo_id", formData.modulo_id)
+          .eq("course_id", formData.course_id)
           .order("week_number", { ascending: false })
           .limit(1);
 
@@ -350,11 +350,11 @@ export function EditAssignmentDialog({
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="modulo_id">Curso</Label>
+              <Label htmlFor="course_id">Curso</Label>
               <Select
-                value={formData.modulo_id}
+                value={formData.course_id}
                 onValueChange={(value) =>
-                  setFormData((prev) => ({ ...prev, modulo_id: value }))
+                  setFormData((prev) => ({ ...prev, course_id: value }))
                 }
               >
                 <SelectTrigger>

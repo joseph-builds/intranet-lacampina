@@ -11,7 +11,8 @@ import {
   Megaphone, // Cambiamos MessageSquare por Megaphone para "Anuncios"
   Library,
   Brain,
-  HelpCircle
+  HelpCircle,
+  Eye
 } from 'lucide-react';
 
 // 1. ROLES LIMPIOS: Solo los 4 que realmente vas a usar en tu sistema
@@ -59,12 +60,20 @@ export const navigationItems: NavItem[] = [
     roles: ['tutor']
   },
   
-  // Aulas Virtuales (El de prueba de tu compañero)
+  // Dashboard Directivo
+  {
+    title: 'Supervisión Docente',
+    url: '/directivo-dashboard',
+    icon: Eye,
+    roles: ['directivo', 'admin'] as any
+  },
+  
+  // Aulas Virtuales (Profesores)
   {
     title: 'Aulas Virtuales',
-    url: '/virtual-classrooms',
+    url: '/teacher/classrooms',
     icon: School,
-    roles: ['admin', 'teacher', 'student']
+    roles: ['teacher']
   },
   
   // Cursos, Tareas, Exámenes y Biblioteca

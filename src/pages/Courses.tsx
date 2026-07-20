@@ -6,7 +6,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { BookOpen, Users, Clock, Plus, ArrowRight, GraduationCap, Calendar, Trash2 } from 'lucide-react';
+import { BookOpen, Users, Clock, Plus, ArrowRight, GraduationCap, Calendar, Trash2, School } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -50,6 +50,7 @@ const Courses = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [courses, setCourses] = useState<Course[]>([]);
+  const [studentSection, setStudentSection] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [courseToDelete, setCourseToDelete] = useState<string | null>(null);
 
@@ -96,6 +97,8 @@ const Courses = () => {
           .select(`
             created_at,
             section:sections!inner (
+              id, name, room_number,
+              grade:academic_grades(name, level:academic_levels(name)),
               section_courses (
                 base:base_courses (
                   course:courses (
@@ -114,7 +117,8 @@ const Courses = () => {
           .eq('student_id', profile.id)
           .eq('is_active', true);
           
-        if (!sError && sectionData) {
+        if (!sError && sectionData && sectionData.length > 0) {
+          setStudentSection(sectionData[0].section);
           sectionData.forEach(ss => {
             const scs = (ss.section as any)?.section_courses || [];
             scs.forEach((sc: any) => {
@@ -296,18 +300,29 @@ const Courses = () => {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-foreground">Mis Cursos</h1>
-          {profile?.role === 'teacher' && (
-          <Button 
-            className="bg-gradient-primary shadow-glow"
-            onClick={() => navigate('/admin/courses')}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Crear Curso
-          </Button>
-        )}
-      </div>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <h1 className="text-3xl font-bold text-foreground">Mis Cursos</h1>
+            {profile?.role === 'teacher' && (
+            <Button 
+              className="bg-gradient-primary shadow-glow"
+              onClick={() => navigate('/admin/courses')}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Crear Curso
+            </Button>
+            )}
+          </div>
+          {profile?.role === 'student' && studentSection && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground bg-slate-100 w-fit px-3 py-1.5 rounded-full border">
+              <School className="w-4 h-4 text-primary" />
+              <span>
+                Aula asignada: <strong className="text-foreground">{studentSection.grade?.name} "{studentSection.name}"</strong> 
+                <span className="opacity-60 ml-1">({studentSection.grade?.level?.name})</span>
+              </span>
+            </div>
+          )}
+        </div>
 
       {courses.length === 0 ? (
         <Card className="bg-gradient-card shadow-card border-0">

@@ -27,9 +27,8 @@ import ParentStudentDetail from "./pages/ParentStudentDetail";
 import ParentNotifications from "./pages/ParentNotifications";
 import ParentProfile from "./pages/ParentProfile";
 import ParentDocuments from "./pages/ParentDocuments";
-import VirtualClassrooms from "./pages/VirtualClassrooms";
-import VirtualClassroomDetail from "./pages/VirtualClassroomDetail";
-import VirtualClassroomCourses from "./pages/VirtualClassroomCourses";
+import TeacherClassrooms from "./pages/teacher/TeacherClassrooms";
+import TeacherClassroomDetail from "./pages/teacher/TeacherClassroomDetail";
 import TutorDashboard from "./pages/TutorDashboard";
 import DirectivoDashboard from "./pages/DirectivoDashboard";
 import Calendar from "./pages/Calendar";
@@ -140,19 +139,14 @@ const App = () => (
                 <Profile />
               </ProtectedRoute>
             } />
-            <Route path="/virtual-classrooms" element={
+            <Route path="/teacher/classrooms" element={
               <ProtectedRoute>
-                <VirtualClassrooms />
+                <TeacherClassrooms />
               </ProtectedRoute>
             } />
-            <Route path="/virtual-classrooms/:id" element={
+            <Route path="/teacher/classrooms/:id" element={
               <ProtectedRoute>
-                <VirtualClassroomDetail />
-              </ProtectedRoute>
-            } />
-            <Route path="/virtual-classrooms/:id/courses" element={
-              <ProtectedRoute>
-                <VirtualClassroomCourses />
+                <TeacherClassroomDetail />
               </ProtectedRoute>
             } />
             <Route path="/calendar" element={

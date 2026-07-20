@@ -82,7 +82,7 @@ export function AcademicCalendar() {
       // 2. Fetch course events (Sin espacios en el alias)
       const { data: courseData, error: courseError } = await supabase
         .from("course_events")
-        .select("*,courses:courses_old(name,code)")
+        .select("*,courses:courses(name,code)")
         .eq("is_published", true)
         .order("start_date", { ascending: true });
       if (courseError) throw courseError;
@@ -90,7 +90,7 @@ export function AcademicCalendar() {
       // 3. Fetch assignments (Sin espacios en el alias)
       let assignmentsQuery = supabase
         .from("assignments")
-        .select("id,title,description,due_date,course_id,courses:courses_old(name,code)")
+        .select("id,title,description,due_date,course_id,courses:courses(name,code)")
         .not("due_date", "is", null)
         .order("due_date", { ascending: true });
 

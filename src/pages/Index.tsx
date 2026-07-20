@@ -5,6 +5,7 @@ import { StatsCard } from "@/components/dashboard/StatsCard";
 import { QuickActions } from "@/components/dashboard/QuickActions";
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
 import { StudentCourses } from "@/components/dashboard/StudentCourses";
+import { TeacherCourses } from "@/components/dashboard/TeacherCourses";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Notifications } from "@/components/Notifications";
 import { AcademicCalendar } from "@/components/calendar/AcademicCalendar";
@@ -64,40 +65,133 @@ const Index = () => {
     try {
       setLoadingStats(true);
 
-      // Execute all queries in parallel for better performance
-      const [
-        { count: coursesCount },
-        { data: enrollments },
-        { data: attendance },
-      ] = await Promise.all([
-        supabase
-          .from("course_enrollments")
-          .select("*", { count: "exact", head: true })
-          .eq("student_id", profile!.id),
-        supabase
-          .from("course_enrollments")
-          .select("course_id")
-          .eq("student_id", profile!.id),
-        supabase
-          .from("attendance")
-          .select("status")
-          .eq("student_id", profile!.id),
-      ]);
-
-      const courseIds = enrollments?.map((e) => e.course_id) || [];
-
-      // Calculate attendance rate
+      let coursesCount = 0;
+      let courseIds: string[] = [];
       let attendanceRate = 0;
-      if (attendance && attendance.length > 0) {
-        const presentCount = attendance.filter(
-          (a) => a.status === "present" || a.status === "late",
-        ).length;
-        attendanceRate = Math.round((presentCount / attendance.length) * 100);
-      }
-
-      // Only fetch assignments and exams if student has courses
       let pendingAssignments = 0;
       let upcomingExams = 0;
+
+      if (profile?.role === 'student') {
+        // 1. Direct enrollments
+        const { data: direct } = await supabase
+          .from('course_enrollments')
+          .select(`course:courses (id, is_active)`)
+          .eq('student_id', profile!.id)
+          .eq('course.is_active', true);
+
+        // 2. Section enrollments
+        const { data: sectionData } = await supabase
+          .from('student_sections')
+          .select(`
+            section:sections!inner (
+              section_courses (
+                base:base_courses (
+                  course:courses (id, is_active)
+                )
+              )
+            )
+          `)
+          .eq('student_id', profile!.id)
+          .eq('is_active', true);
+
+        const { data: attendance } = await supabase
+          .from("attendance")
+          .select("status")
+          .eq("student_id", profile!.id);
+
+        let allStudentCourseIds = new Set<string>();
+
+        // Add direct courses
+        direct?.forEach(e => {
+          let items = Array.isArray((e as any).course) ? (e as any).course : [(e as any).course];
+          items.forEach((c: any) => {
+            if (c && c.is_active !== false) allStudentCourseIds.add(c.id);
+          });
+        });
+
+        // Add section courses
+        sectionData?.forEach(ss => {
+          const scs = (ss.section as any)?.section_courses || [];
+          scs.forEach((sc: any) => {
+            let items = Array.isArray(sc.base?.course) ? sc.base.course : [sc.base?.course];
+            items.forEach((c: any) => {
+              if (c && c.is_active !== false) allStudentCourseIds.add(c.id);
+            });
+          });
+        });
+
+        courseIds = Array.from(allStudentCourseIds);
+        coursesCount = courseIds.length;
+
+        if (attendance && attendance.length > 0) {
+          const presentCount = attendance.filter(
+            (a) => a.status === "present" || a.status === "late",
+          ).length;
+          attendanceRate = Math.round((presentCount / attendance.length) * 100);
+        }
+      } else if (profile?.role === 'teacher') {
+        let allTeacherCourseIds = new Set<string>();
+
+        // 1. Primary courses
+        const { data: primaryCourses } = await supabase
+          .from('courses')
+          .select(`
+            *,
+            teacher:profiles!courses_teacher_principal_id_fkey (id),
+            classroom:virtual_classrooms!courses_classroom_id_fkey (id)
+          `)
+          .eq('teacher_principal_id', profile!.id)
+          .eq('is_active', true);
+
+        // 2. Additional course_teachers
+        const { data: additional } = await supabase
+          .from('course_teachers')
+          .select(`
+            course:courses (
+              *,
+              teacher:profiles!courses_teacher_principal_id_fkey (id),
+              classroom:virtual_classrooms!courses_classroom_id_fkey (id)
+            )
+          `)
+          .eq('teacher_id', profile!.id)
+          .eq('course.is_active', true);
+
+        // 3. Section courses
+        const { data: sectionCourses } = await supabase
+          .from('section_courses')
+          .select(`
+            base:base_courses (
+              course:courses (
+                *,
+                teacher:profiles!courses_teacher_principal_id_fkey (id),
+                classroom:virtual_classrooms!courses_classroom_id_fkey (id)
+              )
+            )
+          `)
+          .eq('teacher_id', profile!.id);
+          
+        const all = [
+          ...(primaryCourses || []),
+          ...(additional?.map(a => (a as any).course).filter(Boolean) || []),
+          ...(sectionCourses?.map(sc => (sc.base as any)?.course).filter(Boolean) || [])
+        ];
+
+        let flatCourses: any[] = [];
+        all.forEach(item => {
+          if (Array.isArray(item)) flatCourses.push(...item);
+          else flatCourses.push(item);
+        });
+
+        flatCourses.forEach(course => {
+          if (course && course.is_active !== false) {
+            allTeacherCourseIds.add(course.id);
+          }
+        });
+        
+        courseIds = Array.from(allTeacherCourseIds);
+        coursesCount = courseIds.length;
+        attendanceRate = 100; // Placeholder for teacher
+      }
 
       if (courseIds.length > 0) {
         const [{ data: assignments }, { count: examsCount }] =
@@ -243,21 +337,24 @@ const Index = () => {
             description="Próximos a rendir"
             color="secondary"
           />
-          <StatsCard
-            title="Asistencia"
-            value={loadingStats ? "..." : `${stats.attendanceRate}%`}
-            icon={GraduationCap}
-            description="Tasa de asistencia"
-            color="primary"
-          />
+          {profile?.role === "student" && (
+            <StatsCard
+              title="Asistencia"
+              value={loadingStats ? "..." : `${stats.attendanceRate}%`}
+              icon={GraduationCap}
+              description="Tasa de asistencia"
+              color="primary"
+            />
+          )}
         </div>
 
         {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column */}
           <div className="lg:col-span-2 space-y-6">
-            <StudentCourses />
-            <RecentActivity />
+            {profile?.role === 'student' && <StudentCourses />}
+            {profile?.role === 'teacher' && <TeacherCourses />}
+            {profile?.role === 'student' && <RecentActivity />}
           </div>
 
           {/* Right Column */}

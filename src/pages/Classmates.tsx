@@ -76,7 +76,7 @@ const Classmates = () => {
                 avatar_url,
                 student_code
               ),
-              course:modulos!course_enrollments_course_id_fkey (
+              course:courses (
                 id,
                 name,
                 code
@@ -277,7 +277,7 @@ const Classmates = () => {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Card className="bg-gradient-card shadow-card border-0">
             <CardContent className="p-4 flex items-center gap-3">
               <div className="p-2 rounded-lg bg-primary/10">
@@ -289,19 +289,7 @@ const Classmates = () => {
               </div>
             </CardContent>
           </Card>
-          <Card className="bg-gradient-card shadow-card border-0">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-secondary/10">
-                <BookOpen className="w-5 h-5 text-secondary" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-foreground">
-                  {new Set(classmates.flatMap((cm) => cm.shared_courses.map((c) => c.id))).size}
-                </p>
-                <p className="text-xs text-muted-foreground">Cursos en común</p>
-              </div>
-            </CardContent>
-          </Card>
+
           <Card className="bg-gradient-card shadow-card border-0">
             <CardContent className="p-4 flex items-center gap-3">
               <div className="p-2 rounded-lg bg-accent/10">

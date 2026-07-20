@@ -57,78 +57,98 @@ export function StudentCourses() {
 
       console.log("Fetching courses for student:", profile!.id);
 
-      // Get total count first
-      const { count: totalCount, error: countError } = await supabase
-        .from("course_enrollments")
-        .select("*", { count: "exact", head: true })
-        .eq("student_id", profile!.id);
-
-      console.log("Total enrollments count:", totalCount);
-      if (countError) {
-        console.error("Count error:", countError);
-      }
-
-      setTotalCourses(totalCount || 0);
-
-      if (!totalCount || totalCount === 0) {
-        console.log("No enrollments found for this student");
-        setCourses([]);
-        setLoading(false);
-        return;
-      }
-
-      // Get paginated enrolled courses - updated to fetch course details via modulos
-      const { data: enrollments, error: enrollError } = await supabase
-        .from("course_enrollments")
+      // 1. Direct enrollments
+      const { data: direct, error: dError } = await supabase
+        .from('course_enrollments')
         .select(`
-          course_id,
-          modulos!inner(
-            course_id,
-            courses(
-              id,
-              name,
-              code,
-              schedule,
-              teacher_principal_id
+          enrolled_at,
+          course:courses (
+            *,
+            teacher:profiles!courses_teacher_principal_id_fkey (
+              id, first_name, last_name, email
+            ),
+            classroom:virtual_classrooms!courses_classroom_id_fkey (
+              id, name, grade, education_level
             )
           )
         `)
-        .eq("student_id", profile!.id)
-        .range(
-          (currentPage - 1) * ITEMS_PER_PAGE,
-          currentPage * ITEMS_PER_PAGE - 1,
-        )
-        .order("enrolled_at", { ascending: false });
+        .eq('student_id', profile!.id)
+        .eq('course.is_active', true);
 
-      console.log("Enrollments data:", enrollments);
-      console.log("Enrollments error:", enrollError);
+      if (dError) throw dError;
 
-      if (enrollError) throw enrollError;
+      // 2. Section enrollments
+      const { data: sectionData, error: sError } = await supabase
+        .from('student_sections')
+        .select(`
+          created_at,
+          section:sections!inner (
+            id, name, room_number,
+            grade:academic_grades(name, level:academic_levels(name)),
+            section_courses (
+              base:base_courses (
+                course:courses (
+                  *,
+                  teacher:profiles!courses_teacher_principal_id_fkey (
+                    id, first_name, last_name, email
+                  ),
+                  classroom:virtual_classrooms!courses_classroom_id_fkey (
+                    id, name, grade, education_level
+                  )
+                )
+              )
+            )
+          )
+        `)
+        .eq('student_id', profile!.id)
+        .eq('is_active', true);
 
-      if (!enrollments || enrollments.length === 0) {
-        console.log("No enrollments in this page");
+      if (sError) throw sError;
+
+      let allCourses: any[] = [];
+      
+      // Add direct courses
+      direct?.forEach(e => {
+        let items = Array.isArray(e.course) ? e.course : [e.course];
+        items.forEach((c: any) => {
+          if (c) allCourses.push({ ...c, enrolled_at: e.enrolled_at });
+        });
+      });
+
+      // Add section courses
+      sectionData?.forEach(ss => {
+        const scs = (ss.section as any)?.section_courses || [];
+        scs.forEach((sc: any) => {
+          let items = Array.isArray(sc.base?.course) ? sc.base.course : [sc.base?.course];
+          items.forEach((c: any) => {
+            if (c) allCourses.push({ ...c, enrolled_at: ss.created_at });
+          });
+        });
+      });
+
+      // Unique and active only
+      let uniqueCourses = allCourses.reduce((acc, current) => {
+        if (current && current.is_active !== false && !acc.find((item: any) => item.id === current.id)) {
+          acc.push(current);
+        }
+        return acc;
+      }, []);
+
+      // Sort by enrolled_at descending
+      uniqueCourses.sort((a: any, b: any) => new Date(b.enrolled_at || 0).getTime() - new Date(a.enrolled_at || 0).getTime());
+
+      setTotalCourses(uniqueCourses.length);
+
+      if (uniqueCourses.length === 0) {
         setCourses([]);
         setLoading(false);
         return;
       }
 
-      // Get course IDs (course_ids)
-      const courseIds = enrollments.map((e) => e.course_id);
-      console.log("Course IDs:", courseIds);
+      // Paginate
+      const paginatedCourses = uniqueCourses.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
-      const coursesData = enrollments.map((e: any) => e.modulos?.courses).filter(Boolean);
-
-      // Fetch teachers separately
-      const teacherIds =
-        coursesData.map((c: any) => c.teacher_principal_id).filter(Boolean) || [];
-      const { data: teachers } = await supabase
-        .from("profiles")
-        .select("id, first_name, last_name")
-        .in("id", teacherIds);
-
-      console.log("Teachers data:", teachers);
-
-      const teachersMap = new Map(teachers?.map((t) => [t.id, t]) || []);
+      const courseIds = paginatedCourses.map((c: any) => c.id);
 
       // Single query for submitted assignments
       const { data: submissions } = await supabase
@@ -173,22 +193,24 @@ export function StudentCourses() {
       });
 
       // Map to courses
-      const coursesWithData =
-        enrollments.map((enrollment: any) => {
-          const course = enrollment.modulos?.courses;
-          return {
-            id: enrollment.course_id,
-            name: course?.name || "Curso sin nombre",
-            code: course?.code || "",
-            schedule: course?.schedule,
-            teacher: teachersMap.get(course?.teacher_principal_id),
-            pending_assignments: assignmentsByCourse.get(enrollment.course_id) || 0,
-            upcoming_exams: examsByCourse.get(enrollment.course_id) || 0,
-          };
-        });
+      const enrichedCourses = paginatedCourses.map((course: any) => {
+        const teacher = course.teacher;
+        return {
+          id: course.id,
+          name: course.name,
+          code: course.code,
+          schedule: course.schedule,
+          teacher: teacher ? {
+            first_name: teacher.first_name,
+            last_name: teacher.last_name,
+          } : undefined,
+          pending_assignments: assignmentsByCourse.get(course.id) || 0,
+          upcoming_exams: examsByCourse.get(course.id) || 0,
+        };
+      });
 
-      console.log("Final courses with data:", coursesWithData);
-      setCourses(coursesWithData as Course[]);
+      console.log("Final courses with data:", enrichedCourses);
+      setCourses(enrichedCourses as Course[]);
     } catch (error) {
       console.error("Error fetching courses:", error);
     } finally {

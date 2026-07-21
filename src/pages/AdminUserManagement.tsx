@@ -3,7 +3,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
-import { Search, UserCog, Pencil, Trash2, ShieldAlert, Plus, User, CheckSquare, Edit, IdCard, Calendar, BookOpen, School, Info, ArrowUpDown, RefreshCw } from 'lucide-react';
+import { Search, UserCog, Pencil, Trash2, ShieldAlert, Plus, User, CheckSquare, Edit, IdCard, Calendar, BookOpen, School, Info, ArrowUpDown, RefreshCw, AlertTriangle, Loader2, UserMinus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription, DialogTrigger, DialogClose } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox'; 
 import { useAuth } from '@/hooks/useAuth';
@@ -72,9 +72,14 @@ const AdminUserManagement: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkRole, setBulkRole] = useState<string>("");
   const [bulkLoading, setBulkLoading] = useState(false);
+  
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  
+  const [deletingUsers, setDeletingUsers] = useState<Profile[]>([]);
+  const [confirmDeleteText, setConfirmDeleteText] = useState('');
 
   const [levels, setLevels] = useState<any[]>([]);
   const [grades, setGrades] = useState<any[]>([]);
@@ -88,7 +93,8 @@ const AdminUserManagement: React.FC = () => {
   });
   
   const [editUser, setEditUser] = useState<any>({ 
-    id: '', dni: '', first_name: '', last_name: '', email: '', phone: '', birth_date: '', role: 'student', newPassword: '' 
+    id: '', dni: '', first_name: '', last_name: '', email: '', phone: '', birth_date: '', role: 'student', newPassword: '',
+    current_grade_id: '', current_section_id: ''
   });
 
   useEffect(() => { fetchAllData(); }, []);
@@ -127,13 +133,10 @@ const AdminUserManagement: React.FC = () => {
     setLoading(false);
   };
 
-  // --- GENERADOR DE CONTRASEÑA ---
   const generateRandomPassword = () => {
     const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%*";
     let pass = "";
-    for (let i = 0; i < 10; i++) {
-      pass += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
+    for (let i = 0; i < 10; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
     return pass;
   };
 
@@ -163,7 +166,7 @@ const AdminUserManagement: React.FC = () => {
       if (error) throw error;
 
       const { data: newCreatedUser } = await supabase.from('profiles').select('id').eq('email', newUser.email.trim()).single();
-    
+      
       if (newCreatedUser) {
         await supabase.from('profiles').update({ dni: newUser.dni.trim(), birth_date: newUser.birth_date || null }).eq('id', newCreatedUser.id);
         if (newUser.role === 'student' && newUser.current_section_id) {
@@ -180,9 +183,13 @@ const AdminUserManagement: React.FC = () => {
   };
 
   const openEditModal = (profile: Profile) => {
+    const myEnrollment = studentEnrollments.find(e => e.student_id === profile.id);
+    const mySection = sections.find(s => s.id === myEnrollment?.section_id);
+
     setEditUser({ 
       id: profile.id, dni: profile.dni || '', first_name: profile.first_name, last_name: profile.last_name, 
-      email: profile.email, phone: profile.phone || '', birth_date: profile.birth_date || '', role: profile.role, newPassword: '' 
+      email: profile.email, phone: profile.phone || '', birth_date: profile.birth_date || '', role: profile.role, newPassword: '',
+      current_grade_id: profile.current_grade_id || '', current_section_id: mySection?.id || ''
     });
     setEditModalOpen(true);
   };
@@ -190,14 +197,21 @@ const AdminUserManagement: React.FC = () => {
   const handleUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreating(true);
-
     try {
       const { error: profileError } = await supabase.from('profiles').update({
         dni: editUser.dni.trim(), first_name: editUser.first_name.trim(), last_name: editUser.last_name.trim(),
-        phone: editUser.phone.trim() || null, birth_date: editUser.birth_date || null, role: editUser.role
+        phone: editUser.phone.trim() || null, birth_date: editUser.birth_date || null, role: editUser.role,
+        current_grade_id: editUser.role === 'student' ? (editUser.current_grade_id || null) : null
       }).eq('id', editUser.id);
     
       if (profileError) throw profileError;
+
+      if (editUser.role === 'student') {
+        await supabase.from('student_sections').delete().eq('student_id', editUser.id).eq('academic_year', CURRENT_YEAR);
+        if (editUser.current_section_id) {
+          await supabase.from('student_sections').insert({ student_id: editUser.id, section_id: editUser.current_section_id, academic_year: CURRENT_YEAR });
+        }
+      }
 
       if (editUser.newPassword && editUser.newPassword.trim() !== '') {
         if (editUser.newPassword.length < 6) throw new Error("La nueva contraseña debe tener al menos 6 caracteres.");
@@ -213,6 +227,24 @@ const AdminUserManagement: React.FC = () => {
     } finally { setCreating(false); }
   };
 
+  const handleDesvincular = async (role: string, userId: string) => {
+    if (!confirm('¿Estás seguro de quitar toda la carga académica de este usuario para el año actual?')) return;
+    setCreating(true);
+    try {
+      if (role === 'teacher') await supabase.from('section_courses').update({ teacher_id: null }).eq('teacher_id', userId);
+      if (role === 'tutor') await supabase.from('sections').update({ tutor_id: null }).eq('tutor_id', userId);
+      if (role === 'student') {
+        await supabase.from('profiles').update({ current_grade_id: null }).eq('id', userId);
+        await supabase.from('student_sections').delete().eq('student_id', userId).eq('academic_year', CURRENT_YEAR);
+        setEditUser((prev: any) => ({ ...prev, current_grade_id: '', current_section_id: '' }));
+      }
+      toast({ title: "Desvinculación exitosa", description: "Se ha retirado la carga académica." });
+      fetchAllData();
+    } catch (e) {
+      toast({ title: "Error", variant: "destructive" });
+    } finally { setCreating(false); }
+  };
+
   const handleToggleStatus = async (id: string, currentStatus: boolean) => {
     setSaving(id);
     try {
@@ -223,44 +255,31 @@ const AdminUserManagement: React.FC = () => {
     setSaving(null);
   };
 
-  const validateStudentDeletion = (user: Profile) => {
-    if (user.role === 'student' && user.current_grade_id) return false;
-    return true;
+  // --- LÓGICA DE SEGURIDAD PARA ELIMINACIÓN ---
+  const getBlockingReason = (p: Profile) => {
+    if (p.role === 'student' && studentEnrollments.some(e => e.student_id === p.id)) return "Matrícula activa en aula";
+    if (p.role === 'tutor' && sections.some(s => s.tutor_id === p.id)) return "Es tutor de un aula activa";
+    if (p.role === 'teacher' && sectionCourses.some(c => c.teacher_id === p.id)) return "Tiene cursos asignados";
+    return null;
   };
 
-  const handleDeleteSingle = async (id: string) => {
-    if (!confirm('¿Seguro que deseas eliminar definitivamente este usuario?')) return;
-    try {
-      const { error } = await supabase.from('profiles').delete().eq('id', id);
-      if (error) throw error;
-      toast({ title: "Usuario eliminado" });
-      setProfiles(prev => prev.filter(a => a.id !== id));
-      setSelectedIds(prev => prev.filter(selectedId => selectedId !== id)); 
-    } catch (error) {
-      toast({ title: "Error al eliminar", variant: "destructive" });
-    }
-  };
+  const blockedUsers = useMemo(() => deletingUsers.map(p => ({ user: p, reason: getBlockingReason(p) })).filter(item => item.reason !== null), [deletingUsers, studentEnrollments, sections, sectionCourses]);
+  const safeToDelete = useMemo(() => deletingUsers.filter(p => getBlockingReason(p) === null), [deletingUsers, studentEnrollments, sections, sectionCourses]);
 
-  const handleBulkDelete = async () => {
-    const usersToDelete = profiles.filter(p => selectedIds.includes(p.id));
-    const blockedUsers = usersToDelete.filter(p => !validateStudentDeletion(p));
-    
-    if (blockedUsers.length > 0) {
-      toast({ title: "Acción Interrumpida", description: `Seleccionaste ${blockedUsers.length} estudiante(s) con matrícula activa. Desvincúlalos primero.`, variant: "destructive" });
-      return;
-    }
-
-    if (!confirm(`¿Eliminar definitivamente a los ${selectedIds.length} usuarios seleccionados?`)) return;
-    
+  const confirmBulkDelete = async () => {
+    if (safeToDelete.length === 0 || confirmDeleteText !== 'ELIMINAR') return;
     setBulkLoading(true);
     try {
-      for (const user of usersToDelete) {
+      for (const user of safeToDelete) {
         await supabase.rpc('delete_user_admin_v2', { target_user_id: user.id, target_email: user.email });
       }
       setSelectedIds([]);
       fetchAllData();
-      toast({ title: "Usuarios eliminados" });
-    } catch (error) { toast({ title: "Error masivo", variant: "destructive" }); }
+      setIsDeleteModalOpen(false);
+      toast({ title: "Usuarios eliminados", description: `Se eliminaron ${safeToDelete.length} usuario(s) correctamente.` });
+    } catch (error) { 
+      toast({ title: "Error masivo", variant: "destructive" }); 
+    }
     setBulkLoading(false);
   };
 
@@ -298,10 +317,7 @@ const AdminUserManagement: React.FC = () => {
         isAssigned = sections.some(s => s.tutor_id === p.id);
       } else if (p.role === 'teacher') {
         isAssigned = sectionCourses.some(c => c.teacher_id === p.id);
-      } else if (p.role === 'admin') {
-        isAssigned = true;
       }
-
       const matchesAssignment = assignmentFilter === "all" ? true : assignmentFilter === "assigned" ? isAssigned : !isAssigned;
 
       return matchesSearch && matchesRole && matchesStatus && matchesAssignment;
@@ -375,7 +391,6 @@ const AdminUserManagement: React.FC = () => {
   return (
     <DashboardLayout>
       <div className="container mx-auto px-4 py-8">
-        
         <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold mb-2 flex items-center gap-3 text-gray-900"><UserCog className="h-8 w-8 text-blue-600" /> Directorio de Usuarios</h1>
@@ -386,7 +401,6 @@ const AdminUserManagement: React.FC = () => {
 
         <Card className="border-0 shadow-lg bg-white">
           <CardContent className="p-6">
-            
             {selectedIds.length > 0 && (
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg animate-in fade-in shadow-sm">
                 <div className="flex items-center gap-3">
@@ -402,7 +416,7 @@ const AdminUserManagement: React.FC = () => {
                     <Button className="bg-blue-600 h-9" size="sm" onClick={handleBulkRoleChange} disabled={!bulkRole || bulkLoading}>Aplicar Rol</Button>
                   </div>
                 </div>
-                <Button variant="destructive" size="sm" className="h-9" onClick={handleBulkDelete} disabled={bulkLoading}><Trash2 className="w-4 h-4 mr-2"/> Eliminar Registros</Button>
+                <Button variant="destructive" size="sm" className="h-9" onClick={() => { setDeletingUsers(profiles.filter(p => selectedIds.includes(p.id))); setConfirmDeleteText(''); setIsDeleteModalOpen(true); }} disabled={bulkLoading}><Trash2 className="w-4 h-4 mr-2"/> Eliminar Registros</Button>
               </div>
             )}
 
@@ -412,7 +426,6 @@ const AdminUserManagement: React.FC = () => {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <Input placeholder="Buscar por DNI, nombre o correo..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10" />
                 </div>
-                
                 <Select value={roleFilter} onValueChange={val => setRoleFilter(val)}>
                   <SelectTrigger className="w-[160px]"><SelectValue placeholder="Filtrar por rol" /></SelectTrigger>
                   <SelectContent>
@@ -420,7 +433,6 @@ const AdminUserManagement: React.FC = () => {
                     {ROLES.map((role) => <SelectItem key={role.value} value={role.value}>{role.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
-
                 <Select value={statusFilter} onValueChange={val => setStatusFilter(val)}>
                   <SelectTrigger className="w-[160px]"><SelectValue placeholder="Estado Acceso" /></SelectTrigger>
                   <SelectContent>
@@ -429,7 +441,6 @@ const AdminUserManagement: React.FC = () => {
                     <SelectItem value="inactive">Inactivos</SelectItem>
                   </SelectContent>
                 </Select>
-
                 <Select value={assignmentFilter} onValueChange={val => setAssignmentFilter(val)}>
                   <SelectTrigger className="w-[160px] border-amber-300 bg-amber-50/50"><SelectValue placeholder="Carga Académica" /></SelectTrigger>
                   <SelectContent>
@@ -439,7 +450,6 @@ const AdminUserManagement: React.FC = () => {
                   </SelectContent>
                 </Select>
               </div>
-
               <div className="flex items-center gap-2 shrink-0">
                 <span className="text-sm text-gray-600">Mostrar</span>
                 <Select value={itemsPerPage.toString()} onValueChange={val => setItemsPerPage(val === 'all' ? 'all' : Number(val))}>
@@ -482,7 +492,7 @@ const AdminUserManagement: React.FC = () => {
                           <TableCell className="text-center"><Switch checked={profile.is_active} disabled={saving === profile.id} onCheckedChange={() => handleToggleStatus(profile.id, profile.is_active)} /></TableCell>
                           <TableCell className="text-right pr-4">
                             <Button size="sm" variant="ghost" onClick={() => openEditModal(profile)} className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50"><Edit className="h-4 w-4" /></Button>
-                            <Button size="sm" variant="ghost" onClick={() => handleDeleteSingle(profile.id)} disabled={saving === profile.id} className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 ml-1"><Trash2 className="h-4 w-4" /></Button>
+                            <Button size="sm" variant="ghost" onClick={() => { setDeletingUsers([profile]); setConfirmDeleteText(''); setIsDeleteModalOpen(true); }} disabled={saving === profile.id} className="h-8 w-8 p-0 text-red-500 hover:bg-red-50 ml-1"><Trash2 className="h-4 w-4" /></Button>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -490,7 +500,6 @@ const AdminUserManagement: React.FC = () => {
                     </TableBody>
                   </Table>
                 </div>
-
                 {totalPages > 1 && (
                   <div className="flex flex-col sm:flex-row items-center justify-between mt-6 gap-4 border-t pt-4">
                     <span className="text-sm text-muted-foreground">Mostrando {itemsPerPage === 'all' ? 1 : (page - 1) * (itemsPerPage as number) + 1} - {itemsPerPage === 'all' ? sortedProfiles.length : Math.min(page * (itemsPerPage as number), sortedProfiles.length)} de {sortedProfiles.length} usuarios</span>
@@ -506,6 +515,7 @@ const AdminUserManagement: React.FC = () => {
           </CardContent>
         </Card>
 
+        {/* MODAL CREAR */}
         <Dialog open={createModalOpen} onOpenChange={(open) => { if (!open) setCreateModalOpen(false); }}>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader><DialogTitle className="text-xl flex items-center gap-2"><User className="h-5 w-5 text-blue-600" /> Registrar Nuevo Usuario y Cuenta</DialogTitle></DialogHeader>
@@ -521,12 +531,12 @@ const AdminUserManagement: React.FC = () => {
               <div className="space-y-4">
                 <h3 className="text-sm font-bold text-gray-500 uppercase border-b pb-2 flex items-center gap-2"><IdCard className="h-4 w-4" /> 1. Datos Personales</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div><Label>DNI *</Label><Input value={newUser.dni} onChange={e => setNewUser({...newUser, dni: e.target.value})} required maxLength={8} /></div>
-                  <div><Label>Nombres *</Label><Input value={newUser.first_name} onChange={e => setNewUser({...newUser, first_name: e.target.value})} required /></div>
-                  <div><Label>Apellidos *</Label><Input value={newUser.last_name} onChange={e => setNewUser({...newUser, last_name: e.target.value})} required /></div>
+                  <div><Label>DNI <span className="text-red-500">*</span></Label><Input value={newUser.dni} onChange={e => setNewUser({...newUser, dni: e.target.value})} required maxLength={8} /></div>
+                  <div><Label>Nombres <span className="text-red-500">*</span></Label><Input value={newUser.first_name} onChange={e => setNewUser({...newUser, first_name: e.target.value})} required /></div>
+                  <div><Label>Apellidos <span className="text-red-500">*</span></Label><Input value={newUser.last_name} onChange={e => setNewUser({...newUser, last_name: e.target.value})} required /></div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><Label>Correo (Login) *</Label><Input type="email" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} required /></div>
+                  <div><Label>Correo (Login) <span className="text-red-500">*</span></Label><Input type="email" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} required /></div>
                   <div>
                     <Label>Contraseña Inicial <span className="text-red-500">*</span></Label>
                     <div className="flex gap-2 mt-1">
@@ -536,9 +546,9 @@ const AdminUserManagement: React.FC = () => {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div><Label className="text-gray-500">Teléfono Celular (Opcional)</Label><Input value={newUser.phone} onChange={e => setNewUser({...newUser, phone: e.target.value})} /></div>
+                  <div><Label className="text-gray-500">Teléfono Celular <span className="font-normal">(Opcional)</span></Label><Input value={newUser.phone} onChange={e => setNewUser({...newUser, phone: e.target.value})} /></div>
                   <div>
-                    <Label className="text-gray-500">Fecha Nacimiento (Opcional)</Label>
+                    <Label className="text-gray-500">Fecha Nacimiento <span className="font-normal">(Opcional)</span></Label>
                     <div className="relative">
                       <Input type="date" value={newUser.birth_date} onChange={e => setNewUser({...newUser, birth_date: e.target.value})} className="pl-10"/>
                       <Calendar className="w-4 h-4 text-gray-400 absolute left-3 top-3"/>
@@ -552,7 +562,7 @@ const AdminUserManagement: React.FC = () => {
                   <h3 className="text-sm font-bold text-gray-500 uppercase flex items-center gap-2 mb-2"><School className="h-4 w-4" /> 2. Ubicación Académica ({CURRENT_YEAR})</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <Label className="text-gray-500 mb-1 block">Grado a cursar (Opcional)</Label>
+                      <Label className="text-gray-500 mb-1 block">Grado a cursar <span className="font-normal">(Opcional)</span></Label>
                       <Select value={newUser.current_grade_id || "none"} onValueChange={val => setNewUser({...newUser, current_grade_id: val === "none" ? "" : val, current_section_id: ''})}>
                         <SelectTrigger className="bg-white"><SelectValue placeholder="Dejar sin asignar temporalmente" /></SelectTrigger>
                         <SelectContent>
@@ -567,7 +577,7 @@ const AdminUserManagement: React.FC = () => {
                       </Select>
                     </div>
                     <div>
-                      <Label className="text-gray-500 mb-1 block">Aula Virtual / Sección (Opcional)</Label>
+                      <Label className="text-gray-500 mb-1 block">Aula Virtual / Sección <span className="font-normal">(Opcional)</span></Label>
                       <Select value={newUser.current_section_id || "none"} onValueChange={val => setNewUser({...newUser, current_section_id: val === "none" ? "" : val})} disabled={!newUser.current_grade_id}>
                         <SelectTrigger className="bg-white"><SelectValue placeholder="Sin aula asignada (General)" /></SelectTrigger>
                         <SelectContent>
@@ -586,8 +596,8 @@ const AdminUserManagement: React.FC = () => {
                 <div className="space-y-4">
                   <h3 className="text-sm font-bold text-gray-500 uppercase border-b pb-2 flex items-center gap-2"><User className="h-4 w-4" /> 3. Apoderado / Contacto</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div><Label className="text-gray-600">Nombre del Apoderado</Label><Input value={newUser.guardian_name} onChange={e => setNewUser({...newUser, guardian_name: e.target.value})} placeholder="Nombre completo" /></div>
-                    <div><Label className="text-red-500">Teléfono de Emergencia</Label><Input value={newUser.emergency_phone} onChange={e => setNewUser({...newUser, emergency_phone: e.target.value})} placeholder="Nro para llamadas urgentes" className="border-red-200" /></div>
+                    <div><Label className="text-gray-600">Nombre del Apoderado <span className="font-normal">(Opcional)</span></Label><Input value={newUser.guardian_name} onChange={e => setNewUser({...newUser, guardian_name: e.target.value})} placeholder="Nombre completo" /></div>
+                    <div><Label className="text-gray-600">Teléfono de Emergencia <span className="font-normal">(Opcional)</span></Label><Input value={newUser.emergency_phone} onChange={e => setNewUser({...newUser, emergency_phone: e.target.value})} placeholder="Nro para llamadas urgentes" /></div>
                   </div>
                 </div>
               )}
@@ -597,32 +607,42 @@ const AdminUserManagement: React.FC = () => {
           </DialogContent>
         </Dialog>
 
+        {/* MODAL EDITAR */}
         <Dialog open={editModalOpen} onOpenChange={(open) => { if (!open) setEditModalOpen(false); }}>
-          <DialogContent className="max-w-3xl">
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader><DialogTitle className="text-xl flex items-center gap-2"><Pencil className="h-5 w-5 text-indigo-600" /> Editar Perfil y Accesos</DialogTitle></DialogHeader>
             <form onSubmit={handleUpdateUser} className="space-y-6 mt-4">
-              <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-md flex items-center justify-between">
-                <Label className="text-indigo-800 font-bold ml-2">Rol del Usuario en el Sistema</Label>
-                <Select value={editUser.role} onValueChange={val => setEditUser({...editUser, role: val as UserRole})}>
-                  <SelectTrigger className="w-[250px] bg-white"><SelectValue/></SelectTrigger>
-                  <SelectContent>{ROLES.map((role) => <SelectItem key={role.value} value={role.value}>{role.label}</SelectItem>)}</SelectContent>
-                </Select>
+              
+              <div className="flex flex-col md:flex-row md:items-center justify-between p-3 bg-indigo-50 border border-indigo-200 rounded-md gap-4">
+                <div className="flex items-center">
+                  <Label className="text-indigo-800 font-bold ml-2">Rol del Usuario en el Sistema</Label>
+                  <Select value={editUser.role} onValueChange={val => setEditUser({...editUser, role: val as UserRole})}>
+                    <SelectTrigger className="w-[200px] bg-white ml-4"><SelectValue/></SelectTrigger>
+                    <SelectContent>{ROLES.map((role) => <SelectItem key={role.value} value={role.value}>{role.label}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                {(editUser.role === 'teacher' || editUser.role === 'tutor' || editUser.role === 'student') && (
+                  <Button type="button" variant="outline" size="sm" className="border-red-200 text-red-600 hover:bg-red-50" onClick={() => handleDesvincular(editUser.role, editUser.id)} disabled={creating}>
+                    <UserMinus className="w-4 h-4 mr-2"/> Desvincular Carga Académica
+                  </Button>
+                )}
               </div>
+
               <div className="space-y-4">
                 <h3 className="text-sm font-bold text-gray-500 uppercase border-b pb-2 flex items-center gap-2"><IdCard className="h-4 w-4" /> Datos de Identificación</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div><Label>DNI *</Label><Input value={editUser.dni} onChange={e => setEditUser({...editUser, dni: e.target.value})} required maxLength={8} /></div>
-                  <div><Label>Nombres *</Label><Input value={editUser.first_name} onChange={e => setEditUser({...editUser, first_name: e.target.value})} required /></div>
-                  <div><Label>Apellidos *</Label><Input value={editUser.last_name} onChange={e => setEditUser({...editUser, last_name: e.target.value})} required /></div>
+                  <div><Label>DNI <span className="text-red-500">*</span></Label><Input value={editUser.dni} onChange={e => setEditUser({...editUser, dni: e.target.value})} required maxLength={8} /></div>
+                  <div><Label>Nombres <span className="text-red-500">*</span></Label><Input value={editUser.first_name} onChange={e => setEditUser({...editUser, first_name: e.target.value})} required /></div>
+                  <div><Label>Apellidos <span className="text-red-500">*</span></Label><Input value={editUser.last_name} onChange={e => setEditUser({...editUser, last_name: e.target.value})} required /></div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div><Label className="text-gray-500">Correo (Solo Lectura)</Label><Input value={editUser.email} disabled className="bg-gray-100" /></div>
-                  <div><Label className="text-orange-500">Nueva Contraseña (Opcional)</Label><Input type="password" value={editUser.newPassword} onChange={e => setEditUser({...editUser, newPassword: e.target.value})} placeholder="Escribir para cambiar" className="border-orange-200" /></div>
-                  <div><Label className="text-gray-500">Teléfono Celular</Label><Input value={editUser.phone} onChange={e => setEditUser({...editUser, phone: e.target.value})} /></div>
+                  <div><Label className="text-orange-500">Nueva Contraseña <span className="font-normal text-gray-500">(Opcional)</span></Label><Input type="password" value={editUser.newPassword} onChange={e => setEditUser({...editUser, newPassword: e.target.value})} placeholder="Escribir para cambiar" className="border-orange-200" /></div>
+                  <div><Label className="text-gray-500">Teléfono Celular <span className="font-normal">(Opcional)</span></Label><Input value={editUser.phone} onChange={e => setEditUser({...editUser, phone: e.target.value})} /></div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <Label className="text-gray-500">Fecha Nacimiento</Label>
+                    <Label className="text-gray-500">Fecha Nacimiento <span className="font-normal">(Opcional)</span></Label>
                     <div className="relative">
                       <Input type="date" value={editUser.birth_date} onChange={e => setEditUser({...editUser, birth_date: e.target.value})} className="pl-10"/>
                       <Calendar className="w-4 h-4 text-gray-400 absolute left-3 top-3"/>
@@ -630,10 +650,87 @@ const AdminUserManagement: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {editUser.role === 'student' && (
+                <div className="space-y-4 bg-gray-50 p-4 rounded-lg border border-gray-100 mt-6">
+                  <h3 className="text-sm font-bold text-gray-500 uppercase flex items-center gap-2 mb-2"><School className="h-4 w-4" /> Ubicación Académica ({CURRENT_YEAR})</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <Label className="text-gray-500 mb-1 block">Grado Matriculado</Label>
+                      <Select value={editUser.current_grade_id || "none"} onValueChange={val => setEditUser({...editUser, current_grade_id: val === "none" ? "" : val, current_section_id: ''})}>
+                        <SelectTrigger className="bg-white"><SelectValue placeholder="Sin asignar grado" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none" className="text-gray-400 italic">No asignar</SelectItem>
+                          {levels.map((level: any) => (
+                            <div key={level.id}>
+                              <div className="px-2 py-1.5 text-xs font-bold text-gray-400 uppercase bg-gray-50">{level.name}</div>
+                              {grades.filter((g: any) => g.level_id === level.id).map((grade: any) => <SelectItem key={grade.id} value={grade.id} className="pl-6">{grade.name}</SelectItem>)}
+                            </div>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-gray-500 mb-1 block">Aula Virtual / Sección</Label>
+                      <Select value={editUser.current_section_id || "none"} onValueChange={val => setEditUser({...editUser, current_section_id: val === "none" ? "" : val})} disabled={!editUser.current_grade_id}>
+                        <SelectTrigger className="bg-white"><SelectValue placeholder="Sin aula asignada (General)" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none" className="text-gray-400 italic">Solo matricular en grado</SelectItem>
+                          {sections.filter(s => s.grade_id === editUser.current_grade_id).map((sec: any) => (
+                            <SelectItem key={sec.id} value={sec.id}>Aula "{sec.name}"</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <DialogFooter className="pt-4 border-t"><Button type="button" variant="outline" onClick={() => setEditModalOpen(false)}>Cancelar</Button><Button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white" disabled={creating}>{creating ? 'Guardando...' : 'Guardar Cambios'}</Button></DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
+
+        {/* MODAL ELIMINAR (SEGURIDAD) */}
+        <Dialog open={isDeleteModalOpen} onOpenChange={(open) => { setIsDeleteModalOpen(open); if (!open) setDeletingUsers([]); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader><DialogTitle className="text-red-600 flex items-center gap-2"><AlertTriangle className="w-5 h-5"/> Advertencia de Eliminación</DialogTitle></DialogHeader>
+            <div className="py-2 text-gray-700">
+              {blockedUsers.length > 0 ? (
+                <div className="mb-4">
+                  <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-md">
+                    <div className="flex items-center gap-2 text-red-800 font-bold mb-2"><ShieldAlert className="w-5 h-5" /> ACCIÓN BLOQUEADA</div>
+                    <p className="text-sm text-red-700 mb-2">No puedes eliminar a los siguientes usuarios porque <strong>aún tienen vínculos activos</strong>. Ve a editar su perfil y desvincúlalos primero:</p>
+                    <ul className="list-disc list-inside text-xs font-semibold text-red-900 max-h-32 overflow-y-auto pl-2">
+                      {blockedUsers.map(item => <li key={item.user.id}>{item.user.last_name}, {item.user.first_name} <span className="text-gray-500 font-normal ml-1">({item.reason})</span></li>)}
+                    </ul>
+                  </div>
+                  {safeToDelete.length > 0 && (<p className="mt-4 text-sm font-medium">Los otros {safeToDelete.length} usuario(s) sí pueden ser eliminados.</p>)}
+                </div>
+              ) : (<p className="mb-3">¿Estás absolutamente seguro que deseas eliminar permanentemente a {deletingUsers.length > 1 ? `estos ${deletingUsers.length} usuarios` : 'este usuario'} del sistema?</p>)}
+              
+              {safeToDelete.length > 0 && blockedUsers.length === 0 && (
+                <div className="bg-gray-50 border border-gray-200 rounded-md p-3 max-h-32 overflow-y-auto mb-3">
+                  <ul className="list-disc list-inside text-sm font-medium text-gray-800 space-y-1">{safeToDelete.map(u => <li key={u.id}>{u.last_name}, {u.first_name} <span className="text-gray-500 font-normal">({ROLES.find(r => r.value === u.role)?.label})</span></li>)}</ul>
+                </div>
+              )}
+              
+              {safeToDelete.length > 0 && (
+                <>
+                  <p className="text-sm text-gray-500 mb-2 mt-4">Esta acción no se puede deshacer. Escribe <strong className="text-red-600">ELIMINAR</strong> para confirmar:</p>
+                  <Input value={confirmDeleteText} onChange={(e) => setConfirmDeleteText(e.target.value.toUpperCase())} placeholder="Escribe ELIMINAR" className="border-red-300 focus-visible:ring-red-500" />
+                </>
+              )}
+            </div>
+            <DialogFooter>
+              <DialogClose asChild><Button variant="outline" type="button" disabled={bulkLoading}>Cancelar</Button></DialogClose>
+              {safeToDelete.length > 0 && (
+                <Button variant="destructive" onClick={confirmBulkDelete} disabled={bulkLoading || confirmDeleteText !== 'ELIMINAR'}>{bulkLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}{blockedUsers.length > 0 ? `Eliminar solo los ${safeToDelete.length} permitidos` : 'Sí, Eliminar Definitivamente'}</Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
       </div>
     </DashboardLayout>
   );

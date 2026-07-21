@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { School, Plus, Users, Shuffle, Loader2, ArrowRight, Trash2, GraduationCap, ShieldAlert, CheckSquare, UserX, UserMinus, AlertTriangle, UserCheck } from 'lucide-react';
+import { School, Plus, Users, Shuffle, Loader2, ArrowRight, Trash2, GraduationCap, ShieldAlert, CheckSquare, UserX, UserMinus, AlertTriangle, UserCheck, Pencil } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -20,7 +20,6 @@ interface Grado { id: string; level_id: string; name: string; }
 interface Seccion { id: string; grade_id: string; name: string; room_number: string; academic_year: number; alumno_count?: number; tutor?: { first_name: string; last_name: string }; }
 interface AlumnoEnGrado { id: string; first_name: string; last_name: string; email: string; section_id?: string; is_active: boolean; }
 
-// MAGIA: El año ahora es dinámico y cambiará automáticamente en año nuevo
 const CURRENT_YEAR = new Date().getFullYear();
 
 const AdminClassrooms = () => {
@@ -37,25 +36,29 @@ const AdminClassrooms = () => {
   const [loading, setLoading] = useState(true);
   const [procesando, setProcesando] = useState(false);
   
+  // Modals de Sección
   const [isSeccionModalOpen, setIsSeccionModalOpen] = useState(false);
   const [formSeccion, setFormSeccion] = useState({ name: '', room_number: '' });
-
+  
+  const [isEditSeccionModalOpen, setIsEditSeccionModalOpen] = useState(false);
+  const [editSeccionData, setEditSeccionData] = useState({ id: '', name: '', room_number: '' });
+  
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [selectedInactiveIds, setSelectedInactiveIds] = useState<string[]>([]);
   const [bulkTargetSection, setBulkTargetSection] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'assigned' | 'unassigned'>('all');
   
-  const [inactiveToDelete, setInactiveToDelete] = useState<AlumnoEnGrado | null>(null);
+  // Modals de eliminación Inactivos
+  const [isDeleteInactiveModalOpen, setIsDeleteInactiveModalOpen] = useState(false);
+  const [deletingInactiveStudents, setDeletingInactiveStudents] = useState<AlumnoEnGrado[]>([]);
 
   useEffect(() => { initLoad(); }, []);
-
+  
   useEffect(() => {
     if (nivelActivo && grados.length > 0) {
       const filtered = grados.filter(g => g.level_id === nivelActivo);
       setGradoActivo(filtered.length > 0 ? filtered[0].id : '');
-    } else {
-      setGradoActivo('');
-    }
+    } else { setGradoActivo(''); }
   }, [nivelActivo, grados]);
 
   useEffect(() => {
@@ -63,9 +66,7 @@ const AdminClassrooms = () => {
       fetchDataEstructura(gradoActivo);
       setSelectedStudentIds([]); 
       setSelectedInactiveIds([]);
-    } else { 
-      setSecciones([]); setAlumnos([]); 
-    }
+    } else { setSecciones([]); setAlumnos([]); }
   }, [gradoActivo]);
 
   const initLoad = async () => {
@@ -76,35 +77,20 @@ const AdminClassrooms = () => {
       setNiveles(dataNiveles || []);
       setGrados(dataGrados || []);
       if (dataNiveles?.length) setNivelActivo(dataNiveles[0].id);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
   const fetchDataEstructura = async (gradeId: string) => {
     setLoading(true);
     try {
-      const { data: dataSecciones } = await supabase.from('sections')
-        .select('*, tutor:profiles!tutor_id(first_name, last_name)')
-        .eq('grade_id', gradeId)
-        .eq('academic_year', CURRENT_YEAR)
-        .order('name');
+      const { data: dataSecciones } = await supabase.from('sections').select('*, tutor:profiles!tutor_id(first_name, last_name)').eq('grade_id', gradeId).eq('academic_year', CURRENT_YEAR).order('name');
       const secs = dataSecciones || [];
 
-      const { data: dataAlumnos } = await supabase.from('profiles')
-        .select('id, first_name, last_name, email, is_active')
-        .eq('role', 'student')
-        .eq('current_grade_id', gradeId)
-        .order('last_name');
+      const { data: dataAlumnos } = await supabase.from('profiles').select('id, first_name, last_name, email, is_active').eq('role', 'student').eq('current_grade_id', gradeId).order('last_name');
       const alums = dataAlumnos || [];
 
-      const { data: matriculas } = await supabase.from('student_sections')
-        .select('student_id, section_id')
-        .eq('academic_year', CURRENT_YEAR)
-        .in('section_id', secs.map(s => s.id));
-
+      const { data: matriculas } = await supabase.from('student_sections').select('student_id, section_id').eq('academic_year', CURRENT_YEAR).in('section_id', secs.map(s => s.id));
+      
       const alumnosConSeccion = alums.map(al => {
         const mat = matriculas?.find(m => m.student_id === al.id);
         return { ...al, section_id: mat?.section_id };
@@ -117,29 +103,18 @@ const AdminClassrooms = () => {
 
       setAlumnos(alumnosConSeccion);
       setSecciones(seccionesConConteo as Seccion[]);
-    } catch (error) {
-      console.error("Error cargando estructura:", error);
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { console.error("Error cargando estructura:", error); } finally { setLoading(false); }
   };
 
   const handleCrearSeccion = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!gradoActivo) return;
-
     const duplicado = secciones.some(s => s.name.trim().toLowerCase() === formSeccion.name.trim().toLowerCase());
-    if (duplicado) {
-      toast({ title: "Nombre duplicado", description: "Ya existe un aula con ese nombre.", variant: "destructive" });
-      return;
-    }
+    if (duplicado) { toast({ title: "Nombre duplicado", description: "Ya existe un aula con ese nombre.", variant: "destructive" }); return; }
 
     setProcesando(true);
     try {
-      const { data: nuevaSec, error: errSec } = await supabase.from('sections').insert([{
-        grade_id: gradoActivo, name: formSeccion.name.trim(), room_number: formSeccion.room_number, academic_year: CURRENT_YEAR
-      }]).select().single();
-      
+      const { data: nuevaSec, error: errSec } = await supabase.from('sections').insert([{ grade_id: gradoActivo, name: formSeccion.name.trim(), room_number: formSeccion.room_number, academic_year: CURRENT_YEAR }]).select().single();
       if (errSec) throw errSec;
 
       const { data: cursosMalla } = await supabase.from('base_courses').select('id').eq('grade_id', gradoActivo);
@@ -152,11 +127,21 @@ const AdminClassrooms = () => {
       setIsSeccionModalOpen(false);
       setFormSeccion({ name: '', room_number: '' });
       fetchDataEstructura(gradoActivo);
-    } catch (error: any) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } finally {
-      setProcesando(false);
-    }
+    } catch (error: any) { toast({ title: "Error", description: error.message, variant: "destructive" }); } finally { setProcesando(false); }
+  };
+
+  const handleEditarSeccion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const duplicado = secciones.some(s => s.id !== editSeccionData.id && s.name.trim().toLowerCase() === editSeccionData.name.trim().toLowerCase());
+    if (duplicado) { toast({ title: "Nombre duplicado", description: "Ya existe otra aula con ese nombre.", variant: "destructive" }); return; }
+
+    setProcesando(true);
+    try {
+      await supabase.from('sections').update({ name: editSeccionData.name.trim(), room_number: editSeccionData.room_number.trim() }).eq('id', editSeccionData.id);
+      toast({ title: "Sección Actualizada" });
+      setIsEditSeccionModalOpen(false);
+      fetchDataEstructura(gradoActivo);
+    } catch (error: any) { toast({ title: "Error", description: error.message, variant: "destructive" }); } finally { setProcesando(false); }
   };
 
   const handleEliminarSeccion = async (id: string) => {
@@ -165,9 +150,7 @@ const AdminClassrooms = () => {
       await supabase.from('sections').delete().eq('id', id);
       toast({ title: "Sección eliminada" });
       fetchDataEstructura(gradoActivo);
-    } catch (error) {
-      toast({ title: "Error al eliminar", variant: "destructive" });
-    }
+    } catch (error) { toast({ title: "Error al eliminar", variant: "destructive" }); }
   };
 
   const handleAsignacionIndividual = async (studentId: string, newSectionId: string) => {
@@ -191,20 +174,11 @@ const AdminClassrooms = () => {
       }
       toast({ title: "Asignación actualizada", description: `Se movieron ${studentIds.length} alumno(s).` });
       fetchDataEstructura(gradoActivo);
-    } catch (error) {
-      toast({ title: "Error", variant: "destructive" });
-    } finally {
-      setProcesando(false);
-    }
+    } catch (error) { toast({ title: "Error", variant: "destructive" }); } finally { setProcesando(false); }
   };
 
-  const toggleStudentSelection = (id: string) => {
-    setSelectedStudentIds(prev => prev.includes(id) ? prev.filter(sId => sId !== id) : [...prev, id]);
-  };
-  
-  const toggleInactiveSelection = (id: string) => {
-    setSelectedInactiveIds(prev => prev.includes(id) ? prev.filter(sId => sId !== id) : [...prev, id]);
-  };
+  const toggleStudentSelection = (id: string) => setSelectedStudentIds(prev => prev.includes(id) ? prev.filter(sId => sId !== id) : [...prev, id]);
+  const toggleInactiveSelection = (id: string) => setSelectedInactiveIds(prev => prev.includes(id) ? prev.filter(sId => sId !== id) : [...prev, id]);
 
   const handleReparticionAleatoria = async () => {
     const sinAula = alumnosActivos.filter(a => !a.section_id);
@@ -214,21 +188,13 @@ const AdminClassrooms = () => {
     setProcesando(true);
     try {
       const mezclados = [...sinAula].sort(() => Math.random() - 0.5);
-      const registros = mezclados.map((alumno, index) => ({
-        student_id: alumno.id, section_id: secciones[index % secciones.length].id, academic_year: CURRENT_YEAR
-      }));
-
+      const registros = mezclados.map((alumno, index) => ({ student_id: alumno.id, section_id: secciones[index % secciones.length].id, academic_year: CURRENT_YEAR }));
       await supabase.from('student_sections').insert(registros);
       toast({ title: "Éxito", description: `Se repartieron ${registros.length} alumnos equitativamente.` });
       fetchDataEstructura(gradoActivo);
-    } catch (error) {
-      toast({ title: "Error", variant: "destructive" });
-    } finally {
-      setProcesando(false);
-    }
+    } catch (error) { toast({ title: "Error", variant: "destructive" }); } finally { setProcesando(false); }
   };
 
-  // ----- ACCIONES PARA ESTADOS (ACTIVOS/INACTIVOS) -----
   const handleToggleStatus = async (studentId: string, currentStatus: boolean) => {
     setProcesando(true);
     try {
@@ -237,14 +203,9 @@ const AdminClassrooms = () => {
       setSelectedStudentIds(prev => prev.filter(id => id !== studentId));
       setSelectedInactiveIds(prev => prev.filter(id => id !== studentId));
       fetchDataEstructura(gradoActivo);
-    } catch (error: any) {
-      toast({ title: "Error", variant: "destructive" });
-    } finally {
-      setProcesando(false);
-    }
+    } catch (error: any) { toast({ title: "Error", variant: "destructive" }); } finally { setProcesando(false); }
   };
 
-  // Desmatriculación Masiva de Alumnos Activos
   const handleBulkDesmatricular = async () => {
     if (!confirm(`¿Seguro que deseas desmatricular a ${selectedStudentIds.length} alumno(s) activos? Pasarán a la lista de Inactivos.`)) return;
     setProcesando(true);
@@ -278,22 +239,6 @@ const AdminClassrooms = () => {
     } catch (error) { toast({ title: "Error", variant: "destructive" }); } finally { setProcesando(false); }
   };
 
-  const handleBulkDeleteInactive = async () => {
-    if (!confirm(`¿Eliminar definitivamente a ${selectedInactiveIds.length} alumno(s) de la BD? Esta acción no se puede deshacer.`)) return;
-    setProcesando(true);
-    try {
-      const studentsToDelete = alumnosInactivos.filter(a => selectedInactiveIds.includes(a.id));
-      for (const student of studentsToDelete) {
-        await supabase.rpc('delete_user_admin_v2', { target_user_id: student.id, target_email: student.email });
-      }
-      toast({ title: "Estudiantes eliminados" });
-      setSelectedInactiveIds([]);
-      fetchDataEstructura(gradoActivo);
-    } catch (error: any) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } finally { setProcesando(false); }
-  };
-
   const handleDesvincularInactivo = async (studentId: string) => {
     if (!confirm('¿Deseas desvincular a este alumno inactivo de este grado?')) return;
     try {
@@ -305,14 +250,20 @@ const AdminClassrooms = () => {
     } catch (error) { toast({ title: "Error", variant: "destructive" }); }
   };
 
-  const handleEliminarDefinitivo = async () => {
-    if (!inactiveToDelete) return;
+  // --- LÓGICA DE SEGURIDAD ELIMINAR INACTIVOS ---
+  const blockedInactive = useMemo(() => deletingInactiveStudents.filter(s => !!s.section_id), [deletingInactiveStudents]);
+  const safeInactive = useMemo(() => deletingInactiveStudents.filter(s => !s.section_id), [deletingInactiveStudents]);
+
+  const confirmEliminarDefinitivo = async () => {
+    if (safeInactive.length === 0) return;
     setProcesando(true);
     try {
-      await supabase.rpc('delete_user_admin_v2', { target_user_id: inactiveToDelete.id, target_email: inactiveToDelete.email });
-      toast({ title: "Eliminado" });
-      setInactiveToDelete(null);
-      setSelectedInactiveIds(prev => prev.filter(id => id !== inactiveToDelete.id));
+      for (const student of safeInactive) {
+        await supabase.rpc('delete_user_admin_v2', { target_user_id: student.id, target_email: student.email });
+      }
+      toast({ title: "Estudiantes eliminados", description: `Se eliminaron ${safeInactive.length} registro(s).` });
+      setSelectedInactiveIds([]);
+      setIsDeleteInactiveModalOpen(false);
       fetchDataEstructura(gradoActivo);
     } catch (error: any) { toast({ title: "Error", description: error.message, variant: "destructive" }); } finally { setProcesando(false); }
   };
@@ -335,12 +286,9 @@ const AdminClassrooms = () => {
   return (
     <DashboardLayout>
       <div className="container mx-auto px-4 py-8 max-w-6xl space-y-6">
-        
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-bold flex items-center gap-3 text-gray-900">
-              <School className="h-8 w-8 text-blue-600" /> Distribución de Aulas Virtuales
-            </h1>
+            <h1 className="text-3xl font-bold flex items-center gap-3 text-gray-900"><School className="h-8 w-8 text-blue-600" /> Distribución de Aulas Virtuales</h1>
             <p className="text-muted-foreground mt-1">Crea las secciones y asigna a los alumnos matriculados en el grado para el año escolar actual.</p>
           </div>
         </div>
@@ -370,26 +318,39 @@ const AdminClassrooms = () => {
             <div className="flex justify-between items-end mb-4 mt-8">
               <h2 className="text-xl font-bold text-gray-800">Secciones Activas ({secciones.length})</h2>
               <Dialog open={isSeccionModalOpen} onOpenChange={setIsSeccionModalOpen}>
-                <DialogTrigger asChild>
-                  <Button className="bg-blue-600"><Plus className="w-4 h-4 mr-2" /> Nueva Sección</Button>
-                </DialogTrigger>
+                <DialogTrigger asChild><Button className="bg-blue-600"><Plus className="w-4 h-4 mr-2" /> Nueva Sección</Button></DialogTrigger>
                 <DialogContent>
                   <DialogHeader><DialogTitle>Aperturar Nueva Sección</DialogTitle></DialogHeader>
                   <form onSubmit={handleCrearSeccion} className="space-y-4">
-                    <div><Label>Nombre identificador *</Label><Input required value={formSeccion.name} onChange={e => setFormSeccion({...formSeccion, name: e.target.value})} placeholder="Ej: A, Los Tigres, 4to-B" autoFocus/></div>
-                    <div><Label>Ubicación / Pabellón (Opcional)</Label><Input value={formSeccion.room_number} onChange={e => setFormSeccion({...formSeccion, room_number: e.target.value})} placeholder="Ej: Aula 102 - 1er Piso" /></div>
+                    <div><Label>Nombre identificador <span className="text-red-500">*</span></Label><Input required value={formSeccion.name} onChange={e => setFormSeccion({...formSeccion, name: e.target.value})} placeholder="Ej: A, Los Tigres, 4to-B" autoFocus/></div>
+                    <div><Label className="text-gray-500">Ubicación / Pabellón <span className="font-normal">(Opcional)</span></Label><Input value={formSeccion.room_number} onChange={e => setFormSeccion({...formSeccion, room_number: e.target.value})} placeholder="Ej: Aula 102 - 1er Piso" /></div>
                     <Button type="submit" className="w-full bg-blue-600" disabled={procesando}>{procesando ? 'Configurando...' : 'Crear Aula y Cargar Malla'}</Button>
                   </form>
                 </DialogContent>
               </Dialog>
             </div>
 
+            {/* Modal Editar Sección */}
+            <Dialog open={isEditSeccionModalOpen} onOpenChange={setIsEditSeccionModalOpen}>
+              <DialogContent>
+                <DialogHeader><DialogTitle>Editar Detalles del Aula</DialogTitle></DialogHeader>
+                <form onSubmit={handleEditarSeccion} className="space-y-4">
+                  <div><Label>Nombre identificador <span className="text-red-500">*</span></Label><Input required value={editSeccionData.name} onChange={e => setEditSeccionData({...editSeccionData, name: e.target.value})} placeholder="Ej: A, Los Tigres" autoFocus/></div>
+                  <div><Label className="text-gray-500">Ubicación / Pabellón <span className="font-normal">(Opcional)</span></Label><Input value={editSeccionData.room_number} onChange={e => setEditSeccionData({...editSeccionData, room_number: e.target.value})} placeholder="Ej: Aula 102 - 1er Piso" /></div>
+                  <DialogFooter className="pt-2"><Button type="button" variant="outline" onClick={() => setIsEditSeccionModalOpen(false)}>Cancelar</Button><Button type="submit" className="bg-blue-600" disabled={procesando}>{procesando ? 'Guardando...' : 'Guardar Cambios'}</Button></DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {secciones.map((sec) => (
                 <Card key={sec.id} className="hover:shadow-md transition-shadow border-t-4 border-t-blue-500 flex flex-col">
                   <CardHeader className="flex flex-row justify-between items-center pb-2">
                     <CardTitle className="text-xl">Aula "{sec.name}"</CardTitle>
-                    <Button variant="ghost" size="sm" onClick={() => handleEliminarSeccion(sec.id)} className="text-red-400 hover:text-red-600 p-0 h-8 w-8"><Trash2 className="w-4 h-4"/></Button>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => { setEditSeccionData({ id: sec.id, name: sec.name, room_number: sec.room_number || '' }); setIsEditSeccionModalOpen(true); }} className="text-blue-500 hover:text-blue-700 hover:bg-blue-50 p-0 h-8 w-8"><Pencil className="w-4 h-4"/></Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleEliminarSeccion(sec.id)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-0 h-8 w-8"><Trash2 className="w-4 h-4"/></Button>
+                    </div>
                   </CardHeader>
                   <CardContent className="flex-1 flex flex-col">
                     <div className="text-3xl font-black text-gray-800 flex items-center gap-2 mb-1">
@@ -399,9 +360,7 @@ const AdminClassrooms = () => {
                     <p className="text-xs font-medium text-gray-600 bg-gray-100 p-2 rounded-md mb-4 mt-auto">
                       Tutor: {sec.tutor ? `${sec.tutor.first_name} ${sec.tutor.last_name}` : <span className="text-red-500 italic">Sin tutor asignado</span>}
                     </p>
-                    <Button variant="outline" className="w-full bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200 mt-auto" onClick={() => navigate(`/admin/section/${sec.id}`)}>
-                      Gestionar Aula <ArrowRight className="w-4 h-4 ml-2"/>
-                    </Button>
+                    <Button variant="outline" className="w-full bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200 mt-auto" onClick={() => navigate(`/admin/section/${sec.id}`)}>Gestionar Aula <ArrowRight className="w-4 h-4 ml-2"/></Button>
                   </CardContent>
                 </Card>
               ))}
@@ -445,16 +404,12 @@ const AdminClassrooms = () => {
                       </SelectContent>
                     </Select>
                     <Button size="sm" className="h-8 bg-blue-600 text-xs" disabled={!bulkTargetSection || procesando} onClick={handleBulkAssign}>Aplicar</Button>
-                    
                     <div className="w-px h-5 bg-blue-300 mx-1"></div>
-                    <Button size="sm" variant="outline" className="h-8 text-xs text-red-700 border-red-200 hover:bg-red-50 bg-white" onClick={handleBulkDesmatricular} disabled={procesando}>
-                      <UserMinus className="w-3 h-3 mr-1"/> Desmatricular
-                    </Button>
+                    <Button size="sm" variant="outline" className="h-8 text-xs text-red-700 border-red-200 hover:bg-red-50 bg-white" onClick={handleBulkDesmatricular} disabled={procesando}><UserMinus className="w-3 h-3 mr-1"/> Desmatricular</Button>
                   </div>
                 )}
               </div>
             </CardHeader>
-
             <CardContent className="p-0">
               <div className="max-h-[500px] overflow-y-auto">
                 <Table>
@@ -512,23 +467,14 @@ const AdminClassrooms = () => {
         {gradoActivo && alumnosInactivos.length > 0 && (
           <Card className="mt-6 border-0 shadow-sm bg-gray-50 opacity-95 border-t-2 border-t-gray-400">
             <CardHeader className="py-4 border-b">
-              <CardTitle className="text-base flex items-center gap-2 text-gray-600">
-                <UserX className="w-4 h-4"/> Alumnos Inactivos / Egresados ({alumnosInactivos.length})
-              </CardTitle>
+              <CardTitle className="text-base flex items-center gap-2 text-gray-600"><UserX className="w-4 h-4"/> Alumnos Inactivos / Egresados ({alumnosInactivos.length})</CardTitle>
               <CardDescription>Pertenecen al historial de este grado pero están desmatriculados. Puedes reactivarlos o limpiar el registro.</CardDescription>
-              
               {selectedInactiveIds.length > 0 && (
                 <div className="flex items-center gap-2 bg-gray-200 p-1.5 rounded-md border border-gray-300 animate-in fade-in mt-3">
                    <span className="text-xs font-bold text-gray-700 px-2">{selectedInactiveIds.length} selec.</span>
-                   <Button size="sm" variant="outline" className="h-8 text-xs bg-white hover:text-green-700 hover:bg-green-50" disabled={procesando} onClick={handleBulkReactivar}>
-                     <UserCheck className="w-3 h-3 mr-1"/> Reactivar
-                   </Button>
-                   <Button size="sm" variant="outline" className="h-8 text-xs bg-white hover:text-orange-700 hover:bg-orange-50" disabled={procesando} onClick={handleBulkDesvincular}>
-                     <UserMinus className="w-3 h-3 mr-1"/> Desvincular
-                   </Button>
-                   <Button size="sm" variant="destructive" className="h-8 text-xs" disabled={procesando} onClick={handleBulkDeleteInactive}>
-                     <Trash2 className="w-3 h-3 mr-1"/> Eliminar
-                   </Button>
+                   <Button size="sm" variant="outline" className="h-8 text-xs bg-white hover:text-green-700 hover:bg-green-50" disabled={procesando} onClick={handleBulkReactivar}><UserCheck className="w-3 h-3 mr-1"/> Reactivar</Button>
+                   <Button size="sm" variant="outline" className="h-8 text-xs bg-white hover:text-orange-700 hover:bg-orange-50" disabled={procesando} onClick={handleBulkDesvincular}><UserMinus className="w-3 h-3 mr-1"/> Desvincular</Button>
+                   <Button size="sm" variant="destructive" className="h-8 text-xs" disabled={procesando} onClick={() => { setDeletingInactiveStudents(alumnosInactivos.filter(a => selectedInactiveIds.includes(a.id))); setIsDeleteInactiveModalOpen(true); }}><Trash2 className="w-3 h-3 mr-1"/> Eliminar</Button>
                 </div>
               )}
             </CardHeader>
@@ -560,7 +506,7 @@ const AdminClassrooms = () => {
                           </TableCell>
                           <TableCell className="text-right pr-6 space-x-2">
                             <Button variant="outline" size="sm" className="h-8 text-xs text-gray-600" onClick={() => handleDesvincularInactivo(alumno.id)} title="Quitar de este grado"><UserMinus className="w-3 h-3"/></Button>
-                            <Button variant="outline" size="sm" className="h-8 text-xs text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => setInactiveToDelete(alumno)} title="Eliminar estudiante por completo"><Trash2 className="w-3 h-3"/></Button>
+                            <Button variant="outline" size="sm" className="h-8 text-xs text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => { setDeletingInactiveStudents([alumno]); setIsDeleteInactiveModalOpen(true); }} title="Eliminar estudiante por completo"><Trash2 className="w-3 h-3"/></Button>
                           </TableCell>
                         </TableRow>
                       );
@@ -572,16 +518,37 @@ const AdminClassrooms = () => {
           </Card>
         )}
 
-        {/* Modal Confirmar Eliminar Definitivamente */}
-        <Dialog open={!!inactiveToDelete} onOpenChange={(open) => { if(!open) setInactiveToDelete(null); }}>
-          <DialogContent className="max-w-sm">
+        {/* Modal Confirmar Eliminar Inactivos (Seguridad) */}
+        <Dialog open={isDeleteInactiveModalOpen} onOpenChange={(open) => { if(!open) setDeletingInactiveStudents([]); }}>
+          <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle className="text-red-600 flex items-center gap-2"><AlertTriangle className="w-5 h-5"/> Eliminar Definitivamente</DialogTitle>
-              <DialogDescription>Estás a punto de borrar por completo a <strong>{inactiveToDelete?.first_name} {inactiveToDelete?.last_name}</strong> de la BD.</DialogDescription>
+              <DialogTitle className="text-red-600 flex items-center gap-2"><AlertTriangle className="w-5 h-5"/> Advertencia de Eliminación</DialogTitle>
             </DialogHeader>
-            <DialogFooter className="mt-4">
-              <Button variant="outline" onClick={() => setInactiveToDelete(null)} disabled={procesando}>Cancelar</Button>
-              <Button variant="destructive" onClick={handleEliminarDefinitivo} disabled={procesando}>{procesando ? <Loader2 className="w-4 h-4 animate-spin"/> : 'Eliminar Registro'}</Button>
+            <div className="py-2 text-gray-700">
+              {blockedInactive.length > 0 ? (
+                <div className="mb-4">
+                  <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-md">
+                    <div className="flex items-center gap-2 text-red-800 font-bold mb-2"><ShieldAlert className="w-5 h-5" /> ACCIÓN BLOQUEADA</div>
+                    <p className="text-sm text-red-700 mb-2">No puedes eliminar a los siguientes estudiantes inactivos porque <strong>aún están matriculados en un aula</strong>. Desvincúlalos primero usando el botón de "Desvincular":</p>
+                    <ul className="list-disc list-inside text-xs font-semibold text-red-900 max-h-32 overflow-y-auto pl-2">
+                      {blockedInactive.map(a => <li key={a.id}>{a.last_name}, {a.first_name}</li>)}
+                    </ul>
+                  </div>
+                  {safeInactive.length > 0 && (<p className="mt-4 text-sm font-medium">Los otros {safeInactive.length} estudiante(s) sí pueden ser eliminados.</p>)}
+                </div>
+              ) : (<p className="mb-3">¿Estás absolutamente seguro que deseas eliminar permanentemente a {deletingInactiveStudents.length > 1 ? `estos ${deletingInactiveStudents.length} estudiantes` : 'este estudiante'} de la Base de Datos?</p>)}
+              
+              {safeInactive.length > 0 && blockedInactive.length === 0 && (
+                <div className="bg-gray-50 border border-gray-200 rounded-md p-3 max-h-32 overflow-y-auto mb-3">
+                  <ul className="list-disc list-inside text-sm font-medium text-gray-800 space-y-1">{safeInactive.map(a => <li key={a.id}>{a.last_name}, {a.first_name}</li>)}</ul>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <DialogClose asChild><Button variant="outline" type="button" disabled={procesando}>Cancelar</Button></DialogClose>
+              {safeInactive.length > 0 && (
+                <Button variant="destructive" onClick={confirmEliminarDefinitivo} disabled={procesando}>{procesando ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <Trash2 className="w-4 h-4 mr-2"/>}{blockedInactive.length > 0 ? `Eliminar solo los ${safeInactive.length} permitidos` : 'Sí, Eliminar Definitivamente'}</Button>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>

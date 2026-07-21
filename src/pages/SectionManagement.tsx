@@ -13,7 +13,6 @@ import { Loader2, ArrowLeft, BookOpen, Users, RefreshCw, GraduationCap, MinusCir
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 
-// MAGIA: Año dinámico
 const CURRENT_YEAR = new Date().getFullYear();
 const COLUMNA_CURSO = 'section_course_id'; 
 
@@ -27,6 +26,7 @@ const SectionManagement = () => {
   const [courses, setCourses] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [staff, setStaff] = useState<any[]>([]); 
+  const [busyTutors, setBusyTutors] = useState<string[]>([]);
   const [exoneratedStudents, setExoneratedStudents] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
@@ -41,8 +41,13 @@ const SectionManagement = () => {
         .select('*, tutor:profiles!tutor_id(*), grade:academic_grades(id, name, level:academic_levels(name))')
         .eq('id', sectionId)
         .single();
+      
       if (secErr) throw secErr;
       setSection(secData);
+
+      // Traer todos los tutores ocupados este año
+      const { data: allSections } = await supabase.from('sections').select('tutor_id').eq('academic_year', CURRENT_YEAR).not('tutor_id', 'is', null);
+      setBusyTutors(allSections?.map(s => s.tutor_id) || []);
 
       const { data: staffData } = await supabase
         .from('profiles')
@@ -56,7 +61,7 @@ const SectionManagement = () => {
         .from('student_sections')
         .select('id, student:profiles!inner(id, first_name, last_name, email, is_active)')
         .eq('section_id', sectionId)
-        .eq('academic_year', CURRENT_YEAR) // Solo alumnos de este año
+        .eq('academic_year', CURRENT_YEAR)
         .eq('profiles.is_active', true);
       
       const alumnosLimpios = studData?.map(s => ({ enrollment_id: s.id, ...s.student })).filter(s => s.is_active === true) || [];
@@ -81,9 +86,7 @@ const SectionManagement = () => {
       }
     } catch (err: any) {
       toast({ title: "Error", description: "No se pudo cargar la información del aula.", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const loadCourses = async (gradeId: string) => {
@@ -131,9 +134,7 @@ const SectionManagement = () => {
       await loadCourses(section.grade_id);
     } catch (error) {
       toast({ title: "Error", description: "Fallo al sincronizar cursos.", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const updateTutor = async (tutorId: string) => {
@@ -177,7 +178,14 @@ const SectionManagement = () => {
     }
   };
 
-  const availableTutors = useMemo(() => staff.filter(s => s.role === 'tutor' || s.role === 'admin'), [staff]);
+  // Filtrado Seguro de Tutores (Solo mostrar los que no tienen aula asignada, o si es el tutor actual de esta misma aula)
+  const availableTutors = useMemo(() => {
+    return staff.filter(s => 
+      (s.role === 'tutor' || s.role === 'admin') && 
+      (!busyTutors.includes(s.id) || s.id === section?.tutor_id)
+    );
+  }, [staff, busyTutors, section]);
+
   const availableTeachers = useMemo(() => staff.filter(s => s.role === 'teacher' || s.role === 'admin'), [staff]);
 
   if (loading && !section) return <DashboardLayout><div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin text-blue-600 w-10 h-10"/></div></DashboardLayout>;
@@ -185,7 +193,6 @@ const SectionManagement = () => {
   return (
     <DashboardLayout>
       <div className="container mx-auto px-4 py-8 max-w-5xl space-y-6">
-        
         <Button variant="ghost" className="text-gray-500 hover:text-gray-800" onClick={() => navigate('/admin/classrooms')}>
           <ArrowLeft className="mr-2 h-4 w-4"/> Volver al resumen de grados
         </Button>
@@ -213,7 +220,6 @@ const SectionManagement = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          
           {/* COLUMNA IZQUIERDA: PROFESORES Y CURSOS */}
           <Card className="border-0 shadow-sm shadow-blue-100 flex flex-col h-[700px]">
             <CardHeader className="bg-blue-50/50 border-b flex flex-row justify-between items-center pb-4 shrink-0">
@@ -242,9 +248,7 @@ const SectionManagement = () => {
                       <div key={course.id} className={`p-4 border rounded-lg transition-colors ${isCourseActive ? 'bg-gray-50 hover:bg-white border-gray-200' : 'bg-red-50/40 border-red-100 opacity-80'}`}>
                         <div className="flex justify-between items-start mb-3">
                           <div>
-                            <span className={`font-bold block ${isCourseActive ? 'text-gray-800' : 'text-gray-500 line-through'}`}>
-                              {course.base?.name}
-                            </span>
+                            <span className={`font-bold block ${isCourseActive ? 'text-gray-800' : 'text-gray-500 line-through'}`}>{course.base?.name}</span>
                             <span className="text-xs text-gray-500 block">{course.base?.area}</span>
                           </div>
                           <div className="flex flex-col gap-1 items-end">
@@ -284,8 +288,7 @@ const SectionManagement = () => {
                             <Dialog>
                               <DialogTrigger asChild>
                                 <Button variant="ghost" size="sm" className={`w-full text-xs h-7 ${exemptCount > 0 ? 'text-amber-700 bg-amber-50 hover:bg-amber-100' : 'text-gray-500 hover:text-amber-700 hover:bg-amber-50'}`}>
-                                  <UserMinus className="w-3 h-3 mr-1"/> 
-                                  Gestión de Exonerados
+                                  <UserMinus className="w-3 h-3 mr-1"/> Gestión de Exonerados
                                 </Button>
                               </DialogTrigger>
                               <DialogContent>
@@ -360,7 +363,6 @@ const SectionManagement = () => {
               </Table>
             </CardContent>
           </Card>
-
         </div>
       </div>
     </DashboardLayout>

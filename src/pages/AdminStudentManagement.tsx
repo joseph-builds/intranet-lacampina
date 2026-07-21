@@ -12,10 +12,15 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/hooks/useAuth';
-import { Plus, Search, Edit, Users, BookOpen, Mail, Phone, GraduationCap, ShieldAlert, CheckCircle2, AlertTriangle, CheckSquare, ArrowUpDown, Download, UploadCloud, FileSpreadsheet, Loader2, Trash2, Key, Check, RefreshCw } from 'lucide-react';
+import { Plus, Search, Edit, Users, BookOpen, Mail, Phone, GraduationCap, ShieldAlert, CheckCircle2, AlertTriangle, CheckSquare, ArrowUpDown, Download, UploadCloud, FileSpreadsheet, Loader2, Trash2, Key, Check, RefreshCw, History, Trash } from 'lucide-react';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const COLUMNA_CURSO = 'section_course_id'; 
+
+// --- EXPRESIONES REGULARES PARA VALIDACIÓN ESTRICTA ---
+const ONLY_NUMBERS_REGEX = /[^0-9]/g;
+const ONLY_LETTERS_REGEX = /[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; 
 
 interface Level { id: string; name: string; }
 interface Grade { id: string; name: string; level_id: string; level?: Level; }
@@ -30,6 +35,10 @@ interface StudentFormData {
   phone: string; guardian_name: string; emergency_phone: string; current_grade_id: string; section_id: string; password?: string;
 }
 interface CourseDisplay { base_course_id: string; section_course_id: string | null; name: string; area: string; is_mandatory: boolean; isActive: boolean; }
+
+// --- INTERFACES PARA HISTORIAL EN NUBE ---
+interface ImportReport { dni: string; nombres: string; correo: string; contrasena: string; }
+interface ImportHistoryEntry { id: string; created_at: string; total_students: number; report_data: ImportReport[]; }
 
 const AdminStudentManagement = () => {
   const { toast } = useToast();
@@ -57,6 +66,7 @@ const AdminStudentManagement = () => {
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [deletingStudents, setDeletingStudents] = useState<Student[]>([]);
+  const [deleteConfirmText, setDeleteConfirmText] = useState(''); 
   
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkStatusValue, setBulkStatusValue] = useState<'active' | 'inactive'>('active');
@@ -75,24 +85,100 @@ const AdminStudentManagement = () => {
   const [newManualPassword, setNewManualPassword] = useState('');
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   
+  // Estado para el historial GLOBAL de importaciones
+  const [importHistory, setImportHistory] = useState<ImportHistoryEntry[]>([]);
+  
   const initialFormState: StudentFormData = {
     first_name: '', last_name: '', email: '', dni: '', birth_date: '', phone: '', 
     guardian_name: '', emergency_phone: '', current_grade_id: 'unassigned', section_id: 'unassigned', password: '' 
   };
   const [formData, setFormData] = useState<StudentFormData>(initialFormState);
 
-  // --- GENERADOR DE CONTRASEÑA ---
   const generateRandomPassword = () => {
     const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%*";
     let pass = "";
-    for (let i = 0; i < 10; i++) {
-      pass += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
+    for (let i = 0; i < 10; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
     return pass;
   };
 
-  useEffect(() => { fetchInitialData(); }, []);
+  useEffect(() => { 
+    fetchInitialData(); 
+    fetchImportHistory(); // Cargamos el historial global al iniciar
+  }, []);
+  
   useEffect(() => { setGradoFilter('all'); }, [nivelFilter]);
+
+  // ============================================================================
+  // LÓGICA DE HISTORIAL EN LA NUBE (GLOBAL)
+  // ============================================================================
+  const fetchImportHistory = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('student_import_history')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10);
+        
+      if (error) throw error;
+      if (data) setImportHistory(data);
+    } catch (error) {
+      console.error("Error al cargar el historial global", error);
+    }
+  };
+
+  const saveImportToHistory = async (newCredentials: ImportReport[]) => {
+    try {
+      // 1. Guardar en Supabase
+      const { error } = await supabase.from('student_import_history').insert([{
+        total_students: newCredentials.length,
+        report_data: newCredentials
+      }]);
+      if (error) throw error;
+
+      // 2. Limpieza Inteligente: Mantener solo los últimos 10 (Garbage Collection)
+      const { data: latest } = await supabase
+        .from('student_import_history')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(10);
+        
+      if (latest && latest.length === 10) {
+         const idsToKeep = latest.map(l => l.id);
+         await supabase
+           .from('student_import_history')
+           .delete()
+           .not('id', 'in', `(${idsToKeep.join(',')})`);
+      }
+
+      // 3. Refrescar la vista
+      await fetchImportHistory();
+    } catch (error) { 
+      console.error("Error guardando el historial", error); 
+    }
+  };
+
+  const clearImportHistory = async () => {
+    if(window.confirm('¿Estás seguro que deseas borrar el registro histórico de credenciales en LA NUBE? Esto afectará a todos los administradores.')) {
+      try {
+        await supabase.from('student_import_history').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        setImportHistory([]);
+        toast({ title: "Historial global limpiado" });
+      } catch (error: any) {
+        toast({ title: "Error limpiando historial", description: error.message, variant: "destructive" });
+      }
+    }
+  };
+
+  const downloadCredentialsReport = (data: ImportReport[], dateStr?: string) => {
+    const csvContent = "DNI;Nombres y Apellidos;Correo(Login);Contrasena\n" + data.map(c => `${c.dni};${c.nombres};${c.correo};${c.contrasena}`).join("\n");
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    const safeDate = dateStr ? dateStr.replace(/[/:\s,]/g, '_') : new Date().getTime();
+    link.download = `credenciales_alumnos_${safeDate}.csv`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  };
+  // ============================================================================
 
   const fetchInitialData = async () => {
     setLoading(true);
@@ -123,9 +209,7 @@ const AdminStudentManagement = () => {
         const matricula = matriculas?.find(m => m.student_id === perfil.id);
         return { ...perfil, section_id: matricula?.section_id, section_name: matricula?.sections?.name } as Student;
       });
-      
-      setStudents(alumnosMapeados);
-      setSelectedIds([]);
+      setStudents(alumnosMapeados); setSelectedIds([]);
     } catch (error) { toast({ title: "Error", description: "No se pudieron cargar los estudiantes.", variant: "destructive" }); }
   };
 
@@ -140,13 +224,9 @@ const AdminStudentManagement = () => {
       const matchesGrado = gradoFilter === 'all' || studentGradeId === gradoFilter;
 
       let matchesAssignment = true;
-      if (assignmentFilter === 'fully_assigned') {
-        matchesAssignment = !!(student.current_grade_id && student.section_id);
-      } else if (assignmentFilter === 'grade_no_section') {
-        matchesAssignment = !!(student.current_grade_id && !student.section_id);
-      } else if (assignmentFilter === 'no_grade_no_section') {
-        matchesAssignment = !student.current_grade_id && !student.section_id;
-      }
+      if (assignmentFilter === 'fully_assigned') matchesAssignment = !!(student.current_grade_id && student.section_id);
+      else if (assignmentFilter === 'grade_no_section') matchesAssignment = !!(student.current_grade_id && !student.section_id);
+      else if (assignmentFilter === 'no_grade_no_section') matchesAssignment = !student.current_grade_id && !student.section_id;
 
       return matchesSearch && matchesStatus && matchesNivel && matchesGrado && matchesAssignment;
     });
@@ -214,22 +294,29 @@ const AdminStudentManagement = () => {
   };
 
   const isAllPageSelected = paginatedStudents.length > 0 && paginatedStudents.every(c => selectedIds.includes(c.id));
+
+  // --- REGLAS ESTRICTAS DE ELIMINACIÓN ---
   const blockedFromDeletion = useMemo(() => deletingStudents.filter(s => s.current_grade_id), [deletingStudents]);
   const safeToDelete = useMemo(() => deletingStudents.filter(s => !s.current_grade_id), [deletingStudents]);
 
   const handleBulkDelete = async () => {
     if (safeToDelete.length === 0) return;
+    if (deleteConfirmText !== 'ELIMINAR') return;
+
     setSaving(true);
     try {
       for (const student of safeToDelete) {
         const { error } = await supabase.rpc('delete_user_admin_v2', { target_user_id: student.id, target_email: student.email });
         if (error) throw error;
       }
-      toast({ title: "Estudiantes eliminados", description: `Se eliminaron ${safeToDelete.length} estudiante(s) por completo del sistema.` });
+      toast({ title: "Estudiantes eliminados", description: `Se eliminaron ${safeToDelete.length} estudiante(s) permanentemente.` });
       setIsDeleteModalOpen(false);
       setDeletingStudents([]);
+      setDeleteConfirmText('');
       await fetchStudents();
-    } catch (error: any) { toast({ title: "Error al eliminar", description: error.message, variant: "destructive" }); } finally { setSaving(false); }
+    } catch (error: any) { 
+      toast({ title: "Error al eliminar", description: error.message, variant: "destructive" }); 
+    } finally { setSaving(false); }
   };
 
   const handleBulkStatus = async () => {
@@ -288,39 +375,58 @@ const AdminStudentManagement = () => {
 
   const handleSaveStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.dni || !formData.first_name || !formData.last_name || !formData.email) return toast({ title: "Campos obligatorios", description: "DNI, Nombres, Apellidos y Correo son requeridos.", variant: "destructive" });
+    
+    // --- VALIDACIONES ESTRICTAS ---
+    if (formData.dni.length !== 8) return toast({ title: "DNI Inválido", description: "El DNI debe tener exactamente 8 dígitos numéricos.", variant: "destructive" });
+    if (!formData.first_name.trim() || !formData.last_name.trim()) return toast({ title: "Nombres Inválidos", description: "Nombres y Apellidos son obligatorios.", variant: "destructive" });
+    if (formData.phone && formData.phone.length !== 9) return toast({ title: "Celular Inválido", description: "El número de celular debe tener 9 dígitos.", variant: "destructive" });
+    if (formData.emergency_phone && formData.emergency_phone.length !== 9) return toast({ title: "Teléfono de Emergencia Inválido", description: "Debe tener 9 dígitos.", variant: "destructive" });
     if (!editingStudent && (!formData.password || formData.password.length < 6)) return toast({ title: "Contraseña inválida", description: "La contraseña debe tener al menos 6 caracteres.", variant: "destructive" });
+    
+    const cleanEmail = formData.email.replace(/\s/g, '').toLowerCase();
+    if (!EMAIL_REGEX.test(cleanEmail)) {
+       return toast({ title: "Correo Inválido", description: "El formato del correo es incorrecto (ejemplo: usuario@dominio.com).", variant: "destructive" });
+    }
+    
     setSaving(true);
     try {
       if (editingStudent) {
+        // MODO EDICIÓN
         const payload: any = {
           first_name: formData.first_name.trim(), last_name: formData.last_name.trim(),
           dni: formData.dni.trim(), phone: formData.phone.trim() || null,
           guardian_name: formData.guardian_name.trim() || null, emergency_phone: formData.emergency_phone.trim() || null,
           birth_date: formData.birth_date || null, current_grade_id: formData.current_grade_id === 'unassigned' ? null : formData.current_grade_id,
         };
-        const { data, error } = await supabase.from('profiles').update(payload).eq('id', editingStudent.id).select();
-        if (error || !data || data.length === 0) throw new Error("No se pudo actualizar la ficha.");
+        const { error } = await supabase.from('profiles').update(payload).eq('id', editingStudent.id);
+        if (error) throw new Error("No se pudo actualizar la ficha.");
         await guardarMatriculaAula(editingStudent.id, formData.section_id);
         toast({ title: "Éxito", description: "Ficha del estudiante actualizada." });
       } else {
-        const isDup = students.some(s => s.dni === formData.dni.trim() || s.email === formData.email.trim());
-        if (isDup) throw new Error("Ya existe un estudiante con este DNI o Correo.");
-        const { error: authError } = await createUserByAdmin({ email: formData.email.trim(), password: formData.password as string, first_name: formData.first_name.trim(), last_name: formData.last_name.trim(), role: 'student' });
+        // MODO CREACIÓN
+        const isDup = students.some(s => s.dni === formData.dni.trim() || s.email === cleanEmail);
+        if (isDup) throw new Error("Ya existe un estudiante con este DNI o Correo en la lista.");
+        
+        const { data: newProfileRes, error: authError } = await createUserByAdmin({
+          email: cleanEmail, password: formData.password as string,
+          first_name: formData.first_name.trim(), last_name: formData.last_name.trim(), role: 'student',
+          dni: formData.dni.trim(), phone: formData.phone.trim() || undefined,
+          guardian_name: formData.guardian_name.trim() || undefined, emergency_phone: formData.emergency_phone.trim() || undefined,
+          birth_date: formData.birth_date || undefined, current_grade_id: formData.current_grade_id === 'unassigned' ? undefined : formData.current_grade_id
+        });
+        
         if (authError) throw authError; 
-        const { data: newProfile } = await supabase.from('profiles').select('id').eq('email', formData.email.trim()).single();
-        const { error: profileError } = await supabase.from('profiles').update({
-          dni: formData.dni.trim(), phone: formData.phone.trim() || null,
-          guardian_name: formData.guardian_name.trim() || null, emergency_phone: formData.emergency_phone.trim() || null,
-          birth_date: formData.birth_date || null, current_grade_id: formData.current_grade_id === 'unassigned' ? null : formData.current_grade_id,
-        }).eq('email', formData.email.trim());
-        if (profileError) throw new Error("Se creó la cuenta, pero hubo un error guardando el DNI.");
-        if (newProfile && formData.section_id !== 'unassigned') await guardarMatriculaAula(newProfile.id, formData.section_id);
-        toast({ title: "Cuenta Creada", description: "El estudiante ya puede iniciar sesión." });
+
+        if (newProfileRes?.id && formData.section_id !== 'unassigned') {
+           await guardarMatriculaAula(newProfileRes.id, formData.section_id);
+        }
+        toast({ title: "Cuenta Creada", description: "El estudiante ha sido registrado exitosamente." });
       }
       closeModal();
       fetchStudents(); 
-    } catch (error: any) { toast({ title: "Error al guardar", description: error.message, variant: "destructive" }); } finally { setSaving(false); }
+    } catch (error: any) { 
+      toast({ title: "Error al guardar", description: error.message, variant: "destructive" }); 
+    } finally { setSaving(false); }
   };
 
   const openCreateModal = () => { setEditingStudent(null); setFormData(initialFormState); setNewManualPassword(''); setIsModalOpen(true); };
@@ -344,11 +450,13 @@ const AdminStudentManagement = () => {
       try {
         const { data: baseCourses, error: baseErr } = await supabase.from('base_courses').select('id, name, area, is_mandatory, course:courses(is_active)').eq('grade_id', student.current_grade_id).order('name');
         if (baseErr) throw baseErr;
+
         let currentSectionId = student.section_id;
         if (!currentSectionId) {
           const { data: matricula } = await supabase.from('student_sections').select('section_id').eq('student_id', student.id).eq('academic_year', CURRENT_YEAR).maybeSingle();
           if (matricula) currentSectionId = matricula.section_id;
         }
+
         let secCourseMap: Record<string, string> = {};
         if (currentSectionId) {
            const { data: secCourses } = await supabase.from('section_courses').select('id, base_course_id').eq('section_id', currentSectionId);
@@ -359,6 +467,7 @@ const AdminStudentManagement = () => {
                [...(secCourses || []), ...(newSecCourses || [])].forEach(sc => { secCourseMap[sc.base_course_id] = sc.id; });
            } else { secCourses?.forEach(sc => { secCourseMap[sc.base_course_id] = sc.id; }); }
         }
+
         const combinedCourses: CourseDisplay[] = (baseCourses || []).map((bc: any) => ({
            base_course_id: bc.id, section_course_id: secCourseMap[bc.id] || null, name: bc.name, area: bc.area, is_mandatory: bc.is_mandatory, isActive: Array.isArray(bc.course) ? bc.course[0]?.is_active : bc.course?.is_active
         }));
@@ -387,90 +496,106 @@ const AdminStudentManagement = () => {
     } catch (error:any) { toast({ title: "Error al guardar", description: error.message, variant: "destructive" }); }
   };
 
+  // --- PLANTILLA DINÁMICA ---
   const downloadTemplate = () => {
     const headers = "DNI;Nombres;Apellidos;Correo;Telefono;Apoderado;Telefono_Emergencia\n";
-    const example1 = "77665544;Juan Luis;Perez Garcia;juan.perez@colegio.edu.pe;987654321;Maria Garcia;999888777\n";
-    const example2 = "11223344;Ana;Lopez Ruiz;ana.lopez@colegio.edu.pe;;;\n";
+    const rand1 = Math.floor(Math.random() * 10000);
+    const rand2 = Math.floor(Math.random() * 10000);
+    const example1 = `77665544;Juan Luis;Perez Garcia;juan.perez.${rand1}@gmail.com;987654321;Maria Garcia;999888777\n`;
+    const example2 = `11223344;Ana;Lopez Ruiz;ana.lopez.${rand2}@hotmail.com;;;\n`;
     const blob = new Blob(['\uFEFF' + headers + example1 + example2], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = "plantilla_estudiantes_colegio.csv";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  // --- LÓGICA DE CARGA MASIVA CON GENERADOR DE CREDENCIALES ---
+  // --- IMPORTACIÓN MASIVA ---
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsUploading(true);
     const reader = new FileReader();
+    
     reader.onload = async (event) => {
       try {
         const text = event.target?.result as string;
         const rows = text.split(/\r?\n/).filter(row => row.trim() !== '');
         if (rows.length <= 1) throw new Error("El archivo está vacío o solo contiene la cabecera.");
+        
         const validRowsToCreate = [];
         const duplicates = [];
+        const failedEmails: string[] = [];
+        let formatErrors = 0; 
         const separator = rows[0].includes(';') ? ';' : ',';
 
         for (let i = 1; i < rows.length; i++) {
           const regex = new RegExp(`${separator}(?=(?:(?:[^"]*"){2})*[^"]*$)`);
           const cols = rows[i].split(regex).map(col => col.replace(/^"|"$/g, '').trim());
           if (cols.length < 4) continue;
-          const dni = cols[0], first_name = cols[1], last_name = cols[2], email = cols[3];
-          const phone = cols[4] || null, guardian_name = cols[5] || null, emergency_phone = cols[6] || null;
-          if (!dni || !first_name || !last_name || !email) continue;
+          
+          // Limpieza rigurosa de formato
+          const dni = cols[0].replace(ONLY_NUMBERS_REGEX, '').slice(0, 8); 
+          const first_name = cols[1].replace(ONLY_LETTERS_REGEX, '');
+          const last_name = cols[2].replace(ONLY_LETTERS_REGEX, '');
+          
+          const email = cols[3].replace(/\s/g, '').toLowerCase(); 
+          if (!EMAIL_REGEX.test(email)) { formatErrors++; continue; }
+
+          const phone = cols[4] ? cols[4].replace(ONLY_NUMBERS_REGEX, '').slice(0, 9) : null;
+          const guardian_name = cols[5] ? cols[5].replace(ONLY_LETTERS_REGEX, '') : null;
+          const emergency_phone = cols[6] ? cols[6].replace(ONLY_NUMBERS_REGEX, '').slice(0, 9) : null;
+
+          if (!dni || dni.length !== 8 || !first_name || !last_name) continue; 
+          
           const isDupInDB = students.some(s => s.dni === dni || s.email === email);
           const isDupInList = validRowsToCreate.some(s => s.dni === dni || s.email === email);
+          
           if (isDupInDB || isDupInList) duplicates.push(dni);
           else validRowsToCreate.push({ dni, first_name, last_name, email, phone, guardian_name, emergency_phone });
         }
 
         let insertedCount = 0; 
         let authErrors = 0;
-        const newCredentials = []; // Array para guardar las credenciales de los exitosos
+        const newCredentials: ImportReport[] = []; 
 
         if (validRowsToCreate.length > 0) {
            toast({ title: "Procesando Excel...", description: "Generando cuentas de acceso. Esto puede demorar unos segundos." });
            for (const row of validRowsToCreate) {
-             const generatedPass = generateRandomPassword(); // <-- Se genera clave aleatoria aquí
-             const { error: authError } = await createUserByAdmin({ email: row.email, password: generatedPass, first_name: row.first_name, last_name: row.last_name, role: 'student' });
+             const generatedPass = generateRandomPassword(); 
+             
+             // 1 SOLA PETICIÓN AL MOTOR CENTRAL
+             const { error: authError } = await createUserByAdmin({ 
+                 email: row.email, password: generatedPass, 
+                 first_name: row.first_name, last_name: row.last_name, role: 'student', 
+                 dni: row.dni, phone: row.phone || undefined, 
+                 guardian_name: row.guardian_name || undefined, emergency_phone: row.emergency_phone || undefined 
+             });
              
              if (authError) { 
                  authErrors++; 
+                 failedEmails.push(row.email);
              } else {
-                 await supabase.from('profiles').update({ dni: row.dni, phone: row.phone || null, guardian_name: row.guardian_name || null, emergency_phone: row.emergency_phone || null }).eq('email', row.email);
                  insertedCount++;
-                 // Guardamos para el reporte Excel
-                 newCredentials.push({
-                   dni: row.dni,
-                   nombres: `${row.first_name} ${row.last_name}`,
-                   correo: row.email,
-                   contrasena: generatedPass
-                 });
+                 newCredentials.push({ dni: row.dni, nombres: `${row.first_name} ${row.last_name}`, correo: row.email, contrasena: generatedPass });
              }
            }
         }
 
-        // DESCARGA AUTOMÁTICA DEL REPORTE DE CREDENCIALES
+        // GUARDAMOS EN EL HISTORIAL Y DESCARGAMOS EL REPORTE
         if (newCredentials.length > 0) {
-           const csvContent = "DNI;Nombres y Apellidos;Correo(Login);Contrasena\n" + newCredentials.map(c => `${c.dni};${c.nombres};${c.correo};${c.contrasena}`).join("\n");
-           const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-           const link = document.createElement("a");
-           link.href = URL.createObjectURL(blob);
-           link.download = `reporte_credenciales_${new Date().getTime()}.csv`;
-           document.body.appendChild(link);
-           link.click();
-           document.body.removeChild(link);
+           await saveImportToHistory(newCredentials);
+           // Usamos la fecha actual en formato Peru para el nombre del archivo
+           const dateStr = new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' });
+           downloadCredentialsReport(newCredentials, dateStr);
         }
 
-        let message = `Se crearon ${insertedCount} accesos y se descargó el reporte de credenciales.`;
-        if (duplicates.length > 0) message += ` Se omitieron ${duplicates.length} duplicados.`;
-        if (authErrors > 0) message += ` Fallaron ${authErrors} correos.`;
-        toast({ title: "Importación finalizada", description: message });
+        let message = `Se crearon ${insertedCount} accesos exitosamente.`;
+        if (duplicates.length > 0) message += ` Se omitieron ${duplicates.length} duplicados locales.`;
+        if (formatErrors > 0) message += ` Se omitieron ${formatErrors} correos con formato inválido.`;
+        if (authErrors > 0) message += ` Fallaron ${authErrors} cuentas (El correo ya existía en la bóveda).`;
         
+        toast({ title: "Importación finalizada", description: message });
         await fetchStudents();
 
       } catch (error: any) { 
@@ -520,7 +645,6 @@ const AdminStudentManagement = () => {
                 <SelectTrigger className="min-w-[160px] w-auto"><SelectValue placeholder="Estado" /></SelectTrigger>
                 <SelectContent><SelectItem value="all">Todos los estados</SelectItem><SelectItem value="active">Activos</SelectItem><SelectItem value="inactive">Desmatriculados</SelectItem></SelectContent>
               </Select>
-              
               <Select value={assignmentFilter} onValueChange={setAssignmentFilter}>
                 <SelectTrigger className="min-w-[160px] w-auto border-amber-300 bg-amber-50/50"><SelectValue placeholder="Estado de Asignación" /></SelectTrigger>
                 <SelectContent>
@@ -551,7 +675,11 @@ const AdminStudentManagement = () => {
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" className="bg-white border-blue-200 hover:bg-blue-50" onClick={() => setIsBulkStatusModalOpen(true)}>Cambiar Estado</Button>
                 <Button variant="outline" size="sm" className="bg-white border-blue-200 hover:bg-blue-50" onClick={() => setIsBulkGradeModalOpen(true)}>Asignar Grado</Button>
-                <Button variant="destructive" size="sm" onClick={() => { setDeletingStudents(students.filter(s => selectedIds.includes(s.id))); setIsDeleteModalOpen(true); }}>Eliminar Seleccionados</Button>
+                <Button variant="destructive" size="sm" onClick={() => { 
+                  setDeletingStudents(students.filter(s => selectedIds.includes(s.id))); 
+                  setDeleteConfirmText(''); 
+                  setIsDeleteModalOpen(true); 
+                }}>Eliminar Seleccionados</Button>
               </div>
             </div>
           )}
@@ -618,7 +746,11 @@ const AdminStudentManagement = () => {
                             <div className="flex items-center justify-end gap-1">
                               <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-indigo-600 hover:bg-indigo-50" onClick={() => openEnrollModal(student)} title="Ver Cursos/Matrícula"><BookOpen className="w-4 h-4" /></Button>
                               <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50" onClick={() => openEditModal(student)} title="Editar Ficha"><Edit className="w-4 h-4" /></Button>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-600 hover:bg-red-50" onClick={() => { setDeletingStudents([student]); setIsDeleteModalOpen(true); }} title="Eliminar Alumno"><Trash2 className="w-4 h-4" /></Button>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-600 hover:bg-red-50" onClick={() => { 
+                                setDeletingStudents([student]); 
+                                setDeleteConfirmText(''); 
+                                setIsDeleteModalOpen(true); 
+                              }} title="Eliminar Alumno"><Trash2 className="w-4 h-4" /></Button>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -640,11 +772,14 @@ const AdminStudentManagement = () => {
           </CardContent>
         </Card>
 
+        {/* ============================================================== */}
+        {/* ZONA IMPORTACIÓN MASIVA CON HISTORIAL EN LA NUBE               */}
+        {/* ============================================================== */}
         <div className="pt-6">
           <Card className="border border-blue-100 bg-blue-50/20 shadow-sm">
             <CardHeader className="pb-3 border-b bg-white rounded-t-lg">
               <CardTitle className="text-lg flex items-center gap-2 text-blue-800"><FileSpreadsheet className="w-5 h-5" /> Importación Masiva de Estudiantes</CardTitle>
-              <CardDescription>Sube un archivo CSV para matricular a decenas de alumnos en un solo clic y generar sus cuentas de acceso de forma segura.</CardDescription>
+              <CardDescription>Sube un archivo CSV para matricular alumnos en lote y generar sus cuentas de acceso de forma segura.</CardDescription>
             </CardHeader>
             <CardContent className="p-6">
               <div className="grid md:grid-cols-2 gap-8 items-center">
@@ -653,8 +788,8 @@ const AdminStudentManagement = () => {
                     <div className="bg-blue-100 text-blue-700 w-8 h-8 rounded-full flex items-center justify-center font-bold shrink-0">1</div>
                     <div>
                       <h4 className="font-semibold text-gray-800">Columnas del Archivo CSV</h4>
-                      <p className="text-sm text-gray-600 mb-1">Obligatorias: <span className="font-bold text-red-600">DNI, Nombres, Apellidos, Correo</span></p>
-                      <p className="text-sm text-gray-500 mb-3">Opcionales: <span className="font-medium">Telefono, Apoderado, Telefono_Emergencia</span></p>
+                      <p className="text-sm text-gray-600 mb-1">Obligatorias: <span className="font-bold text-red-600">DNI (8 dígitos), Nombres, Apellidos, Correo</span></p>
+                      <p className="text-sm text-gray-500 mb-3">Opcionales: <span className="font-medium">Telefono (9 dígitos), Apoderado, Telefono_Emergencia</span></p>
                       <Button variant="outline" size="sm" onClick={downloadTemplate} className="border-blue-300 text-blue-700 hover:bg-blue-50"><Download className="w-4 h-4 mr-2" /> Descargar Plantilla .CSV</Button>
                     </div>
                   </div>
@@ -662,11 +797,12 @@ const AdminStudentManagement = () => {
                     <div className="bg-blue-100 text-blue-700 w-8 h-8 rounded-full flex items-center justify-center font-bold shrink-0">2</div>
                     <div>
                       <h4 className="font-semibold text-gray-800">Sube tu archivo completado</h4>
-                      <p className="text-sm text-gray-500">Se generarán <strong>contraseñas aleatorias seguras</strong> y se descargará un reporte Excel con las credenciales al finalizar la importación.</p>
+                      <p className="text-sm text-gray-500">Se generarán <strong>contraseñas aleatorias seguras</strong> y el reporte quedará guardado en el historial global.</p>
                     </div>
                   </div>
                 </div>
-                <div className="relative border-2 border-dashed border-blue-200 rounded-xl p-8 text-center bg-white hover:bg-blue-50/50 cursor-pointer">
+                
+                <div className="relative border-2 border-dashed border-blue-200 rounded-xl p-8 text-center bg-white hover:bg-blue-50/50 cursor-pointer transition-colors">
                   {isUploading ? (
                     <div className="flex flex-col items-center justify-center py-4"><Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-3" /><p className="text-sm font-medium">Creando cuentas y registros...</p></div>
                   ) : (
@@ -674,11 +810,54 @@ const AdminStudentManagement = () => {
                       <UploadCloud className="w-12 h-12 mx-auto text-blue-400 mb-3" />
                       <p className="text-sm font-medium text-gray-700">Haz clic para buscar un archivo CSV</p>
                       <Input type="file" accept=".csv" className="hidden" id="file-upload" onChange={handleFileUpload} disabled={isUploading}/>
-                      <label htmlFor="file-upload" className="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-md text-sm cursor-pointer hover:bg-blue-700">Seleccionar Archivo</label>
+                      <label htmlFor="file-upload" className="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-md text-sm cursor-pointer hover:bg-blue-700 shadow-sm transition-transform hover:scale-105">Seleccionar Archivo</label>
                     </>
                   )}
                 </div>
               </div>
+              
+              {/* --- HISTORIAL DE IMPORTACIONES (Global / Nube) --- */}
+              {importHistory.length > 0 && (
+                <div className="mt-8 pt-6 border-t border-blue-100 animate-in fade-in">
+                  <h4 className="font-semibold text-gray-800 flex items-center gap-2 mb-4">
+                    <History className="w-5 h-5 text-emerald-600"/> Historial Global de Credenciales
+                  </h4>
+                  
+                  <div className="bg-emerald-50/50 rounded-xl border border-emerald-100 p-3">
+                     <div className="max-h-56 overflow-y-auto space-y-2 pr-2">
+                        {importHistory.map((entry) => (
+                           <div key={entry.id} className="flex flex-col sm:flex-row items-center justify-between p-3 bg-white border border-emerald-100 rounded-lg shadow-sm hover:border-emerald-300 transition-colors">
+                              <div>
+                                 <div className="font-semibold text-emerald-900">
+                                   {new Date(entry.created_at).toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' })}
+                                 </div>
+                                 <div className="text-xs font-medium text-emerald-600 mt-0.5">{entry.total_students} estudiantes procesados</div>
+                              </div>
+                              <Button 
+                                 size="sm" 
+                                 onClick={() => downloadCredentialsReport(entry.report_data, new Date(entry.created_at).toLocaleString('es-PE'))} 
+                                 className="bg-emerald-600 hover:bg-emerald-700 text-white mt-3 sm:mt-0 shadow-sm w-full sm:w-auto"
+                              >
+                                 <Download className="w-4 h-4 mr-2" /> Descargar Excel
+                              </Button>
+                           </div>
+                        ))}
+                     </div>
+                     
+                     <div className="flex justify-end mt-3 pt-2 border-t border-emerald-100/50">
+                        <Button 
+                           variant="ghost" 
+                           size="sm" 
+                           className="text-gray-400 hover:text-red-500 hover:bg-red-50 text-xs px-2 h-7" 
+                           onClick={clearImportHistory}
+                        >
+                           <Trash className="w-3 h-3 mr-1" /> Limpiar historial global
+                        </Button>
+                     </div>
+                  </div>
+                  <p className="text-[10px] text-gray-500 mt-2 italic text-right">Este historial se sincroniza en la nube entre todos los administradores. Se conservan las últimas 10 importaciones de forma automática.</p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -687,35 +866,68 @@ const AdminStudentManagement = () => {
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
             <DialogTitle className="text-xl">{editingStudent ? 'Editar Ficha del Estudiante' : 'Registrar Nuevo Estudiante y Cuenta'}</DialogTitle>
-            </DialogHeader>
+        </DialogHeader>
           <form onSubmit={handleSaveStudent} className="space-y-6 mt-4">
             
             <div className="space-y-4">
               <h3 className="text-sm font-bold text-gray-500 uppercase border-b pb-2">1. Datos Personales</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2"><Label>DNI <span className="text-red-500">*</span></Label><Input value={formData.dni} onChange={e => setFormData({...formData, dni: e.target.value})} required autoFocus maxLength={8}/></div>
-                <div className="space-y-2"><Label>Nombres <span className="text-red-500">*</span></Label><Input value={formData.first_name} onChange={e => setFormData({...formData, first_name: e.target.value})} required /></div>
-                <div className="space-y-2"><Label>Apellidos <span className="text-red-500">*</span></Label><Input value={formData.last_name} onChange={e => setFormData({...formData, last_name: e.target.value})} required /></div>
+                <div className="space-y-2">
+                   <Label>DNI <span className="text-red-500">*</span></Label>
+                   <Input 
+                      value={formData.dni} 
+                      onChange={e => setFormData({...formData, dni: e.target.value.replace(ONLY_NUMBERS_REGEX, '').slice(0, 8)})} 
+                      required autoFocus minLength={8} maxLength={8} placeholder="8 dígitos numéricos" 
+                   />
+                </div>
+                <div className="space-y-2">
+                   <Label>Nombres <span className="text-red-500">*</span></Label>
+                   <Input 
+                      value={formData.first_name} 
+                      onChange={e => setFormData({...formData, first_name: e.target.value.replace(ONLY_LETTERS_REGEX, '')})} 
+                      required 
+                   />
+                </div>
+                <div className="space-y-2">
+                   <Label>Apellidos <span className="text-red-500">*</span></Label>
+                   <Input 
+                      value={formData.last_name} 
+                      onChange={e => setFormData({...formData, last_name: e.target.value.replace(ONLY_LETTERS_REGEX, '')})} 
+                      required 
+                   />
+                </div>
                 
-                <div className="space-y-2"><Label>Correo (Login) <span className="text-red-500">*</span></Label><Input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} required disabled={!!editingStudent} className={editingStudent ? "bg-gray-100 cursor-not-allowed" : ""}/></div>
-                
-                {/* NUEVO BOTÓN GENERADOR DE CONTRASEÑA */}
+                <div className="space-y-2">
+                   <Label>Correo (Login) <span className="text-red-500">*</span></Label>
+                   <Input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} required disabled={!!editingStudent} className={editingStudent ? "bg-gray-100 cursor-not-allowed" : ""}/>
+                </div>
+                  
                 {!editingStudent && (
-                  <div className="space-y-2">
-                    <Label>Contraseña Inicial <span className="text-red-500">*</span></Label>
-                    <div className="flex gap-2">
-                      <Input type="text" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} required minLength={6} placeholder="Ingresa o genera clave"/>
-                      <Button type="button" variant="outline" className="shrink-0" onClick={() => setFormData({...formData, password: generateRandomPassword()})} title="Generar contraseña segura aleatoria">
-                        <RefreshCw className="w-4 h-4 text-blue-600" />
-                      </Button>
-                    </div>
-                    <p className="text-[10px] text-gray-500">Se requiere para el primer ingreso del estudiante.</p>
+                <div className="space-y-2">
+                  <Label>Contraseña Inicial <span className="text-red-500">*</span></Label>
+                  <div className="flex gap-2">
+                    <Input type="text" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} required minLength={6} placeholder="Ingresa o genera clave"/>
+                    <Button type="button" variant="outline" className="shrink-0" onClick={() => setFormData({...formData, password: generateRandomPassword()})} title="Generar contraseña segura aleatoria">
+                      <RefreshCw className="w-4 h-4 text-blue-600" />
+                    </Button>
                   </div>
+                  <p className="text-[10px] text-gray-500">Se requiere para el primer ingreso del estudiante.</p>
+                </div>
                 )}
                 
-                <div className="space-y-2"><Label>Teléfono Celular <span className="text-gray-400 font-normal text-xs ml-1">(Opcional)</span></Label><Input value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} /></div>
-                <div className="space-y-2"><Label>Fecha Nacimiento <span className="text-gray-400 font-normal text-xs ml-1">(Opcional)</span></Label><Input type="date" value={formData.birth_date} onChange={e => setFormData({...formData, birth_date: e.target.value})} /></div>
+                <div className="space-y-2">
+                   <Label>Teléfono Celular <span className="text-gray-400 font-normal text-xs ml-1">(Opcional)</span></Label>
+                   <Input 
+                      value={formData.phone} 
+                      onChange={e => setFormData({...formData, phone: e.target.value.replace(ONLY_NUMBERS_REGEX, '').slice(0, 9)})} 
+                      placeholder="9 dígitos numéricos"
+                   />
                 </div>
+                <div className="space-y-2">
+                   <Label>Fecha Nacimiento <span className="text-gray-400 font-normal text-xs ml-1">(Opcional)</span></Label>
+                   <Input type="date" value={formData.birth_date} onChange={e => setFormData({...formData, birth_date: e.target.value})} />
+                </div>
+              </div>
             </div>
 
             {editingStudent && (
@@ -736,7 +948,6 @@ const AdminStudentManagement = () => {
             <div className="space-y-4">
               <h3 className="text-sm font-bold text-gray-500 uppercase border-b pb-2">2. Ubicación Académica ({CURRENT_YEAR})</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-blue-50/50 p-4 rounded-lg border border-blue-100">
-                
                 <div className="space-y-2">
                   <Label>Grado a cursar <span className="text-gray-400 font-normal text-xs ml-1">(Opcional)</span></Label>
                   <Select value={formData.current_grade_id || "unassigned"} onValueChange={val => setFormData({...formData, current_grade_id: val, section_id: 'unassigned'})}>
@@ -754,7 +965,6 @@ const AdminStudentManagement = () => {
                     </SelectContent>
                   </Select>
                 </div>
-                
                 <div className="space-y-2">
                   <Label>Aula Virtual / Sección <span className="text-gray-400 font-normal text-xs ml-1">(Opcional)</span></Label>
                   <Select disabled={formData.current_grade_id === 'unassigned' || aulasDelGrado.length === 0} value={formData.section_id || "unassigned"} onValueChange={val => setFormData({...formData, section_id: val})}>
@@ -769,15 +979,28 @@ const AdminStudentManagement = () => {
                     </SelectContent>
                   </Select>
                 </div>
-
               </div>
             </div>
 
             <div className="space-y-4">
               <h3 className="text-sm font-bold text-gray-500 uppercase border-b pb-2">3. Apoderado / Contacto</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2"><Label>Nombre del Apoderado</Label><Input value={formData.guardian_name} onChange={e => setFormData({...formData, guardian_name: e.target.value})} placeholder="Nombre completo" /></div>
-                <div className="space-y-2"><Label className="text-red-600">Teléfono de Emergencia</Label><Input value={formData.emergency_phone} onChange={e => setFormData({...formData, emergency_phone: e.target.value})} placeholder="Nro para llamadas urgentes" className="border-red-200 focus-visible:ring-red-500" /></div>
+                <div className="space-y-2">
+                   <Label>Nombre del Apoderado</Label>
+                   <Input 
+                      value={formData.guardian_name} 
+                      onChange={e => setFormData({...formData, guardian_name: e.target.value.replace(ONLY_LETTERS_REGEX, '')})} 
+                      placeholder="Nombre completo" 
+                   />
+                </div>
+                <div className="space-y-2">
+                   <Label className="text-red-600">Teléfono de Emergencia</Label>
+                   <Input 
+                      value={formData.emergency_phone} 
+                      onChange={e => setFormData({...formData, emergency_phone: e.target.value.replace(ONLY_NUMBERS_REGEX, '').slice(0, 9)})} 
+                      placeholder="Nro de urgencias (9 dígitos)" className="border-red-200 focus-visible:ring-red-500" 
+                   />
+                </div>
               </div>
             </div>
 
@@ -789,31 +1012,51 @@ const AdminStudentManagement = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isDeleteModalOpen} onOpenChange={(open) => { setIsDeleteModalOpen(open); if (!open) setDeletingStudents([]); }}>
+      <Dialog open={isDeleteModalOpen} onOpenChange={(open) => { setIsDeleteModalOpen(open); if (!open) { setDeletingStudents([]); setDeleteConfirmText(''); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="text-red-600 flex items-center gap-2"><AlertTriangle className="w-5 h-5"/> Advertencia de Eliminación</DialogTitle>
           </DialogHeader>
           <div className="py-2 text-gray-700">
-            {blockedFromDeletion.length > 0 ? (
+            {blockedFromDeletion.length > 0 && (
               <div className="mb-4">
                 <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-md">
-                  <div className="flex items-center gap-2 text-red-800 font-bold mb-2"><ShieldAlert className="w-5 h-5" /> ACCIÓN BLOQUEADA</div>
-                  <p className="text-sm text-red-700 mb-2">No puedes eliminar a los siguientes alumnos porque <strong>tienen un Grado asignado</strong>. Edita sus fichas a "Sin asignar temporalmente" primero para poder eliminarlos del sistema:</p>
+                  <div className="flex items-center gap-2 text-red-800 font-bold mb-2"><ShieldAlert className="w-5 h-5" /> ALUMNOS PROTEGIDOS</div>
+                  <p className="text-sm text-red-700 mb-2">No puedes eliminar a los siguientes alumnos porque <strong>tienen un Grado asignado</strong>. Edita sus fichas a "Dejar sin asignar temporalmente" primero para poder eliminarlos del sistema:</p>
                   <ul className="list-disc list-inside text-xs font-semibold text-red-900 max-h-32 overflow-y-auto pl-2">
                     {blockedFromDeletion.map(s => <li key={s.id}>{s.first_name} {s.last_name}</li>)}
                   </ul>
                 </div>
               </div>
-              ) : (
-                <p className="mb-3">¿Seguro que deseas eliminar a {deletingStudents.length > 1 ? `estos ${deletingStudents.length} estudiantes` : 'este estudiante'}? Esta acción es irreversible.</p>
-              )}
+            )}
+            
+            {safeToDelete.length > 0 && (
+              <div className="space-y-4">
+                 <p className="font-medium text-gray-800">
+                   Se procederá a eliminar definitivamente a <strong>{safeToDelete.length} estudiante(s)</strong>. Esta acción borrará sus perfiles y cerrará permanentemente sus accesos en el sistema.
+                 </p>
+                 <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-inner">
+                    <Label className="text-red-600 font-bold mb-2 block text-center">Escribe "ELIMINAR" para confirmar:</Label>
+                    <Input 
+                       placeholder="Escribe ELIMINAR aquí" 
+                       value={deleteConfirmText} 
+                       onChange={(e) => setDeleteConfirmText(e.target.value)} 
+                       className="border-red-200 focus-visible:ring-red-500 text-center font-bold tracking-widest"
+                    />
+                 </div>
+              </div>
+            )}
+            
+            {safeToDelete.length === 0 && blockedFromDeletion.length > 0 && (
+               <p className="mt-2 text-sm font-medium text-gray-500 text-center border-t pt-4">Ningún estudiante seleccionado cumple los requisitos para ser eliminado.</p>
+            )}
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" type="button">Cancelar</Button></DialogClose>
             {safeToDelete.length > 0 && (
-              <Button variant="destructive" onClick={handleBulkDelete} disabled={saving}>
-                {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />} Eliminar Totalmente
+              <Button variant="destructive" onClick={handleBulkDelete} disabled={saving || deleteConfirmText !== 'ELIMINAR'}>
+                {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />} 
+                Confirmar Eliminación
               </Button>
             )}
           </DialogFooter>
@@ -824,116 +1067,116 @@ const AdminStudentManagement = () => {
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Cambiar Estado Masivamente</DialogTitle></DialogHeader>
             <div className="py-4 space-y-4">
-            <Label>Selecciona el nuevo estado para los {selectedIds.length} alumnos:</Label>
+          <Label>Selecciona el nuevo estado para los {selectedIds.length} alumnos:</Label>
               <Select value={bulkStatusValue} onValueChange={(val: any) => setBulkStatusValue(val)}>
-              <SelectTrigger><SelectValue/></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="active">Activos / Matriculados</SelectItem>
-                <SelectItem value="inactive">Inactivos / Desmatriculados</SelectItem>
+            <SelectTrigger><SelectValue/></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Activos / Matriculados</SelectItem>
+              <SelectItem value="inactive">Inactivos / Desmatriculados</SelectItem>
                 </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsBulkStatusModalOpen(false)}>Cancelar</Button>
-            <Button onClick={handleBulkStatus} disabled={saving}>{saving ? 'Aplicando...' : 'Aplicar Cambios'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </Select>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsBulkStatusModalOpen(false)}>Cancelar</Button>
+          <Button onClick={handleBulkStatus} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">{saving ? 'Aplicando...' : 'Aplicar Cambios'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
-      <Dialog open={isBulkGradeModalOpen} onOpenChange={setIsBulkGradeModalOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
+    <Dialog open={isBulkGradeModalOpen} onOpenChange={setIsBulkGradeModalOpen}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
               <DialogTitle>Asignar Grado Masivamente</DialogTitle>
               <DialogDescription>Los alumnos perderán su asignación de aula actual si cambian de grado.</DialogDescription>
             </DialogHeader>
             <div className="py-4 space-y-4">
               <Label>Selecciona el grado para los {selectedIds.length} alumnos:</Label>
               <Select value={bulkGradeValue} onValueChange={setBulkGradeValue}>
-              <SelectTrigger><SelectValue/></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="unassigned" className="text-orange-600 font-medium">Dejar sin asignar</SelectItem>
-                {levels.map(level => (
-                  <div key={`bulk-group-${level.id}`}>
-                    <div className="px-2 py-1.5 text-xs font-bold text-gray-400 uppercase bg-gray-50">{level.name}</div>
-                    {grades.filter(g => g.level_id === level.id).map(grade => (
-                      <SelectItem key={grade.id} value={grade.id} className="pl-6">{grade.name}</SelectItem>
-                    ))}
-                  </div>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsBulkGradeModalOpen(false)}>Cancelar</Button>
-            <Button onClick={handleBulkGrade} disabled={saving}>{saving ? 'Aplicando...' : 'Aplicar Grado'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <SelectTrigger><SelectValue/></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="unassigned" className="text-orange-600 font-medium">Dejar sin asignar</SelectItem>
+              {levels.map(level => (
+                <div key={`bulk-group-${level.id}`}>
+                  <div className="px-2 py-1.5 text-xs font-bold text-gray-400 uppercase bg-gray-50">{level.name}</div>
+                  {grades.filter(g => g.level_id === level.id).map(grade => (
+                    <SelectItem key={grade.id} value={grade.id} className="pl-6">{grade.name}</SelectItem>
+                  ))}
+                </div>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsBulkGradeModalOpen(false)}>Cancelar</Button>
+          <Button onClick={handleBulkGrade} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">{saving ? 'Aplicando...' : 'Aplicar Grado'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
-      <Dialog open={isEnrollModalOpen} onOpenChange={setIsEnrollModalOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><BookOpen className="w-5 h-5 text-indigo-600" /> Cursos y Exoneraciones</DialogTitle>
-            <DialogDescription>{selectedStudent?.first_name} {selectedStudent?.last_name}</DialogDescription>
-          </DialogHeader>
-          
-          <div className="py-4">
-            {!selectedStudent?.current_grade_id ? (
-              <div className="text-center p-6 bg-orange-50 rounded-lg border border-orange-200">
-                <ShieldAlert className="w-10 h-10 text-orange-500 mx-auto mb-3" />
-                <h3 className="text-lg font-semibold text-orange-800">Estudiante sin grado asignado</h3>
+    <Dialog open={isEnrollModalOpen} onOpenChange={setIsEnrollModalOpen}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><BookOpen className="w-5 h-5 text-indigo-600" /> Cursos y Exoneraciones</DialogTitle>
+          <DialogDescription>{selectedStudent?.first_name} {selectedStudent?.last_name}</DialogDescription>
+        </DialogHeader>
+        
+        <div className="py-4">
+          {!selectedStudent?.current_grade_id ? (
+            <div className="text-center p-6 bg-orange-50 rounded-lg border border-orange-200">
+              <ShieldAlert className="w-10 h-10 text-orange-500 mx-auto mb-3" />
+              <h3 className="text-lg font-semibold text-orange-800">Estudiante sin grado asignado</h3>
                 <p className="text-sm text-orange-600 mt-2">Para ver la malla de cursos, asígnale un grado primero.</p>
                 </div>
-            ) : loadingCourses ? (
-              <div className="flex flex-col items-center justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-indigo-600 mb-2" /><p className="text-sm text-gray-500">Cargando malla curricular y sincronizando...</p></div>
-            ) : studentMallaCourses.length === 0 ? (
-              <div className="text-center p-6 bg-gray-50 rounded-lg border"><p className="text-gray-500">No hay cursos registrados para este grado en la malla maestra.</p></div>
-            ) : (
-              <div className="space-y-4">
-                {!selectedStudent.section_id && (
-                  <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded text-sm flex gap-2">
-                    <ShieldAlert className="w-5 h-5 shrink-0 text-amber-500"/>
-                    <p><strong>Aviso:</strong> El estudiante no tiene Aula Virtual asignada. Puedes ver su malla de cursos, pero para guardar exoneraciones necesitarás asignarle una Sección editando su ficha.</p>
-                  </div>
-                )}
-                <p className="text-sm text-gray-600">Malla curricular correspondiente a {selectedStudent.grade?.name}.</p>
-                
-                <div className="grid gap-2 max-h-[50vh] overflow-y-auto pr-2">
-                  {studentMallaCourses.map(course => {
-                    const typeLabel = course.is_mandatory ? "Obligatorio" : "Electivo";
-                    const isExempted = exemptions.includes(course.section_course_id || 'unmatchable_id');
+          ) : loadingCourses ? (
+            <div className="flex flex-col items-center justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-indigo-600 mb-2" /><p className="text-sm text-gray-500">Cargando malla curricular y sincronizando...</p></div>
+          ) : studentMallaCourses.length === 0 ? (
+            <div className="text-center p-6 bg-gray-50 rounded-lg border"><p className="text-gray-500">No hay cursos registrados para este grado en la malla maestra.</p></div>
+          ) : (
+            <div className="space-y-4">
+              {!selectedStudent.section_id && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-lg text-sm flex gap-2">
+                  <ShieldAlert className="w-5 h-5 shrink-0 text-amber-500"/>
+                  <p><strong>Aviso:</strong> El estudiante no tiene Aula Virtual asignada. Puedes ver su malla de cursos, pero para guardar exoneraciones necesitarás asignarle una Sección editando su ficha.</p>
+                </div>
+              )}
+              <p className="text-sm text-gray-600 font-medium">Malla curricular correspondiente a {selectedStudent.grade?.name}.</p>
+              
+              <div className="grid gap-2 max-h-[50vh] overflow-y-auto pr-2">
+                {studentMallaCourses.map(course => {
+                  const typeLabel = course.is_mandatory ? "Obligatorio" : "Electivo";
+                  const isExempted = exemptions.includes(course.section_course_id || 'unmatchable_id');
 
-                    return (
-                      <div key={course.base_course_id} className={`flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors ${course.isActive ? 'bg-white' : 'bg-gray-100 opacity-75'}`}>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <div className={`font-semibold ${course.isActive ? 'text-gray-800' : 'text-gray-500 line-through'}`}>{course.name}</div>
-                            {!course.isActive && <Badge variant="outline" className="text-[10px] bg-red-50 text-red-600 border-red-200 py-0 h-4">Desactivado global</Badge>}
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1 flex items-center gap-2">
-                             <Badge variant="secondary" className={`text-[10px] py-0 px-1.5 ${course.is_mandatory ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'}`}>{typeLabel}</Badge>
-                             <span>• {course.area}</span>
-                          </div>
-                        </div>
+                  return (
+                    <div key={course.base_course_id} className={`flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors ${course.isActive ? 'bg-white' : 'bg-gray-100 opacity-75'}`}>
+                      <div>
                         <div className="flex items-center gap-2">
-                          <span className={`text-xs font-medium ${isExempted ? 'text-red-500' : 'text-green-600'}`}>{isExempted ? 'Exonerado' : 'Inscrito'}</span>
-                          <Switch checked={!isExempted} onCheckedChange={(checked) => handleToggleExemption(course.section_course_id, !checked)} disabled={!course.isActive} />
+                          <div className={`font-semibold ${course.isActive ? 'text-gray-800' : 'text-gray-500 line-through'}`}>{course.name}</div>
+                          {!course.isActive && <Badge variant="outline" className="text-[10px] bg-red-50 text-red-600 border-red-200 py-0 h-4">Desactivado global</Badge>}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1 flex items-center gap-2">
+                           <Badge variant="secondary" className={`text-[10px] py-0 px-1.5 ${course.is_mandatory ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'}`}>{typeLabel}</Badge>
+                           <span>• {course.area}</span>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-bold ${isExempted ? 'text-red-500' : 'text-green-600'}`}>{isExempted ? 'Exonerado' : 'Inscrito'}</span>
+                        <Switch checked={!isExempted} onCheckedChange={(checked) => handleToggleExemption(course.section_course_id, !checked)} disabled={!course.isActive} />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            )}
-          </div>
-          
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEnrollModalOpen(false)}>Cerrar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      </div>
-    </DashboardLayout>
+            </div>
+          )}
+        </div>
+        
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsEnrollModalOpen(false)}>Cerrar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </div>
+  </DashboardLayout>
   );
 };
 

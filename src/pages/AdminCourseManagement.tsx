@@ -39,6 +39,7 @@ const AdminCourseManagement = () => {
   
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [deletingCourses, setDeletingCourses] = useState<Course[]>([]); 
+  
   const [formData, setFormData] = useState<CourseFormData>({ name: '', code: '', description: '', course_type: '' });
   
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -52,7 +53,7 @@ const AdminCourseManagement = () => {
   
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   
-  // FIX: Paginación Avanzada
+  // Paginación Avanzada
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState<number | 'all'>(10);
   
@@ -145,7 +146,6 @@ const AdminCourseManagement = () => {
     return sortable;
   }, [filteredCourses, sortConfig]);
 
-  // FIX Lógica de Paginación
   const currentLimit = itemsPerPage === 'all' ? sortedCourses.length : (itemsPerPage as number);
   const totalPages = Math.max(1, Math.ceil(sortedCourses.length / currentLimit));
   
@@ -350,10 +350,12 @@ const AdminCourseManagement = () => {
           if (cols.length < 2) continue;
           const name = cols[0], code = cols[1], description = cols[2] || null, course_type = cols[3] || null;
           if (!name || !code) continue;
+          
           const nameNorm = normalizeStr(name);
           const codeNorm = normalizeStr(code);
           const isDupInDB = courses.some(c => normalizeStr(c.name) === nameNorm || normalizeStr(c.code) === codeNorm);
           const isDupInList = toInsert.some(c => normalizeStr(c.name) === nameNorm || normalizeStr(c.code) === codeNorm);
+          
           if (isDupInDB || isDupInList) duplicates.push(code);
           else toInsert.push({ name, code, description, course_type, is_active: true });
         }
@@ -421,7 +423,6 @@ const AdminCourseManagement = () => {
             <div className="flex flex-wrap items-center gap-4 shrink-0">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-600">Mostrar</span>
-                {/* SELECT DE PAGINACIÓN */}
                 <Select value={itemsPerPage.toString()} onValueChange={val => setItemsPerPage(val === 'all' ? 'all' : Number(val))}>
                   <SelectTrigger className="w-[100px] h-9"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -522,7 +523,7 @@ const AdminCourseManagement = () => {
           </CardContent>
         </Card>
 
-        {/* ZONA IMPORTACIÓN (Sin Cambios) */}
+        {/* ZONA IMPORTACIÓN CON MEJORAS DE FORMATO */}
         <div className="pt-6">
           <Card className="border border-blue-100 bg-blue-50/20 shadow-sm">
             <CardHeader className="pb-3 border-b bg-white rounded-t-lg">
@@ -536,7 +537,9 @@ const AdminCourseManagement = () => {
                     <div className="bg-blue-100 text-blue-700 w-8 h-8 rounded-full flex items-center justify-center font-bold shrink-0">1</div>
                     <div>
                       <h4 className="font-semibold text-gray-800">Descarga la Plantilla Base</h4>
-                      <p className="text-sm text-gray-500 mb-2">Usa nuestro formato exacto para evitar errores.</p>
+                      <p className="text-sm text-gray-500 mb-1">Usa nuestro formato exacto para evitar errores.</p>
+                      <p className="text-sm text-gray-600 mb-1">Obligatorios: <span className="font-bold text-red-600">Nombre de Asignatura, Código</span></p>
+                      <p className="text-sm text-gray-500 mb-3">Opcionales: <span className="font-medium">Descripción, Tipo de Curso</span></p>
                       <Button variant="outline" size="sm" onClick={downloadTemplate} className="border-blue-300 text-blue-700 hover:bg-blue-50"><Download className="w-4 h-4 mr-2" /> Descargar Plantilla .CSV</Button>
                     </div>
                   </div>

@@ -1,7 +1,31 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User, Session } from '@supabase/supabase-js';
+import { User, Session, createClient } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+
+// ============================================================================
+// ESCUDO DE SESIÓN: CLIENTE AISLADO
+// Evita que el Admin pierda su sesión al registrar alumnos.
+// ============================================================================
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
+const memoryStorage = {
+  getItem: (key: string) => null,
+  setItem: (key: string, value: string) => {},
+  removeItem: (key: string) => {}
+};
+
+const isolatedSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storageKey: 'isolated-admin-auth-token',
+    autoRefreshToken: false,
+    persistSession: false, 
+    detectSessionInUrl: false,
+    storage: memoryStorage
+  }
+});
+// ============================================================================
 
 export type UserRole = 'admin' | 'teacher' | 'student' | 'parent' | 'tutor' | 'directivo';
 
@@ -16,6 +40,7 @@ interface Profile {
   phone?: string;
   avatar_url?: string;
   is_active: boolean;
+  student_code?: string;
 }
 
 interface AuthContextType {
@@ -38,7 +63,9 @@ interface AuthContextType {
     current_grade_id?: string;
     guardian_name?: string;
     emergency_phone?: string;
-  }) => Promise<{ error: any }>;
+    dni?: string;           // Agregado para que no tire error en Typescript
+    birth_date?: string;    // Agregado para que no tire error en Typescript
+  }) => Promise<{ data?: any, error: any }>; // Añadido 'data' para el frontend
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -75,7 +102,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               return;
             }
             
-            console.log('Profile data received:', profileData);
             console.log('Profile data received:', profileData);
             
             if (profileData) {
@@ -226,20 +252,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error };
   };
 
-  const createUserByAdmin = async (userData: {
-    email: string;
-    password: string;
-    first_name: string;
-    last_name: string;
-    role: string;
-    phone?: string;
-    current_grade_id?: string;
-    guardian_name?: string;
-    emergency_phone?: string;
-  }) => {
+  // ============================================================================
+  // LOGICA CORREGIDA (Con el upsert original tuyo y protección Anti-Errores)
+  // ============================================================================
+  const createUserByAdmin = async (userData: any) => {
     try {
-      // 1. Crear usuario en Auth con signUp (GoTrue maneja el hash correctamente)
-      const { data, error } = await supabase.auth.signUp({
+      // 1. Usamos la conexión aislada para no desloguear al admin
+      const { data, error } = await isolatedSupabase.auth.signUp({
         email: userData.email.trim(),
         password: userData.password,
         options: {
@@ -253,14 +272,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (error) {
-        // Si es rate limit de email, mostrar mensaje claro
         const isRateLimit = error?.message?.includes('429') || error?.message?.includes('rate_limit') || error?.message?.includes('over_email');
         if (isRateLimit) {
           return { error: new Error('Límite de creación de usuarios alcanzado. Espera 1 minuto y vuelve a intentarlo.') };
         }
-        // Si el usuario ya existe en auth, actualizar su contraseña
         if (error?.message?.includes('already') || error?.message?.includes('exists')) {
-          return { error: new Error('Ya existe un usuario con ese email') };
+          return { error: new Error('Ya existe un usuario con ese email.') };
         }
         return { error };
       }
@@ -269,7 +286,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: new Error('No se pudo crear el usuario') };
       }
 
-      // 2. Esperar a que el trigger cree el profile básico
+      // 2. Generar el código de estudiante único (Arregla el error 23505 del student_code)
+      let studentCode = null;
+      if (userData.role === 'student') {
+         const randomLetters = Math.random().toString(36).substring(2, 6).toUpperCase();
+         const randomNumbers = Math.floor(1000 + Math.random() * 9000);
+         studentCode = `EST-${new Date().getFullYear()}-${randomLetters}${randomNumbers}`;
+      }
+
+      // 3. Esperar al trigger como lo tenías tú
       let profileFound = false;
       for (let i = 0; i < 10; i++) {
         const { data: existingProfile } = await supabase
@@ -284,7 +309,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await new Promise(r => setTimeout(r, 500));
       }
 
-      // 3. Actualizar o insertar el profile con datos completos (upsert)
+      // 4. Tu UPSERT original (Se ejecuta sí o sí para evitar "tiempos de espera agotados")
       const { error: profileError } = await supabase
         .from('profiles')
         .upsert({
@@ -295,17 +320,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: userData.role,
           phone: userData.phone?.trim() || null,
           is_active: true,
+          student_code: studentCode,
+          dni: userData.dni?.trim() || null, // <-- Aseguramos que guarde el DNI
+          birth_date: userData.birth_date || null,
           current_grade_id: userData.role === 'student' ? (userData.current_grade_id || null) : null,
           guardian_name: userData.role === 'student' ? (userData.guardian_name?.trim() || null) : null,
           emergency_phone: userData.role === 'student' ? (userData.emergency_phone?.trim() || null) : null,
         }, { onConflict: 'user_id' });
 
+      // 5. ROLLBACK si el DNI o Código chocan en la base de datos
       if (profileError) {
         console.error('Error actualizando profile:', profileError);
+        
+        // ¡Importante! Borramos al usuario de la autenticación para que no queden cuentas fantasmas.
+        await supabase.rpc('delete_user_admin_v2', { target_user_id: data.user.id, target_email: userData.email });
+        
+        // Error 23505 = Datos duplicados (casi siempre el DNI)
+        if (profileError.code === '23505') {
+            return { error: new Error(`Conflicto: El DNI (${userData.dni}) ya está siendo usado por otro alumno en el sistema.`) };
+        }
         return { error: profileError };
       }
 
-      return { error: null };
+      return { data: { id: data.user.id }, error: null };
     } catch (err: any) {
       console.error('Error en createUserByAdmin:', err);
       return { error: err };

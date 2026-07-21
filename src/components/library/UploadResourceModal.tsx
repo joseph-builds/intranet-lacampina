@@ -45,7 +45,6 @@ export function UploadResourceModal({ isOpen, onClose, onSuccess }: UploadResour
 
   useEffect(() => {
     if (isOpen) {
-      fetchClassrooms();
       resetForm();
     }
   }, [isOpen]);
@@ -62,26 +61,14 @@ export function UploadResourceModal({ isOpen, onClose, onSuccess }: UploadResour
     if (formData.grade !== 'none') {
       setFormData(prev => ({ ...prev, subject: '', classroom_id: 'none' }));
       setIsOtherSubject(false);
-      fetchCurriculumSubjects(formData.education_level, formData.grade);
+      fetchGradeData(formData.education_level, formData.grade);
     } else {
       setCurriculumSubjects([]);
+      setClassrooms([]);
     }
   }, [formData.grade, formData.education_level]);
 
-  const fetchClassrooms = async () => {
-    try {
-      const { data } = await supabase
-        .from('virtual_classrooms')
-        .select('id, name, grade, education_level')
-        .eq('is_active', true)
-        .order('name');
-      setClassrooms(data || []);
-    } catch (err) {
-      console.error('Error fetching classrooms', err);
-    }
-  };
-
-  const fetchCurriculumSubjects = async (levelName: string, gradeName: string) => {
+  const fetchGradeData = async (levelName: string, gradeName: string) => {
     try {
       // Find the level
       const { data: levelData } = await supabase.from('academic_levels').select('id').eq('name', levelName).single();
@@ -98,8 +85,13 @@ export function UploadResourceModal({ isOpen, onClose, onSuccess }: UploadResour
         const names = Array.from(new Set(coursesData.map(c => c.name)));
         setCurriculumSubjects(names);
       }
+
+      // Fetch sections (classrooms) for this grade
+      const { data: sectionsData } = await supabase.from('sections').select('id, name, room_number').eq('grade_id', gradeData.id).order('name');
+      setClassrooms(sectionsData || []);
+
     } catch (err) {
-      console.error('Error fetching curriculum subjects', err);
+      console.error('Error fetching grade data', err);
     }
   };
 
@@ -215,11 +207,7 @@ export function UploadResourceModal({ isOpen, onClose, onSuccess }: UploadResour
   const availableGrados = formData.education_level !== 'none' ? getGradosByNivel(formData.education_level) : [];
 
   // Filter classrooms based on selected level and grade
-  const filteredClassrooms = classrooms.filter(c => {
-    if (formData.education_level !== 'none' && c.education_level !== formData.education_level) return false;
-    if (formData.grade !== 'none' && c.grade !== formData.grade) return false;
-    return true;
-  });
+  const filteredClassrooms = classrooms;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !loading && !open && onClose()}>

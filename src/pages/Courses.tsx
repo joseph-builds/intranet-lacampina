@@ -67,6 +67,13 @@ const Courses = () => {
       let coursesData: any[] = [];
 
       if (profile.role === 'student') {
+        // Fetch exemptions first
+        const { data: exemptions } = await supabase
+          .from('student_course_exemptions')
+          .select('section_course_id')
+          .eq('student_id', profile.id);
+        const exemptIds = exemptions?.map(e => e.section_course_id) || [];
+
         const { data: direct, error: dError } = await supabase
           .from('course_enrollments')
           .select(`
@@ -100,6 +107,7 @@ const Courses = () => {
               id, name, room_number,
               grade:academic_grades(name, level:academic_levels(name)),
               section_courses (
+                id,
                 base:base_courses (
                   course:courses (
                     *,
@@ -123,7 +131,9 @@ const Courses = () => {
             const scs = (ss.section as any)?.section_courses || [];
             scs.forEach((sc: any) => {
               const course = sc.base?.course;
-              if (course && course.is_active && !coursesData.find(c => c.id === course.id)) {
+              const isExempted = exemptIds.includes(sc.id);
+              
+              if (course && course.is_active && !isExempted && !coursesData.find(c => c.id === course.id)) {
                 coursesData.push({
                   ...course,
                   enrolled_at: ss.created_at,

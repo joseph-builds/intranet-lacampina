@@ -14,27 +14,9 @@ import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-interface CourseGroup {
-  level: string;
-  grades: string[];
-}
-
-interface Course {
-  id: string;
-  name: string;
-  code: string;
-  description?: string;
-  course_type?: string;
-  is_active: boolean;
-  grades_taught?: CourseGroup[];
-}
-
-interface CourseFormData {
-  name: string;
-  code: string;
-  description: string;
-  course_type: string;
-}
+interface CourseGroup { level: string; grades: string[]; }
+interface Course { id: string; name: string; code: string; description?: string; course_type?: string; is_active: boolean; grades_taught?: CourseGroup[]; }
+interface CourseFormData { name: string; code: string; description: string; course_type: string; }
 
 const normalizeStr = (str: string) => str ? str.trim().toLowerCase().replace(/\s+/g, ' ') : '';
 
@@ -46,49 +28,39 @@ const AdminCourseManagement = () => {
   const [saving, setSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   
-  // Opciones para los filtros
   const [dbLevels, setDbLevels] = useState<string[]>([]);
   const [dbGrades, setDbGrades] = useState<{name: string, level: string}[]>([]);
   
-  // Modales
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isBulkTypeModalOpen, setIsBulkTypeModalOpen] = useState(false);
   const [isBulkStatusModalOpen, setIsBulkStatusModalOpen] = useState(false);
   
-  // Estados de edición y eliminación
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [deletingCourses, setDeletingCourses] = useState<Course[]>([]); 
-  
   const [formData, setFormData] = useState<CourseFormData>({ name: '', code: '', description: '', course_type: '' });
   
-  // Selección múltiple
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkTypeValue, setBulkTypeValue] = useState('');
   const [bulkStatusValue, setBulkStatusValue] = useState<'active' | 'inactive'>('active');
   
-  // Filtros, Paginación y Ordenamiento
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const [filterLevel, setFilterLevel] = useState<string>('all');
   const [filterGrade, setFilterGrade] = useState<string>('all');
   
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
+  
+  // FIX: Paginación Avanzada
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState<number | 'all'>(10);
   
   const [quickEditMode, setQuickEditMode] = useState(false);
   const [quickEditChanges, setQuickEditChanges] = useState<{ [id: string]: Partial<Course> }>({});
 
-  useEffect(() => {
-    fetchCourses();
-    fetchFiltersData();
-  }, []);
-
-  useEffect(() => {
-    setFilterGrade('all');
-  }, [filterLevel]);
+  useEffect(() => { fetchCourses(); fetchFiltersData(); }, []);
+  useEffect(() => { setFilterGrade('all'); }, [filterLevel]);
 
   const fetchFiltersData = async () => {
     try {
@@ -97,24 +69,13 @@ const AdminCourseManagement = () => {
 
       const { data: gradesData } = await supabase.from('academic_grades').select('name, level:academic_levels(name)').order('name');
       if (gradesData) setDbGrades(gradesData.map((g: any) => ({ name: g.name, level: g.level?.name })));
-    } catch (error: any) {
-      console.error("Error cargando filtros", error);
-    }
+    } catch (error: any) { console.error("Error cargando filtros", error); }
   };
 
   const fetchCourses = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('courses')
-        .select(`
-          id, name, code, description, is_active, course_type,
-          base_courses (
-            grade:academic_grades (name, level:academic_levels (name))
-          )
-        `)
-        .order('name', { ascending: true });
-
+      const { data, error } = await supabase.from('courses').select(`id, name, code, description, is_active, course_type, base_courses (grade:academic_grades (name, level:academic_levels (name)))`).order('name', { ascending: true });
       if (error) throw error;
       
       const formattedCourses = (data || []).map((c: any) => {
@@ -128,10 +89,7 @@ const AdminCourseManagement = () => {
             }
           });
         }
-        const grades_taught: CourseGroup[] = Object.keys(grouped).map(lvl => ({
-          level: lvl,
-          grades: Array.from(grouped[lvl]).sort()
-        }));
+        const grades_taught: CourseGroup[] = Object.keys(grouped).map(lvl => ({ level: lvl, grades: Array.from(grouped[lvl]).sort() }));
         return { ...c, grades_taught };
       });
 
@@ -139,9 +97,7 @@ const AdminCourseManagement = () => {
       setSelectedIds([]); 
     } catch (error: any) {
       toast({ title: "Error al cargar", description: error?.message || "Fallo al cargar cursos.", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const handleInputChange = useCallback((field: keyof CourseFormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -163,7 +119,6 @@ const AdminCourseManagement = () => {
       const matchesStatus = filterStatus === 'all' || (filterStatus === 'active' && course.is_active) || (filterStatus === 'inactive' && !course.is_active);
       const matchesLevel = filterLevel === 'all' || (course.grades_taught && course.grades_taught.some(g => g.level === filterLevel));
       const matchesGrade = filterGrade === 'all' || (course.grades_taught && course.grades_taught.some(g => g.level === filterLevel && g.grades.includes(filterGrade)));
-
       return matchesSearch && matchesStatus && matchesLevel && matchesGrade;
     });
   }, [courses, searchTerm, filterStatus, filterLevel, filterGrade]);
@@ -190,10 +145,14 @@ const AdminCourseManagement = () => {
     return sortable;
   }, [filteredCourses, sortConfig]);
 
-  const totalPages = Math.ceil(sortedCourses.length / itemsPerPage);
+  // FIX Lógica de Paginación
+  const currentLimit = itemsPerPage === 'all' ? sortedCourses.length : (itemsPerPage as number);
+  const totalPages = Math.max(1, Math.ceil(sortedCourses.length / currentLimit));
+  
   const paginatedCourses = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return sortedCourses.slice(startIndex, startIndex + itemsPerPage);
+    if (itemsPerPage === 'all') return sortedCourses;
+    const startIndex = (currentPage - 1) * (itemsPerPage as number);
+    return sortedCourses.slice(startIndex, startIndex + (itemsPerPage as number));
   }, [sortedCourses, currentPage, itemsPerPage]);
 
   useEffect(() => { setCurrentPage(1); }, [searchTerm, filterStatus, filterLevel, filterGrade, itemsPerPage]);
@@ -223,21 +182,16 @@ const AdminCourseManagement = () => {
     setSaving(true);
     try {
       const idsToDelete = safeToDelete.map(c => c.id);
-      // Agregamos .select()
       const { data, error } = await supabase.from('courses').delete().in('id', idsToDelete).select();
-      
       if (error) throw error;
       if (!data || data.length === 0) throw new Error("Bloqueado por permisos (RLS). No se pudo eliminar.");
-      
       toast({ title: "Cursos eliminados", description: `Se eliminaron ${data.length} curso(s) correctamente.` });
       setIsDeleteModalOpen(false);
       setDeletingCourses([]);
       fetchCourses();
     } catch (error: any) {
       toast({ title: "Error al eliminar", description: error?.message, variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   const handleBulkType = async (e: React.FormEvent) => {
@@ -247,16 +201,13 @@ const AdminCourseManagement = () => {
       const typeToSave = bulkTypeValue.trim() || null;
       const { error } = await supabase.from('courses').update({ course_type: typeToSave }).in('id', selectedIds);
       if (error) throw error;
-      
       toast({ title: "Tipos actualizados", description: `Se actualizó la etiqueta de ${selectedIds.length} curso(s).` });
       setIsBulkTypeModalOpen(false);
       setBulkTypeValue('');
       fetchCourses();
     } catch (error: any) {
       toast({ title: "Error", description: error?.message || "Fallo al actualizar tipos", variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   const handleBulkStatus = async () => {
@@ -265,15 +216,12 @@ const AdminCourseManagement = () => {
       const isActive = bulkStatusValue === 'active';
       const { error } = await supabase.from('courses').update({ is_active: isActive }).in('id', selectedIds);
       if (error) throw error;
-      
       toast({ title: "Estados actualizados", description: `Se modificó el estado de ${selectedIds.length} curso(s).` });
       setIsBulkStatusModalOpen(false);
       fetchCourses();
     } catch (error: any) {
       toast({ title: "Error", description: error?.message || "Fallo al actualizar estados", variant: "destructive" });
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   const handleQuickEditChange = (courseId: string, field: keyof Course, value: any) => {
@@ -297,7 +245,6 @@ const AdminCourseManagement = () => {
       if (!course) continue;
       const newName = changes.name !== undefined ? changes.name : course.name;
       const newCode = changes.code !== undefined ? changes.code : course.code;
-      
       if (checkDuplicates(newName, newCode, id)) {
         toast({ title: "Error", description: `El curso "${newName}" o código "${newCode}" ya existe.`, variant: "destructive" });
         return; 
@@ -306,7 +253,6 @@ const AdminCourseManagement = () => {
 
     setSaving(true);
     try {
-      // Envía los cambios uno a uno y verifica errores
       for (const [id, changes] of updates) {
         const { error } = await supabase.from('courses').update(changes).eq('id', id);
         if (error) throw error;
@@ -317,20 +263,14 @@ const AdminCourseManagement = () => {
       fetchCourses();
     } catch (error: any) {
       toast({ title: 'Error', description: error?.message || 'No se pudieron guardar los cambios', variant: 'destructive' });
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   const handleToggleCourseStatus = async (course: Course, newStatus: boolean) => {
     try {
-      // Agregamos .select() al final
       const { data, error } = await supabase.from('courses').update({ is_active: newStatus }).eq('id', course.id).select();
-      
       if (error) throw error;
-      // Validamos que realmente haya modificado 1 fila
       if (!data || data.length === 0) throw new Error("Bloqueado por permisos (RLS). No se modificó nada.");
-      
       toast({ title: "Estado actualizado", description: `El curso ahora está ${newStatus ? 'activo' : 'inactivo'}.` });
       fetchCourses();
     } catch (error: any) {
@@ -342,7 +282,6 @@ const AdminCourseManagement = () => {
     e.preventDefault();
     if (!formData.name || !formData.code) return toast({ title: "Campos requeridos", variant: "destructive" });
     if (checkDuplicates(formData.name, formData.code)) return toast({ title: "Curso Duplicado", description: "Ya existe un curso con este nombre o código.", variant: "destructive" });
-
     setSaving(true);
     try {
       const { error } = await supabase.from('courses').insert([{ 
@@ -350,7 +289,7 @@ const AdminCourseManagement = () => {
         course_type: formData.course_type.trim() || null, is_active: true 
       }]);
       if (error) throw error;
-      toast({ title: "Curso creado", description: `El curso "${formData.name}" fue añadido.` });
+      toast({ title: "Curso creado", description: `El curso "${formData.name}" fue añadido.`});
       setIsCreateModalOpen(false);
       resetForm();
       fetchCourses();
@@ -363,12 +302,10 @@ const AdminCourseManagement = () => {
     e.preventDefault();
     if (!editingCourse) return;
     if (checkDuplicates(formData.name, formData.code, editingCourse.id)) return toast({ title: "Curso Duplicado", description: "Ya existe otro curso con ese nombre o código.", variant: "destructive" });
-
     setSaving(true);
     try {
       const { error } = await supabase.from('courses').update({ 
-        name: formData.name.trim(), code: formData.code.trim(), description: formData.description.trim() || null,
-        course_type: formData.course_type.trim() || null 
+        name: formData.name.trim(), code: formData.code.trim(), description: formData.description.trim() || null, course_type: formData.course_type.trim() || null 
       }).eq('id', editingCourse.id);
       if (error) throw error;
       toast({ title: "Curso actualizado" });
@@ -396,7 +333,6 @@ const AdminCourseManagement = () => {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     setIsUploading(true);
     const reader = new FileReader();
     reader.onload = async (event) => {
@@ -404,7 +340,6 @@ const AdminCourseManagement = () => {
         const text = event.target?.result as string;
         const rows = text.split(/\r?\n/).filter(row => row.trim() !== '');
         if (rows.length <= 1) throw new Error("El archivo está vacío.");
-
         const toInsert = [];
         const duplicates = [];
         const separator = rows[0].includes(';') ? ';' : ',';
@@ -413,28 +348,20 @@ const AdminCourseManagement = () => {
           const regex = new RegExp(`${separator}(?=(?:(?:[^"]*"){2})*[^"]*$)`);
           const cols = rows[i].split(regex).map(col => col.replace(/^"|"$/g, '').trim());
           if (cols.length < 2) continue;
-
           const name = cols[0], code = cols[1], description = cols[2] || null, course_type = cols[3] || null;
           if (!name || !code) continue;
-
           const nameNorm = normalizeStr(name);
           const codeNorm = normalizeStr(code);
-
           const isDupInDB = courses.some(c => normalizeStr(c.name) === nameNorm || normalizeStr(c.code) === codeNorm);
           const isDupInList = toInsert.some(c => normalizeStr(c.name) === nameNorm || normalizeStr(c.code) === codeNorm);
-
-          if (isDupInDB || isDupInList) {
-            duplicates.push(code);
-          } else {
-            toInsert.push({ name, code, description, course_type, is_active: true });
-          }
+          if (isDupInDB || isDupInList) duplicates.push(code);
+          else toInsert.push({ name, code, description, course_type, is_active: true });
         }
 
         if (toInsert.length > 0) {
           const { error } = await supabase.from('courses').insert(toInsert);
           if (error) throw error;
         }
-
         toast({ title: "Importación finalizada", description: `Se agregaron ${toInsert.length} cursos. Se omitieron ${duplicates.length} duplicados.` });
         fetchCourses();
       } catch (error: any) {
@@ -448,23 +375,15 @@ const AdminCourseManagement = () => {
   };
 
   if (loading && courses.length === 0) {
-    return (
-      <DashboardLayout>
-        <div className="p-6 space-y-6"><div className="animate-pulse"><div className="h-8 bg-muted rounded w-1/3 mb-6"></div></div></div>
-      </DashboardLayout>
-    );
+    return <DashboardLayout><div className="p-6 space-y-6"><div className="animate-pulse"><div className="h-8 bg-muted rounded w-1/3 mb-6"></div></div></div></DashboardLayout>;
   }
 
   return (
     <DashboardLayout>
       <div className="container mx-auto px-4 py-8 space-y-6">
-        
         <div>
-          <h1 className="text-3xl font-bold mb-1 flex items-center gap-2">
-            <BookOpen className="h-8 w-8 text-blue-600"/> Catálogo General de Cursos
-          </h1>
+          <h1 className="text-3xl font-bold mb-1 flex items-center gap-2"><BookOpen className="h-8 w-8 text-blue-600"/> Catálogo General de Cursos</h1>
           <p className="text-gray-600 mb-6">Administra las asignaturas base y clasifícalas por tipo.</p>
-          
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card className="hover:shadow-md transition-shadow border-l-4 border-l-blue-500">
               <div className="p-4"><div className="text-sm font-medium text-gray-600">Total en Catálogo</div><div className="text-3xl font-bold text-gray-800">{courses.length}</div></div>
@@ -480,7 +399,6 @@ const AdminCourseManagement = () => {
 
         <div className="bg-white p-4 rounded-lg shadow-sm border space-y-4">
           <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
-            
             <div className="flex flex-wrap items-center gap-3 flex-1">
               <div className="relative min-w-[250px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -488,37 +406,30 @@ const AdminCourseManagement = () => {
               </div>
               <Select value={filterLevel} onValueChange={setFilterLevel}>
                 <SelectTrigger className="w-[160px]"><SelectValue placeholder="Niveles" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos los Niveles</SelectItem>
-                  {dbLevels.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
-                </SelectContent>
+                <SelectContent><SelectItem value="all">Todos los Niveles</SelectItem>{dbLevels.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}</SelectContent>
               </Select>
               <Select value={filterGrade} onValueChange={setFilterGrade} disabled={filterLevel === 'all'}>
                 <SelectTrigger className="w-[160px]"><SelectValue placeholder="Grados" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos los Grados</SelectItem>
-                  {dbGrades.filter(g => g.level === filterLevel).map(g => <SelectItem key={g.name} value={g.name}>{g.name}</SelectItem>)}
-                </SelectContent>
+                <SelectContent><SelectItem value="all">Todos los Grados</SelectItem>{dbGrades.filter(g => g.level === filterLevel).map(g => <SelectItem key={g.name} value={g.name}>{g.name}</SelectItem>)}</SelectContent>
               </Select>
               <Select value={filterStatus} onValueChange={(val: any) => setFilterStatus(val)}>
                 <SelectTrigger className="w-[160px]"><SelectValue placeholder="Estado" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos los estados</SelectItem>
-                  <SelectItem value="active">Activos</SelectItem>
-                  <SelectItem value="inactive">Inactivos</SelectItem>
-                </SelectContent>
+                <SelectContent><SelectItem value="all">Todos los estados</SelectItem><SelectItem value="active">Activos</SelectItem><SelectItem value="inactive">Inactivos</SelectItem></SelectContent>
               </Select>
             </div>
             
             <div className="flex flex-wrap items-center gap-4 shrink-0">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-600">Mostrar</span>
-                <Select value={String(itemsPerPage)} onValueChange={val => setItemsPerPage(Number(val))}>
-                  <SelectTrigger className="w-[80px] h-9"><SelectValue /></SelectTrigger>
+                {/* SELECT DE PAGINACIÓN */}
+                <Select value={itemsPerPage.toString()} onValueChange={val => setItemsPerPage(val === 'all' ? 'all' : Number(val))}>
+                  <SelectTrigger className="w-[100px] h-9"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="10">10</SelectItem>
                     <SelectItem value="20">20</SelectItem>
                     <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                    <SelectItem value="all">Todos</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -533,19 +444,11 @@ const AdminCourseManagement = () => {
 
           {selectedIds.length > 0 && (
             <div className="bg-blue-50/50 p-3 flex flex-wrap items-center justify-between rounded-md border border-blue-200 animate-in fade-in slide-in-from-top-2">
-              <div className="flex items-center gap-2 text-blue-700 font-medium">
-                <CheckSquare className="w-5 h-5" />
-                {selectedIds.length} curso(s) seleccionado(s)
-              </div>
+              <div className="flex items-center gap-2 text-blue-700 font-medium"><CheckSquare className="w-5 h-5" />{selectedIds.length} curso(s) seleccionado(s)</div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" className="bg-white border-blue-200 hover:bg-blue-50" onClick={() => setIsBulkStatusModalOpen(true)}>Cambiar Estado</Button>
                 <Button variant="outline" size="sm" className="bg-white border-blue-200 hover:bg-blue-50" onClick={() => setIsBulkTypeModalOpen(true)}>Asignar Tipo</Button>
-                <Button variant="destructive" size="sm" onClick={() => { 
-                  setDeletingCourses(courses.filter(c => selectedIds.includes(c.id))); 
-                  setIsDeleteModalOpen(true); 
-                }}>
-                  Eliminar Seleccionados
-                </Button>
+                <Button variant="destructive" size="sm" onClick={() => { setDeletingCourses(courses.filter(c => selectedIds.includes(c.id))); setIsDeleteModalOpen(true); }}>Eliminar Seleccionados</Button>
               </div>
             </div>
           )}
@@ -557,30 +460,10 @@ const AdminCourseManagement = () => {
               <Table>
                 <TableHeader className="bg-gray-50/80">
                   <TableRow>
-                    <TableHead className="w-12 text-center">
-                      <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                        checked={isAllPageSelected}
-                        onChange={(e) => handleSelectAll(e.target.checked)}
-                      />
-                    </TableHead>
-                    <TableHead className="w-32 cursor-pointer hover:bg-gray-100 transition-colors group select-none" onClick={() => requestSort('code')}>
-                      <div className="flex items-center gap-1">
-                        Código
-                        <ArrowUpDown className={`w-3 h-3 ${sortConfig?.key === 'code' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} />
-                      </div>
-                    </TableHead>
-                    <TableHead className="cursor-pointer hover:bg-gray-100 transition-colors group select-none" onClick={() => requestSort('name')}>
-                      <div className="flex items-center gap-1">
-                        Asignatura
-                        <ArrowUpDown className={`w-3 h-3 ${sortConfig?.key === 'name' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} />
-                      </div>
-                    </TableHead>
-                    <TableHead className="cursor-pointer hover:bg-gray-100 transition-colors group select-none" onClick={() => requestSort('course_type')}>
-                      <div className="flex items-center gap-1">
-                        Etiqueta / Tipo
-                        <ArrowUpDown className={`w-3 h-3 ${sortConfig?.key === 'course_type' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} />
-                      </div>
-                    </TableHead>
+                    <TableHead className="w-12 text-center"><input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={isAllPageSelected} onChange={(e) => handleSelectAll(e.target.checked)} /></TableHead>
+                    <TableHead className="w-32 cursor-pointer hover:bg-gray-100 transition-colors group select-none" onClick={() => requestSort('code')}><div className="flex items-center gap-1">Código <ArrowUpDown className={`w-3 h-3 ${sortConfig?.key === 'code' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} /></div></TableHead>
+                    <TableHead className="cursor-pointer hover:bg-gray-100 transition-colors group select-none" onClick={() => requestSort('name')}><div className="flex items-center gap-1">Asignatura <ArrowUpDown className={`w-3 h-3 ${sortConfig?.key === 'name' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} /></div></TableHead>
+                    <TableHead className="cursor-pointer hover:bg-gray-100 transition-colors group select-none" onClick={() => requestSort('course_type')}><div className="flex items-center gap-1">Etiqueta / Tipo <ArrowUpDown className={`w-3 h-3 ${sortConfig?.key === 'course_type' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} /></div></TableHead>
                     <TableHead>Grados Asignados</TableHead>
                     <TableHead className="w-28 text-center">Estado</TableHead>
                     <TableHead className="w-24 text-right">Acciones</TableHead>
@@ -589,58 +472,26 @@ const AdminCourseManagement = () => {
                 <TableBody>
                   {paginatedCourses.map((course) => (
                     <TableRow key={course.id} className={`hover:bg-gray-50/50 ${selectedIds.includes(course.id) ? 'bg-blue-50/30' : ''}`}>
-                      <TableCell className="text-center">
-                        <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                          checked={selectedIds.includes(course.id)}
-                          onChange={(e) => handleSelectOne(course.id, e.target.checked)}
-                        />
-                      </TableCell>
-                      <TableCell className="font-mono text-sm text-gray-500">
-                        {quickEditMode ? <Input value={quickEditChanges[course.id]?.code ?? course.code} onChange={e => handleQuickEditChange(course.id, 'code', e.target.value)} className="h-8 text-sm w-24" /> : course.code}
-                      </TableCell>
-                      <TableCell>
-                        {quickEditMode ? (
-                          <Input value={quickEditChanges[course.id]?.name ?? course.name} onChange={e => handleQuickEditChange(course.id, 'name', e.target.value)} className="h-8 font-medium" />
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-gray-900">{course.name}</span>
-                            {course.description && (
-                              <div title={course.description} className="cursor-help flex items-center justify-center rounded-full bg-blue-50 p-1 hover:bg-blue-100 transition-colors shrink-0">
-                                <Info className="w-4 h-4 text-blue-500" />
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {quickEditMode ? (
-                          <Input value={quickEditChanges[course.id]?.course_type ?? course.course_type ?? ''} onChange={e => handleQuickEditChange(course.id, 'course_type', e.target.value)} className="h-8 text-xs w-28" placeholder="Ej: Ciencias" />
-                        ) : (
-                          course.course_type ? <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200">{course.course_type}</Badge> : <span className="text-xs text-gray-400">-</span>
-                        )}
-                      </TableCell>
+                      <TableCell className="text-center"><input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" checked={selectedIds.includes(course.id)} onChange={(e) => handleSelectOne(course.id, e.target.checked)} /></TableCell>
+                      <TableCell className="font-mono text-sm text-gray-500">{quickEditMode ? <Input value={quickEditChanges[course.id]?.code ?? course.code} onChange={e => handleQuickEditChange(course.id, 'code', e.target.value)} className="h-8 text-sm w-24" /> : course.code}</TableCell>
+                      <TableCell>{quickEditMode ? (<Input value={quickEditChanges[course.id]?.name ?? course.name} onChange={e => handleQuickEditChange(course.id, 'name', e.target.value)} className="h-8 font-medium" /> ) : (<div className="flex items-center gap-2"><span className="font-medium text-gray-900">{course.name}</span>{course.description && (<div title={course.description} className="cursor-help flex items-center justify-center rounded-full bg-blue-50 p-1 hover:bg-blue-100 transition-colors shrink-0"><Info className="w-4 h-4 text-blue-500" /></div>)}</div>)}</TableCell>
+                      <TableCell>{quickEditMode ? (<Input value={quickEditChanges[course.id]?.course_type ?? course.course_type ?? ''} onChange={e => handleQuickEditChange(course.id, 'course_type', e.target.value)} className="h-8 text-xs w-28" placeholder="Ej: Ciencias" />) : (course.course_type ? <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200">{course.course_type}</Badge> : <span className="text-xs text-gray-400">-</span>)}</TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1.5">
                           {course.grades_taught && course.grades_taught.length > 0 ? (
                             course.grades_taught.map((group, idx) => (
                               <div key={idx} className="flex flex-wrap items-center gap-1">
                                 <span className="text-[10px] font-bold text-gray-400 uppercase w-20 text-right mr-1">{group.level}:</span>
-                                {group.grades.map(g => (
-                                  <Badge key={g} variant="secondary" className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-[10px] py-0">{g}</Badge>
-                                ))}
+                                {group.grades.map(g => (<Badge key={g} variant="secondary" className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-[10px] py-0">{g}</Badge>))}
                               </div>
                             ))
-                          ) : (
-                            <span className="text-xs text-gray-400 italic">No asignado</span>
-                          )}
+                          ) : (<span className="text-xs text-gray-400 italic">No asignado</span>)}
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-2">
                           <Switch checked={quickEditChanges[course.id]?.is_active ?? course.is_active} onCheckedChange={(val) => { if(quickEditMode) { handleQuickEditChange(course.id, 'is_active', val); } else { handleToggleCourseStatus(course, val); } }} />
-                          <span className={`text-[11px] font-bold w-10 text-left ${(quickEditChanges[course.id]?.is_active ?? course.is_active) ? "text-green-600" : "text-gray-400"}`}>
-                            {(quickEditChanges[course.id]?.is_active ?? course.is_active) ? 'ACTIVO' : 'INACTIVO'}
-                          </span>
+                          <span className={`text-[11px] font-bold w-10 text-left ${(quickEditChanges[course.id]?.is_active ?? course.is_active) ? "text-green-600" : "text-gray-400"}`}>{(quickEditChanges[course.id]?.is_active ?? course.is_active) ? 'ACTIVO' : 'INACTIVO'}</span>
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
@@ -652,12 +503,7 @@ const AdminCourseManagement = () => {
                     </TableRow>
                   ))}
                   {paginatedCourses.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center py-12">
-                        <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                        <p className="text-gray-500 font-medium">No se encontraron asignaturas con estos filtros</p>
-                      </TableCell>
-                    </TableRow>
+                    <TableRow><TableCell colSpan={7} className="text-center py-12"><BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" /><p className="text-gray-500 font-medium">No se encontraron asignaturas con estos filtros</p></TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
@@ -665,13 +511,11 @@ const AdminCourseManagement = () => {
             
             <div className="flex flex-col sm:flex-row items-center justify-between p-4 bg-white border-t">
               <div className="text-sm text-gray-500 mb-4 sm:mb-0">
-                Mostrando {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, sortedCourses.length)} de {sortedCourses.length} cursos
+                Mostrando {itemsPerPage === 'all' ? 1 : (currentPage - 1) * (itemsPerPage as number) + 1} - {itemsPerPage === 'all' ? sortedCourses.length : Math.min(currentPage * (itemsPerPage as number), sortedCourses.length)} de {sortedCourses.length} cursos
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="text-gray-600">Anterior</Button>
-                <div className="flex items-center px-4 py-2 text-sm font-medium bg-white rounded-md border text-gray-700">
-                  Página {currentPage} de {Math.max(1, totalPages)}
-                </div>
+                <div className="flex items-center px-4 py-2 text-sm font-medium bg-white rounded-md border text-gray-700">Página {currentPage} de {Math.max(1, totalPages)}</div>
                 <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages} className="text-gray-600">Siguiente</Button>
               </div>
             </div>
@@ -693,9 +537,7 @@ const AdminCourseManagement = () => {
                     <div>
                       <h4 className="font-semibold text-gray-800">Descarga la Plantilla Base</h4>
                       <p className="text-sm text-gray-500 mb-2">Usa nuestro formato exacto para evitar errores.</p>
-                      <Button variant="outline" size="sm" onClick={downloadTemplate} className="border-blue-300 text-blue-700 hover:bg-blue-50">
-                        <Download className="w-4 h-4 mr-2" /> Descargar Plantilla .CSV
-                      </Button>
+                      <Button variant="outline" size="sm" onClick={downloadTemplate} className="border-blue-300 text-blue-700 hover:bg-blue-50"><Download className="w-4 h-4 mr-2" /> Descargar Plantilla .CSV</Button>
                     </div>
                   </div>
                   <div className="flex gap-3">
@@ -708,18 +550,13 @@ const AdminCourseManagement = () => {
                 </div>
                 <div className="relative border-2 border-dashed border-blue-200 rounded-xl p-8 text-center bg-white hover:bg-blue-50/50 transition-colors cursor-pointer">
                   {isUploading ? (
-                    <div className="flex flex-col items-center justify-center py-4">
-                      <Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-3" />
-                      <p className="text-sm font-medium text-gray-700">Procesando archivo...</p>
-                    </div>
+                    <div className="flex flex-col items-center justify-center py-4"><Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-3" /><p className="text-sm font-medium text-gray-700">Procesando archivo...</p></div>
                   ) : (
                     <>
                       <UploadCloud className="w-12 h-12 mx-auto text-blue-400 mb-3" />
                       <p className="text-sm font-medium text-gray-700">Haz clic para buscar un archivo CSV</p>
                       <Input type="file" accept=".csv" className="hidden" id="file-upload" onChange={handleFileUpload} disabled={isUploading} />
-                      <label htmlFor="file-upload" className="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-md text-sm cursor-pointer hover:bg-blue-700 shadow-sm transition-colors">
-                        Seleccionar Archivo
-                      </label>
+                      <label htmlFor="file-upload" className="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-md text-sm cursor-pointer hover:bg-blue-700 shadow-sm transition-colors">Seleccionar Archivo</label>
                     </>
                   )}
                 </div>
@@ -729,9 +566,7 @@ const AdminCourseManagement = () => {
         </div>
 
         {quickEditMode && Object.keys(quickEditChanges).length > 0 && (
-          <Button className="bg-green-600 text-white hover:bg-green-700 fixed bottom-8 right-8 z-50 shadow-xl rounded-full px-6 py-6" onClick={saveAllQuickEdits} disabled={saving}>
-            Guardar Cambios ({Object.keys(quickEditChanges).length})
-          </Button>
+          <Button className="bg-green-600 text-white hover:bg-green-700 fixed bottom-8 right-8 z-50 shadow-xl rounded-full px-6 py-6" onClick={saveAllQuickEdits} disabled={saving}>Guardar Cambios ({Object.keys(quickEditChanges).length})</Button>
         )}
       </div>
 
@@ -767,53 +602,31 @@ const AdminCourseManagement = () => {
 
       <Dialog open={isDeleteModalOpen} onOpenChange={(open) => { setIsDeleteModalOpen(open); if (!open) setDeletingCourses([]); }}>
         <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-red-600 flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5"/> Advertencia de Eliminación
-            </DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle className="text-red-600 flex items-center gap-2"><AlertTriangle className="w-5 h-5"/> Advertencia de Eliminación</DialogTitle></DialogHeader>
           <div className="py-2 text-gray-700">
             {blockedFromDeletion.length > 0 ? (
               <div className="mb-4">
                 <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-md">
-                  <div className="flex items-center gap-2 text-red-800 font-bold mb-2">
-                    <ShieldAlert className="w-5 h-5" />
-                    ACCIÓN BLOQUEADA
-                  </div>
-                  <p className="text-sm text-red-700 mb-2">
-                    No puedes eliminar los siguientes cursos porque <strong>están asignados a una malla curricular</strong>. Quítalos de la malla (o desactívalos) primero:
-                  </p>
-                  <ul className="list-disc list-inside text-xs font-semibold text-red-900 max-h-32 overflow-y-auto pl-2">
-                    {blockedFromDeletion.map(c => <li key={c.id}>{c.name} ({c.code})</li>)}
-                  </ul>
+                  <div className="flex items-center gap-2 text-red-800 font-bold mb-2"><ShieldAlert className="w-5 h-5" /> ACCIÓN BLOQUEADA</div>
+                  <p className="text-sm text-red-700 mb-2">No puedes eliminar los siguientes cursos porque <strong>están asignados a una malla curricular</strong>. Quítalos de la malla (o desactívalos) primero:</p>
+                  <ul className="list-disc list-inside text-xs font-semibold text-red-900 max-h-32 overflow-y-auto pl-2">{blockedFromDeletion.map(c => <li key={c.id}>{c.name} ({c.code})</li>)}</ul>
                 </div>
-                {safeToDelete.length > 0 && (
-                  <p className="mt-4 text-sm font-medium">Los otros {safeToDelete.length} curso(s) sí pueden ser eliminados.</p>
-                )}
+                {safeToDelete.length > 0 && (<p className="mt-4 text-sm font-medium">Los otros {safeToDelete.length} curso(s) sí pueden ser eliminados.</p>)}
               </div>
-            ) : (
-              <p className="mb-3">¿Estás absolutamente seguro que deseas eliminar {deletingCourses.length > 1 ? `estos ${deletingCourses.length} cursos` : 'este curso'} del catálogo general?</p>
-            )}
+            ) : (<p className="mb-3">¿Estás absolutamente seguro que deseas eliminar {deletingCourses.length > 1 ? `estos ${deletingCourses.length} cursos` : 'este curso'} del catálogo general?</p>)}
             
             {safeToDelete.length > 0 && blockedFromDeletion.length === 0 && (
               <div className="bg-gray-50 border border-gray-200 rounded-md p-3 max-h-32 overflow-y-auto mb-3">
-                <ul className="list-disc list-inside text-sm font-medium text-gray-800 space-y-1">
-                  {safeToDelete.map(c => <li key={c.id}>{c.name} <span className="text-gray-500 font-normal">({c.code})</span></li>)}
-                </ul>
+                <ul className="list-disc list-inside text-sm font-medium text-gray-800 space-y-1">{safeToDelete.map(c => <li key={c.id}>{c.name} <span className="text-gray-500 font-normal">({c.code})</span></li>)}</ul>
               </div>
             )}
             
-            {safeToDelete.length > 0 && (
-               <p className="text-sm text-gray-500">Esta acción no se puede deshacer y borrará permanentemente los datos.</p>
-            )}
+            {safeToDelete.length > 0 && (<p className="text-sm text-gray-500">Esta acción no se puede deshacer y borrará permanentemente los datos.</p>)}
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" type="button" disabled={saving}>Cancelar</Button></DialogClose>
             {safeToDelete.length > 0 && (
-              <Button variant="destructive" onClick={handleBulkDelete} disabled={saving}>
-                {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
-                {blockedFromDeletion.length > 0 ? `Eliminar solo los ${safeToDelete.length} permitidos` : 'Sí, Eliminar Definitivamente'}
-              </Button>
+              <Button variant="destructive" onClick={handleBulkDelete} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}{blockedFromDeletion.length > 0 ? `Eliminar solo los ${safeToDelete.length} permitidos` : 'Sí, Eliminar Definitivamente'}</Button>
             )}
           </DialogFooter>
         </DialogContent>
@@ -824,14 +637,8 @@ const AdminCourseManagement = () => {
           <DialogHeader><DialogTitle>Asignar Etiqueta / Tipo</DialogTitle></DialogHeader>
           <form onSubmit={handleBulkType} className="space-y-4 py-2">
             <p className="text-sm text-gray-600">Se aplicará esta etiqueta a los <strong>{selectedIds.length}</strong> cursos seleccionados.</p>
-            <div className="space-y-2">
-              <Label>Nueva Etiqueta (Ej: Ciencias, Talleres, etc.)</Label>
-              <Input autoFocus value={bulkTypeValue} onChange={(e) => setBulkTypeValue(e.target.value)} placeholder="Escribe el tipo de curso..." />
-            </div>
-            <DialogFooter className="pt-2">
-              <Button type="button" variant="outline" onClick={() => setIsBulkTypeModalOpen(false)}>Cancelar</Button>
-              <Button type="submit" disabled={saving} className="bg-blue-600 text-white">Aplicar a Todos</Button>
-            </DialogFooter>
+            <div className="space-y-2"><Label>Nueva Etiqueta (Ej: Ciencias, Talleres, etc.)</Label><Input autoFocus value={bulkTypeValue} onChange={(e) => setBulkTypeValue(e.target.value)} placeholder="Escribe el tipo de curso..." /></div>
+            <DialogFooter className="pt-2"><Button type="button" variant="outline" onClick={() => setIsBulkTypeModalOpen(false)}>Cancelar</Button><Button type="submit" disabled={saving} className="bg-blue-600 text-white">Aplicar a Todos</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -843,16 +650,10 @@ const AdminCourseManagement = () => {
             <p className="text-sm text-gray-600">Selecciona el nuevo estado para los <strong>{selectedIds.length}</strong> cursos seleccionados.</p>
             <Select value={bulkStatusValue} onValueChange={(val: any) => setBulkStatusValue(val)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="active">Establecer como Activos</SelectItem>
-                <SelectItem value="inactive">Establecer como Inactivos</SelectItem>
-              </SelectContent>
+              <SelectContent><SelectItem value="active">Establecer como Activos</SelectItem><SelectItem value="inactive">Establecer como Inactivos</SelectItem></SelectContent>
             </Select>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsBulkStatusModalOpen(false)}>Cancelar</Button>
-            <Button onClick={handleBulkStatus} disabled={saving} className="bg-blue-600 text-white">Aplicar Cambio</Button>
-          </DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setIsBulkStatusModalOpen(false)}>Cancelar</Button><Button onClick={handleBulkStatus} disabled={saving} className="bg-blue-600 text-white">Aplicar Cambio</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

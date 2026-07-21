@@ -32,7 +32,7 @@ import TeacherClassroomDetail from "./pages/teacher/TeacherClassroomDetail";
 import TutorDashboard from "./pages/TutorDashboard";
 import DirectivoDashboard from "./pages/DirectivoDashboard";
 import Calendar from "./pages/Calendar";
-import Messages from "./pages/Messages"; 
+
 import Support from "./pages/Support";
 import Library from "./pages/Library";
 import NotFound from "./pages/NotFound";
@@ -49,6 +49,7 @@ import AdminClassrooms from "./pages/AdminClassrooms";
 import SectionManagement from "./pages/SectionManagement";
 import MentalGames from "./pages/MentalGames";
 import Classmates from "./pages/Classmates";
+import Announcements from "./pages/Announcements";
 
 
 const queryClient = new QueryClient();
@@ -154,9 +155,9 @@ const App = () => (
                 <Calendar />
               </ProtectedRoute>
             } />
-            <Route path="/messages" element={
+            <Route path="/anuncios" element={
               <ProtectedRoute>
-                <Messages />
+                <Announcements/>
               </ProtectedRoute>
             } />
             <Route path="/support" element={

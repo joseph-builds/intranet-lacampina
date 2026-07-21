@@ -8,14 +8,11 @@ import {
   Users,
   UserCog,
   Calendar,
-  Megaphone, // Cambiamos MessageSquare por Megaphone para "Anuncios"
+  Megaphone, 
   Library,
-  Brain,
-  HelpCircle,
-  Eye
-} from 'lucide-react';
+  Brain
+} from 'lucide-react'; // Ya eliminamos los iconos de Soporte y Supervisión
 
-// 1. ROLES LIMPIOS: Solo los 4 que realmente vas a usar en tu sistema
 export type UserRole = 'admin' | 'teacher' | 'student' | 'tutor';
 
 export interface NavItem {
@@ -25,7 +22,7 @@ export interface NavItem {
   roles: UserRole[];
 }
 
-// 2. NAVEGACIÓN PRINCIPAL (Para todos)
+// NAVEGACIÓN PRINCIPAL
 export const navigationItems: NavItem[] = [
   {
     title: 'Dashboard',
@@ -40,15 +37,9 @@ export const navigationItems: NavItem[] = [
     roles: ['admin', 'teacher', 'student', 'tutor']
   },
   {
-    title: 'Anuncios', // Antes era "Mensajes"
-    url: '/messages', // Mantenemos la URL por ahora para que no se rompa la ruta que ya tienes
-    icon: Megaphone,  // Icono de megáfono para comunicados
-    roles: ['admin', 'teacher', 'student', 'tutor']
-  },
-  {
-    title: 'Soporte',
-    url: '/support',
-    icon: HelpCircle,
+    title: 'Anuncios',
+    url: '/anuncios', 
+    icon: Megaphone,
     roles: ['admin', 'teacher', 'student', 'tutor']
   },
   
@@ -60,20 +51,12 @@ export const navigationItems: NavItem[] = [
     roles: ['tutor']
   },
   
-  // Dashboard Directivo
-  {
-    title: 'Supervisión Docente',
-    url: '/directivo-dashboard',
-    icon: Eye,
-    roles: ['directivo', 'admin'] as any
-  },
-  
-  // Aulas Virtuales (Profesores)
+  // Aulas Virtuales (El de prueba de tu compañero)
   {
     title: 'Aulas Virtuales',
-    url: '/teacher/classrooms',
+    url: '/virtual-classrooms',
     icon: School,
-    roles: ['teacher']
+    roles: ['admin', 'teacher', 'student']
   },
   
   // Cursos, Tareas, Exámenes y Biblioteca
@@ -117,7 +100,7 @@ export const navigationItems: NavItem[] = [
   },
 ];
 
-// 3. NAVEGACIÓN DE ADMINISTRACIÓN (Solo para el Admin)
+// NAVEGACIÓN DE ADMINISTRACIÓN (Solo Admin)
 export const adminNavigationItems: NavItem[] = [
   {
     title: 'Gestión de Cursos',
@@ -150,12 +133,11 @@ export const adminNavigationItems: NavItem[] = [
     roles: ['admin']
   },
   {
-    title: 'Aulas Virtuales', // El oficial que estamos trabajando
+    title: 'Aulas Virtuales',
     url: '/admin/classrooms',
     icon: School,
     roles: ['admin']
   }
-  // Eliminados: Reportes y Configuración (Configuración ya está fija en el AppSidebar)
 ];
 
 export function getNavigationForRole(role: UserRole, allRoles?: UserRole[]): NavItem[] {

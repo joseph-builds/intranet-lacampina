@@ -51,12 +51,12 @@ export const navigationItems: NavItem[] = [
     roles: ['tutor']
   },
   
-  // Aulas Virtuales (El de prueba de tu compañero)
+  // Aulas Virtuales (Profesores)
   {
     title: 'Aulas Virtuales',
-    url: '/virtual-classrooms',
+    url: '/teacher/classrooms',
     icon: School,
-    roles: ['admin', 'teacher', 'student']
+    roles: ['teacher']
   },
   
   // Cursos, Tareas, Exámenes y Biblioteca

@@ -16,13 +16,16 @@ import {
   Users,
   GraduationCap,
   Clock,
+  Edit2,
   Calendar,
   ClipboardCheck,
   Plus,
   Edit,
   UserCheck,
   FileText,
+  BookOpen,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -34,6 +37,8 @@ import { CourseScheduleManager } from "@/components/course/CourseScheduleManager
 import { ExamsList } from "@/components/course/ExamsList";
 import { CourseEditDialog } from "@/components/course/CourseEditDialog";
 import { CourseAssignmentsReview } from "@/components/course/CourseAssignmentsReview";
+import TeacherGradesConfig from "@/components/grades/TeacherGradesConfig";
+import StudentCourseGrades from "@/components/grades/StudentCourseGrades";
 
 interface Course {
   id: string;
@@ -42,6 +47,8 @@ interface Course {
   description: string;
   academic_year: string;
   is_active: boolean;
+  semester: string;
+  schedule?: string | null;
   created_at: string;
   teacher?: {
     id: string;
@@ -75,6 +82,9 @@ export default function CourseDetail() {
   const [loading, setLoading] = useState(true);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [additionalTeachers, setAdditionalTeachers] = useState<Teacher[]>([]);
+  const [isEditingSchedule, setIsEditingSchedule] = useState(false);
+  const [scheduleText, setScheduleText] = useState("");
+  const [isSavingSchedule, setIsSavingSchedule] = useState(false);
 
   // Check if user can edit this course
   const canEdit =
@@ -115,10 +125,34 @@ export default function CourseDetail() {
 
       if (error) throw error;
       setCourse(data);
+      setScheduleText(data.schedule || '');
     } catch (error) {
       console.error("Error fetching course:", error);
       toast.error("Error al cargar el curso");
       navigate("/courses");
+    }
+  };
+
+  const handleSaveSchedule = async () => {
+    if (!id || !course) return;
+    
+    try {
+      setIsSavingSchedule(true);
+      const { error: updateError } = await supabase
+        .from('courses')
+        .update({ schedule: scheduleText.trim() })
+        .eq('id', id);
+        
+      if (updateError) throw updateError;
+      
+      setCourse({ ...course, schedule: scheduleText.trim() });
+      setIsEditingSchedule(false);
+      toast.success('Horario actualizado');
+    } catch (err: any) {
+      console.error('Error updating schedule:', err);
+      toast.error('Error al actualizar el horario');
+    } finally {
+      setIsSavingSchedule(false);
     }
   };
 
@@ -352,7 +386,43 @@ export default function CourseDetail() {
                 <Calendar className="h-4 w-4 text-muted-foreground" />
                 <div>
                   <p className="text-sm text-muted-foreground">Año Académico</p>
-                  <p className="font-medium">{course.academic_year}</p>
+                  <p className="font-medium">{course.academic_year || new Date().getFullYear()}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <Clock className="h-4 w-4 text-muted-foreground mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm text-muted-foreground">Horario</p>
+                  {isEditingSchedule ? (
+                     <div className="flex items-center gap-2 mt-1">
+                       <Input 
+                         value={scheduleText} 
+                         onChange={(e) => setScheduleText(e.target.value)} 
+                         placeholder="Ej: Lunes 8am - 10am" 
+                         className="h-8 text-sm"
+                       />
+                       <Button size="sm" onClick={handleSaveSchedule} disabled={isSavingSchedule}>
+                         Guardar
+                       </Button>
+                       <Button size="sm" variant="ghost" onClick={() => setIsEditingSchedule(false)} disabled={isSavingSchedule}>
+                         Cancelar
+                       </Button>
+                     </div>
+                  ) : (
+                     <div className="flex items-center gap-2 group">
+                       <p className="font-medium whitespace-pre-wrap text-sm">{course?.schedule || 'Sin horario definido'}</p>
+                       {canEdit && (
+                         <Button 
+                           size="icon" 
+                           variant="ghost" 
+                           className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity" 
+                           onClick={() => setIsEditingSchedule(true)}
+                         >
+                           <Edit2 className="h-3 w-3" />
+                         </Button>
+                       )}
+                     </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -361,11 +431,15 @@ export default function CourseDetail() {
 
         {/* Tabs for Content, Attendance, Students, Exams and Schedule */}
         <Tabs defaultValue="content" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-7 overflow-x-auto">
             <TabsTrigger value="content">Contenido</TabsTrigger>
             <TabsTrigger value="attendance" className="flex items-center gap-2">
               <ClipboardCheck className="h-4 w-4" />
               Asistencia
+            </TabsTrigger>
+            <TabsTrigger value="grades" className="flex items-center gap-2">
+              <BookOpen className="h-4 w-4" />
+              Notas
             </TabsTrigger>
             <TabsTrigger value="exams">Exámenes</TabsTrigger>
             {(profile?.role === "teacher" || profile?.role === "admin") && (
@@ -380,10 +454,6 @@ export default function CourseDetail() {
             <TabsTrigger value="students" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
               Estudiantes
-            </TabsTrigger>
-            <TabsTrigger value="schedule" className="flex items-center gap-2">
-              <Clock className="h-4 w-4" />
-              Horario
             </TabsTrigger>
           </TabsList>
 
@@ -444,6 +514,25 @@ export default function CourseDetail() {
             </div>
           </TabsContent>
 
+          <TabsContent value="grades">
+            {profile?.role === "admin" ||
+            (profile?.role === "teacher" &&
+              course.teacher &&
+              profile.id === course.teacher.id) ||
+            (profile?.role === "teacher" &&
+              additionalTeachers.some((t) => t.id === profile.id)) ? (
+              <TeacherGradesConfig courseId={course.id} />
+            ) : profile?.role === "student" ? (
+              <StudentCourseGrades courseId={course.id} studentId={profile.id} />
+            ) : (
+              <div className="p-6">
+                <p className="text-muted-foreground">
+                  No tienes permisos para ver las notas de este curso.
+                </p>
+              </div>
+            )}
+          </TabsContent>
+
           <TabsContent value="submissions">
             <CourseAssignmentsReview courseId={course.id} />
           </TabsContent>
@@ -488,13 +577,6 @@ export default function CourseDetail() {
                 )}
               </CardContent>
             </Card>
-          </TabsContent>
-
-          <TabsContent value="schedule">
-            <CourseScheduleManager
-              courseId={course.id}
-              canEdit={canEdit || false}
-            />
           </TabsContent>
         </Tabs>
 

@@ -49,8 +49,8 @@ serve(async (req) => {
       );
     }
 
-    // Only teachers and admins can create attendance records
-    if (profile.role !== 'teacher' && profile.role !== 'admin') {
+    // Only teachers, admins and tutors can create attendance records
+    if (profile.role !== 'teacher' && profile.role !== 'admin' && profile.role !== 'tutor') {
       return new Response(
         JSON.stringify({ error: 'No tienes permisos para tomar asistencia' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -66,24 +66,35 @@ serve(async (req) => {
       );
     }
 
-    // Verify that the user is the teacher of this classroom (or admin)
+    // Verify that the user is the teacher or tutor of this classroom (or admin)
     if (profile.role !== 'admin') {
-      const { data: classroom, error: classroomError } = await supabaseClient
-        .from('virtual_classrooms')
-        .select('teacher_id')
-        .eq('id', classroom_id)
-        .single();
+      let isAuthorized = false;
 
-      if (classroomError || !classroom) {
-        return new Response(
-          JSON.stringify({ error: 'Aula virtual no encontrada' }),
-          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+      if (profile.role === 'tutor') {
+        const { data: section, error: sectionError } = await supabaseClient
+          .from('sections')
+          .select('tutor_id')
+          .eq('id', classroom_id)
+          .single();
+
+        if (!sectionError && section && section.tutor_id === profile.id) {
+          isAuthorized = true;
+        }
+      } else {
+        const { data: classroom, error: classroomError } = await supabaseClient
+          .from('virtual_classrooms')
+          .select('teacher_id')
+          .eq('id', classroom_id)
+          .single();
+
+        if (!classroomError && classroom && classroom.teacher_id === profile.id) {
+          isAuthorized = true;
+        }
       }
 
-      if (classroom.teacher_id !== profile.id) {
+      if (!isAuthorized) {
         return new Response(
-          JSON.stringify({ error: 'No eres el profesor de esta aula virtual' }),
+          JSON.stringify({ error: 'No tienes asignada esta aula virtual' }),
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }

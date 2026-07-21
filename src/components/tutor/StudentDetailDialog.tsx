@@ -57,8 +57,8 @@ interface Student {
   id: string;
   first_name: string;
   last_name: string;
-  paternal_surname: string;
-  maternal_surname: string;
+  last_name: string;
+  last_name: string;
   student_code: string;
   email: string;
   phone?: string;
@@ -301,7 +301,7 @@ export function StudentDetailDialog({
           <div className="flex items-start justify-between">
             <div>
               <DialogTitle>
-                {student.paternal_surname} {student.maternal_surname},{" "}
+                {student.last_name},{" "}
                 {student.first_name}
               </DialogTitle>
               <DialogDescription>

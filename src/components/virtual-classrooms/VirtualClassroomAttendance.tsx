@@ -39,6 +39,7 @@ export function VirtualClassroomAttendance({ classroomId, canManage }: VirtualCl
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [attendanceTaken, setAttendanceTaken] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [globalNotes, setGlobalNotes] = useState('');
 
   useEffect(() => {
@@ -55,32 +56,31 @@ export function VirtualClassroomAttendance({ classroomId, canManage }: VirtualCl
     try {
       setLoading(true);
       
-      // Get students enrolled in courses of this classroom
+      // Get students enrolled in this section (New Architecture)
       const { data, error } = await supabase
-        .from('course_enrollments')
+        .from('student_sections')
         .select(`
-          student:profiles!course_enrollments_student_id_fkey1(
+          student_id,
+          profiles!inner(
             id,
             first_name,
             last_name,
             email
-          ),
-          course:courses!course_enrollments_course_id_fkey(
-            classroom_id
           )
-        `);
+        `)
+        .eq('section_id', classroomId)
+        .eq('profiles.is_active', true);
 
       if (error) throw error;
 
-      // Filter by classroom and extract unique students
-      const uniqueStudents = data
-        ?.filter(enrollment => enrollment.course?.classroom_id === classroomId)
-        ?.map(enrollment => enrollment.student)
-        .filter((student, index, self) => 
-          student && self.findIndex(s => s?.id === student?.id) === index
-        ) || [];
+      // Extract unique students
+      const uniqueStudents = Array.from(
+        new Map(
+          (data || []).map((item) => [item.student_id, item.profiles])
+        ).values()
+      ) as Student[];
 
-      setStudents(uniqueStudents.filter(Boolean) as Student[]);
+      setStudents(uniqueStudents);
     } catch (error) {
       console.error('Error fetching students:', error);
       toast.error('Error al cargar estudiantes');
@@ -151,7 +151,7 @@ export function VirtualClassroomAttendance({ classroomId, canManage }: VirtualCl
         ...prev[studentId],
         student_id: studentId,
         status: prev[studentId]?.status || 'present',
-        notes: notes.trim() || undefined,
+        notes: notes || undefined,
       },
     }));
   };
@@ -188,21 +188,20 @@ export function VirtualClassroomAttendance({ classroomId, canManage }: VirtualCl
         return;
       }
 
-      const { data, error } = await supabase.functions.invoke('create-classroom-attendance', {
-        body: {
-          classroom_id: classroomId,
-          date: dateStr,
-          attendance_records: attendanceRecords.map(r => ({
-            ...r,
-            notes: r.notes || globalNotes || null,
-          })),
-        },
+      const { error } = await supabase.rpc('create_classroom_attendance', {
+        p_classroom_id: classroomId,
+        p_date: dateStr,
+        p_records: attendanceRecords.map(r => ({
+          ...r,
+          notes: r.notes || globalNotes || null,
+        })),
       });
 
       if (error) throw error;
 
       toast.success('Asistencia guardada exitosamente');
       setAttendanceTaken(true);
+      setIsEditing(false);
       setGlobalNotes('');
       loadExistingAttendance();
     } catch (error: any) {
@@ -374,12 +373,15 @@ export function VirtualClassroomAttendance({ classroomId, canManage }: VirtualCl
       )}
 
       {/* Quick Actions */}
-      {canManage && !attendanceTaken && isToday && (
+      {canManage && (!attendanceTaken || isEditing) && isToday && (
         <Card>
           <CardHeader>
             <CardTitle className="text-sm">Acciones Rápidas</CardTitle>
+            <CardDescription>
+              Marque la asistencia de todos los estudiantes rápidamente
+            </CardDescription>
           </CardHeader>
-          <CardContent className="flex gap-2 flex-wrap">
+          <CardContent className="flex gap-4">
             <Button
               variant="outline"
               size="sm"
@@ -404,13 +406,21 @@ export function VirtualClassroomAttendance({ classroomId, canManage }: VirtualCl
 
       {/* Attendance Table */}
       <Card>
-        <CardHeader>
-          <CardTitle>Lista de Estudiantes</CardTitle>
-          <CardDescription>
-            {canManage
-              ? 'Marque la asistencia de cada estudiante'
-              : 'Registro de asistencia del aula'}
-          </CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Lista de Estudiantes</CardTitle>
+            <CardDescription>
+              {canManage
+                ? 'Marque la asistencia de cada estudiante'
+                : 'Registro de asistencia del aula'}
+            </CardDescription>
+          </div>
+          {canManage && attendanceTaken && !isEditing && isToday && (
+            <Button variant="outline" onClick={() => setIsEditing(true)}>
+              <FileCheck className="h-4 w-4 mr-2" />
+              Editar Asistencia
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
           <Table>
@@ -443,7 +453,7 @@ export function VirtualClassroomAttendance({ classroomId, canManage }: VirtualCl
                       {student.email}
                     </TableCell>
                     <TableCell>
-                      {canManage && !attendanceTaken && isToday ? (
+                      {canManage && (!attendanceTaken || isEditing) && isToday ? (
                         <Select
                           value={attendance[student.id]?.status || 'present'}
                           onValueChange={(value) =>
@@ -491,7 +501,7 @@ export function VirtualClassroomAttendance({ classroomId, canManage }: VirtualCl
                     </TableCell>
                     {canManage && (
                       <TableCell>
-                        {!attendanceTaken && isToday ? (
+                        {(!attendanceTaken || isEditing) && isToday ? (
                           <Textarea
                             placeholder="Observaciones (opcional)"
                             value={attendance[student.id]?.notes || ''}
@@ -515,7 +525,7 @@ export function VirtualClassroomAttendance({ classroomId, canManage }: VirtualCl
       </Card>
 
       {/* Global Notes */}
-      {canManage && !attendanceTaken && isToday && (
+      {canManage && (!attendanceTaken || isEditing) && isToday && (
         <Card>
           <CardHeader>
             <CardTitle className="text-sm">Observaciones Generales</CardTitle>
@@ -535,8 +545,17 @@ export function VirtualClassroomAttendance({ classroomId, canManage }: VirtualCl
       )}
 
       {/* Save Button */}
-      {canManage && !attendanceTaken && isToday && (
+      {canManage && (!attendanceTaken || isEditing) && isToday && (
         <div className="flex justify-end gap-4">
+          {isEditing && (
+            <Button
+              variant="outline"
+              onClick={() => setIsEditing(false)}
+              size="lg"
+            >
+              Cancelar Edición
+            </Button>
+          )}
           <Button
             onClick={handleSaveAttendance}
             disabled={saving || students.length === 0}

@@ -34,19 +34,71 @@ export function StudentAttendance() {
   const fetchAttendance = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase.functions.invoke('get-student-attendance');
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No autorizado');
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .single();
+
+      if (!profile) throw new Error('Perfil no encontrado');
+
+      const { data, error } = await supabase
+        .from('attendance')
+        .select(`
+          id,
+          date,
+          status,
+          notes,
+          created_at,
+          course:courses!attendance_course_id_fkey(
+            id,
+            name,
+            code
+          ),
+          classroom_id
+        `)
+        .eq('student_id', profile.id)
+        .order('date', { ascending: false });
 
       if (error) throw error;
 
-      setRecords(data.records || []);
-      // Convert attendance_rate to number if it's a string
-      const stats = data.stats ? {
-        ...data.stats,
-        attendance_rate: typeof data.stats.attendance_rate === 'string' 
-          ? parseFloat(data.stats.attendance_rate) 
-          : data.stats.attendance_rate
-      } : null;
-      setStats(stats);
+      const formattedRecords = data.map((record: any) => ({
+        id: record.id,
+        date: record.date,
+        status: record.status,
+        notes: record.notes,
+        course: record.course ? {
+          id: record.course.id,
+          name: record.course.name,
+          code: record.course.code,
+        } : {
+          id: record.classroom_id || 'classroom',
+          name: 'Aula Virtual General',
+          code: 'AULA',
+        }
+      }));
+
+      const totalRecords = formattedRecords.length;
+      const presentCount = formattedRecords.filter((r: any) => r.status === 'present').length;
+      const lateCount = formattedRecords.filter((r: any) => r.status === 'late').length;
+      const absentCount = formattedRecords.filter((r: any) => r.status === 'absent').length;
+      const justifiedCount = formattedRecords.filter((r: any) => r.status === 'justified').length;
+
+      const newStats = {
+        total: totalRecords,
+        present: presentCount,
+        late: lateCount,
+        absent: absentCount,
+        justified: justifiedCount,
+        attendance_rate: totalRecords > 0 ? parseFloat(((presentCount + lateCount) / totalRecords * 100).toFixed(2)) : 0,
+      };
+
+      setRecords(formattedRecords);
+      setStats(newStats);
     } catch (error) {
       console.error('Error fetching attendance:', error);
       toast.error('Error al cargar tu asistencia');

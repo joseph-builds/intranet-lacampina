@@ -43,13 +43,6 @@ export const navigationItems: NavItem[] = [
     roles: ['admin', 'teacher', 'student', 'tutor']
   },
   
-  // Dashboard específico para Tutor
-  {
-    title: 'Dashboard',
-    url: '/tutor-dashboard',
-    icon: Home,
-    roles: ['tutor']
-  },
   
   // Aulas Virtuales (Profesores)
   {
@@ -102,6 +95,12 @@ export const navigationItems: NavItem[] = [
 
 // NAVEGACIÓN DE ADMINISTRACIÓN (Solo Admin)
 export const adminNavigationItems: NavItem[] = [
+  {
+    title: 'Bimestres',
+    url: '/admin/bimestres',
+    icon: Calendar,
+    roles: ['admin']
+  },
   {
     title: 'Gestión de Cursos',
     url: '/admin/courses',

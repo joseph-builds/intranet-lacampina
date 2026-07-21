@@ -42,6 +42,7 @@ import { StudentDetailDialog } from "@/components/tutor/StudentDetailDialog";
 import { StatCard } from "@/components/tutor/StatCard";
 import { GradeDistributionChart } from "@/components/tutor/GradeDistributionChart";
 import { StudentsAtRiskTable } from "@/components/tutor/StudentsAtRiskTable";
+import { VirtualClassroomAttendance } from "@/components/virtual-classrooms/VirtualClassroomAttendance";
 import { CourseScheduleManager } from "@/components/course/CourseScheduleManager";
 import {
   Dialog,
@@ -83,8 +84,8 @@ interface Student {
   id: string;
   first_name: string;
   last_name: string;
-  paternal_surname: string;
-  maternal_surname: string;
+  last_name: string;
+  last_name: string;
   student_code: string;
   email: string;
   phone?: string;
@@ -239,73 +240,46 @@ export default function TutorDashboard() {
       console.log("🏫 === CARGANDO DATOS DEL AULA ===");
       console.log("🆔 Classroom ID:", classroomId);
 
-      // Fetch courses in classroom
-      console.log("📡 Consultando cursos del aula:", classroomId);
-      const { data: coursesData, error: coursesError } = await supabase
+      // 1. Fetch students directly from student_sections (New Architecture)
+      console.log("📡 Consultando estudiantes matriculados en la sección...");
+      const { data: studentsData, error: studentsError } = await supabase
+        .from("student_sections")
+        .select("student_id, profiles!inner(*)")
+        .eq("section_id", classroomId)
+        .eq("profiles.is_active", true);
+
+      if (studentsError) throw studentsError;
+
+      // Remove duplicates
+      const uniqueStudents = Array.from(
+        new Map(
+          (studentsData || []).map((item) => [item.student_id, item.profiles]),
+        ).values(),
+      ) as Student[];
+
+      console.log("👥 Total estudiantes únicos encontrados:", uniqueStudents.length);
+      setStudents(uniqueStudents);
+
+      // 2. Try to fetch courses from both architectures just in case
+      const { data: oldCourses } = await supabase
         .from("courses")
         .select("id, name, code")
         .eq("classroom_id", classroomId);
+        
+      setCourses(oldCourses || []);
+      const courseIds = (oldCourses || []).map((c) => c.id);
 
-      console.log("📦 Respuesta de cursos:", { coursesData, coursesError });
+      const studentIds = uniqueStudents.map((s) => s.id);
 
-      if (coursesError) throw coursesError;
-
-      console.log("📚 Courses found:", coursesData?.length || 0, coursesData);
-
-      setCourses(coursesData || []);
-      const courseIds = coursesData.map((c) => c.id);
-
-      console.log("🔑 Course IDs:", courseIds);
-
-      if (courseIds.length > 0) {
-        // Fetch students
-        console.log("📡 Consultando estudiantes matriculados en los cursos...");
-        const { data: studentsData, error: studentsError } = await supabase
-          .from("course_enrollments")
-          .select("student_id, profiles!inner(*)")
-          .in("course_id", courseIds);
-
-        console.log("📦 Respuesta de estudiantes:", {
-          studentsData,
-          studentsError,
-        });
-
-        if (studentsError) throw studentsError;
-
-        // Remove duplicates
-        const uniqueStudents = Array.from(
-          new Map(
-            studentsData.map((item) => [item.student_id, item.profiles]),
-          ).values(),
-        ) as Student[];
-
-        console.log(
-          "👥 Total estudiantes únicos encontrados:",
-          uniqueStudents.length,
-        );
-        console.log(
-          "📋 Lista de estudiantes:",
-          uniqueStudents.map((s) => ({
-            id: s.id,
-            nombre: `${s.first_name} ${s.paternal_surname}`,
-            codigo: s.student_code,
-          })),
-        );
-
-        setStudents(uniqueStudents);
-
-        // Fetch attendance data - improved with classroom attendance and date info
-        const studentIds = uniqueStudents.map((s) => s.id);
-
-        // Fetch from both course-level and classroom-level attendance
-        const { data: attendanceRaw, error: attendanceError } = await supabase
+      if (studentIds.length > 0) {
+        // Fetch attendance data - Only fetch attendance recorded directly by the tutor
+        let attendanceQuery = supabase
           .from("attendance")
           .select("student_id, status, date, recorded_at")
           .in("student_id", studentIds)
-          .or(
-            `course_id.in.(${courseIds.join(",")}),classroom_id.eq.${classroomId}`,
-          )
-          .order("date", { ascending: false });
+          .eq("classroom_id", classroomId);
+
+        const { data: attendanceRaw, error: attendanceError } = await attendanceQuery.order("date", { ascending: false });
 
         if (attendanceError) throw attendanceError;
 
@@ -501,7 +475,7 @@ export default function TutorDashboard() {
         finalGradeData.forEach((grade) => {
           const student = uniqueStudents.find((s) => s.id === grade.student_id);
           console.log(
-            `  👤 ${student?.first_name} ${student?.paternal_surname}:`,
+            `  👤 ${student?.first_name} ${student?.last_name}:`,
             {
               total_calificadas: grade.total_graded,
               promedio: grade.average_score.toFixed(2),
@@ -664,7 +638,7 @@ export default function TutorDashboard() {
   // Filter students by search
   const filteredStudents = students.filter((student) => {
     const fullName =
-      `${student.paternal_surname} ${student.maternal_surname} ${student.first_name} ${student.student_code}`.toLowerCase();
+      `${student.last_name} ${student.last_name} ${student.first_name} ${student.student_code}`.toLowerCase();
     return fullName.includes(searchTerm.toLowerCase());
   });
 
@@ -867,6 +841,7 @@ export default function TutorDashboard() {
           <TabsList>
             <TabsTrigger value="grades">Calificaciones</TabsTrigger>
             <TabsTrigger value="attendance">Asistencia</TabsTrigger>
+            <TabsTrigger value="take_attendance">Tomar Asistencia</TabsTrigger>
             <TabsTrigger value="schedules">Horarios</TabsTrigger>
           </TabsList>
 
@@ -898,8 +873,7 @@ export default function TutorDashboard() {
                         >
                           <div className="flex-1">
                             <p className="font-medium">
-                              {student.paternal_surname}{" "}
-                              {student.maternal_surname}, {student.first_name}
+                              {student.last_name}, {student.first_name}
                             </p>
                             <p className="text-sm text-muted-foreground">
                               {student.student_code}
@@ -929,8 +903,7 @@ export default function TutorDashboard() {
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <p className="font-medium text-lg">
-                                {student.paternal_surname}{" "}
-                                {student.maternal_surname}, {student.first_name}
+                                {student.last_name}, {student.first_name}
                               </p>
                               <p className="text-sm text-muted-foreground">
                                 {student.student_code}
@@ -1122,8 +1095,7 @@ export default function TutorDashboard() {
                         >
                           <div className="flex-1">
                             <p className="font-medium">
-                              {student.paternal_surname}{" "}
-                              {student.maternal_surname}, {student.first_name}
+                              {student.last_name}, {student.first_name}
                             </p>
                             <p className="text-sm text-muted-foreground">
                               {student.student_code}
@@ -1157,8 +1129,7 @@ export default function TutorDashboard() {
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <p className="font-medium text-lg">
-                                {student.paternal_surname}{" "}
-                                {student.maternal_surname}, {student.first_name}
+                                {student.last_name}, {student.first_name}
                               </p>
                               <div className="flex items-center gap-3 mt-1">
                                 <p className="text-sm text-muted-foreground">
@@ -1259,6 +1230,10 @@ export default function TutorDashboard() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="take_attendance" className="space-y-4">
+            <VirtualClassroomAttendance classroomId={selectedClassroomId} canManage={true} />
           </TabsContent>
 
           <TabsContent value="schedules" className="space-y-4">

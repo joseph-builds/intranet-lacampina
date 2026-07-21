@@ -76,7 +76,7 @@ export function StudentsAtRiskTable({ students, onViewDetails }: StudentsAtRiskT
             {students.map(({ student, attendanceRate, averageScore, riskFactors }) => (
               <TableRow key={student.id} className="bg-destructive/5">
                 <TableCell className="font-medium">
-                  {student.paternal_surname} {student.maternal_surname}, {student.first_name}
+                  {student.last_name}, {student.first_name}
                 </TableCell>
                 <TableCell>{student.student_code}</TableCell>
                 <TableCell>

@@ -50,7 +50,7 @@ import SectionManagement from "./pages/SectionManagement";
 import MentalGames from "./pages/MentalGames";
 import Classmates from "./pages/Classmates";
 import Announcements from "./pages/Announcements";
-
+import AdminBimestres from "./pages/AdminBimestres";
 
 const queryClient = new QueryClient();
 
@@ -223,6 +223,11 @@ const App = () => (
             <Route path="/admin/section/:sectionId" element={
               <ProtectedRoute allowedRoles={["admin"]}>
                 <SectionManagement />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/bimestres" element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <AdminBimestres />
               </ProtectedRoute>
             } />
             <Route path="/admin/*" element={

@@ -1,6 +1,5 @@
 import { 
   GraduationCap, 
-  Settings, 
   Shield
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
@@ -100,18 +99,6 @@ export function AppSidebar() {
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
-        )}
-
-        {/* Settings */}
-        {!collapsed && (
-          <div className="mt-auto pt-6">
-            <SidebarMenuButton asChild isActive={isActive("/settings")}>
-              <Link to="/settings" className="flex items-center gap-3">
-                <Settings className="w-4 h-4" />
-                <span className="text-sm">Configuración</span>
-              </Link>
-            </SidebarMenuButton>
-          </div>
         )}
       </SidebarContent>
     </Sidebar>

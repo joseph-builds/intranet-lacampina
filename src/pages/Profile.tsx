@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useLocation, useNavigate } from 'react-router-dom';
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -9,22 +8,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Textarea } from "@/components/ui/textarea";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { User, Camera, Mail, Phone, Calendar, Shield, ClipboardCheck } from "lucide-react";
-import { StudentAttendance } from "@/components/profile/StudentAttendance";
-import { Notifications } from "@/components/Notifications";
-import { UserRolesManager } from "@/components/profile/UserRolesManager";
+import { User, Mail, Phone, Calendar, Shield, Loader2 } from "lucide-react";
+import { Label } from "@/components/ui/label";
 
+// Ahora el esquema solo valida el avatar, ya que el resto no se puede editar
 const profileFormSchema = z.object({
-  first_name: z.string().min(2, "El nombre debe tener al menos 2 caracteres"),
-  last_name: z.string().min(2, "El apellido debe tener al menos 2 caracteres"),
-  phone: z.string().optional(),
   avatar_url: z.string().optional(),
 });
 
@@ -38,12 +31,17 @@ export default function Profile() {
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
     defaultValues: {
-      first_name: profile?.first_name || "",
-      last_name: profile?.last_name || "",
-      phone: profile?.phone || "",
       avatar_url: profile?.avatar_url || "",
     },
   });
+
+  useEffect(() => {
+    if (profile) {
+      form.reset({
+        avatar_url: profile.avatar_url || "",
+      });
+    }
+  }, [profile, form]);
 
   const onSubmit = async (data: ProfileFormValues) => {
     if (!profile) return;
@@ -53,9 +51,6 @@ export default function Profile() {
       const { error } = await supabase
         .from("profiles")
         .update({
-          first_name: data.first_name,
-          last_name: data.last_name,
-          phone: data.phone,
           avatar_url: data.avatar_url,
         })
         .eq("id", profile.id);
@@ -64,12 +59,15 @@ export default function Profile() {
 
       toast({
         title: "Perfil actualizado",
-        description: "Tu información ha sido actualizada correctamente.",
+        description: "Tu foto de perfil ha sido actualizada correctamente.",
       });
+      
+      // Opcional: Recarga la página para que la nueva foto se refleje en el Header de inmediato
+      window.location.reload();
     } catch (error) {
       toast({
         title: "Error",
-        description: "No se pudo actualizar el perfil.",
+        description: "No se pudo actualizar la foto de perfil.",
         variant: "destructive",
       });
     } finally {
@@ -105,242 +103,189 @@ export default function Profile() {
   if (!profile) {
     return (
       <DashboardLayout>
-        <div className="text-center">Cargando perfil...</div>
+        <div className="flex justify-center items-center min-h-[60vh]">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
       </DashboardLayout>
     );
   }
 
-  const location = useLocation();
-  const navigate = useNavigate();
-  const params = new URLSearchParams(location.search);
-  const initialTab = params.get('tab') || 'info';
-  const [activeTab, setActiveTab] = useState<string>(initialTab);
-
-  useEffect(() => {
-    // Keep url in sync when tab changes
-    const p = new URLSearchParams(location.search);
-    p.set('tab', activeTab);
-    navigate({ pathname: location.pathname, search: p.toString() }, { replace: true });
-  }, [activeTab]);
-
   return (
     <DashboardLayout>
-      <div className="max-w-4xl mx-auto space-y-6 p-6 bg-gradient-to-br from-background to-muted/30 min-h-screen">
-            {/* Header del Perfil */}
-            <div className="flex items-center gap-4 mb-8">
-              <Avatar className="h-20 w-20 border-4 border-primary/20">
-                <AvatarImage src={profile.avatar_url} alt="Avatar" />
-                <AvatarFallback className="bg-gradient-primary text-primary-foreground text-2xl font-semibold">
-                  {getInitials(profile.first_name, profile.last_name)}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1">
-                <h1 className="text-3xl font-bold text-foreground">
-                  {profile.first_name} {profile.last_name}
-                </h1>
-                <p className="text-muted-foreground text-lg">{profile.email}</p>
-                <div className="flex gap-2 mt-2 flex-wrap">
-                  {profile.roles && profile.roles.length > 0 ? (
-                    profile.roles.map(role => (
-                      <Badge key={role} className={getRoleColor(role)}>
-                        <Shield className="w-4 h-4 mr-1" />
-                        {getRoleLabel(role)}
-                      </Badge>
-                    ))
-                  ) : (
-                    <Badge className={getRoleColor(profile.role)}>
-                      <Shield className="w-4 h-4 mr-1" />
-                      {getRoleLabel(profile.role)}
-                    </Badge>
-                  )}
+      <div className="max-w-5xl mx-auto space-y-6 p-6 bg-gradient-to-br from-background to-muted/30 min-h-screen">
+        
+        {/* Header del Perfil */}
+        <div className="flex items-center gap-6 mb-8 bg-card p-6 rounded-xl shadow-sm border border-border/50">
+          <Avatar className="h-24 w-24 border-4 border-primary/20">
+            <AvatarImage src={profile.avatar_url || ''} alt="Avatar" className="object-cover" />
+            <AvatarFallback className="bg-primary text-primary-foreground text-3xl font-semibold">
+              {getInitials(profile.first_name, profile.last_name)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex-1">
+            <h1 className="text-3xl font-bold text-foreground">
+              {profile.first_name} {profile.last_name}
+            </h1>
+            <p className="text-muted-foreground text-lg">{profile.email}</p>
+            <div className="flex gap-2 mt-3 flex-wrap">
+              {profile.roles && profile.roles.length > 0 ? (
+                profile.roles.map(role => (
+                  <Badge key={role} className={getRoleColor(role)}>
+                    <Shield className="w-4 h-4 mr-1" />
+                    {getRoleLabel(role)}
+                  </Badge>
+                ))
+              ) : (
+                <Badge className={getRoleColor(profile.role)}>
+                  <Shield className="w-4 h-4 mr-1" />
+                  {getRoleLabel(profile.role)}
+                </Badge>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Contenedor Principal en Grid (Izquierda: Info, Derecha: Editar Avatar) */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* Tarjeta de Información Personal (Solo lectura) */}
+          <div className="lg:col-span-1">
+            <Card className="bg-gradient-card border-border/50 shadow-card">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <User className="w-5 h-5 text-primary" />
+                  Información Personal
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="flex items-center gap-3">
+                  <Mail className="w-5 h-5 text-muted-foreground" />
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase font-semibold tracking-wider">Email</p>
+                    <p className="font-medium text-sm">{profile.email}</p>
+                  </div>
                 </div>
-              </div>
-            </div>
+                
+                <div className="flex items-center gap-3">
+                  <Phone className="w-5 h-5 text-muted-foreground" />
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase font-semibold tracking-wider">Teléfono</p>
+                    <p className="font-medium text-sm">{profile.phone || 'No registrado'}</p>
+                  </div>
+                </div>
 
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v)} className="space-y-6">
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="info">Información Personal</TabsTrigger>
-                          {profile.role === 'student' ? (
-                            <TabsTrigger value="attendance" className="flex items-center gap-2">
-                              <ClipboardCheck className="h-4 w-4" />
-                              Mi Asistencia
-                            </TabsTrigger>
-                          ) : (
-                            <TabsTrigger value="attendance" disabled className="opacity-50">Mi Asistencia</TabsTrigger>
-                          )}
-                          <TabsTrigger value="roles">Roles</TabsTrigger>
-                          <TabsTrigger value="notifications">Notificaciones</TabsTrigger>
-              </TabsList>
+                <div className="flex items-center gap-3">
+                  <Calendar className="w-5 h-5 text-muted-foreground" />
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase font-semibold tracking-wider">Miembro desde</p>
+                    <p className="font-medium text-sm">
+                      {user?.created_at ? new Date(user.created_at).toLocaleDateString('es-ES', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      }) : 'No disponible'}
+                    </p>
+                  </div>
+                </div>
 
-              <TabsContent value="info">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Información del Perfil */}
-                  <div className="lg:col-span-1">
-                <Card className="bg-gradient-card border-border/50 shadow-card">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <User className="w-5 h-5 text-primary" />
-                      Información Personal
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <Mail className="w-4 h-4 text-muted-foreground" />
-                      <div>
-                        <p className="text-sm text-muted-foreground">Email</p>
-                        <p className="font-medium">{profile.email}</p>
+                <Separator />
+                
+                <div className="space-y-2 pt-2">
+                  <p className="text-xs text-muted-foreground uppercase font-semibold tracking-wider">Estado de la cuenta</p>
+                  <Badge variant={profile.is_active ? "default" : "destructive"}>
+                    {profile.is_active ? "Activo" : "Inactivo"}
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Formulario de Edición (Bloqueado excepto Avatar) */}
+          <div className="lg:col-span-2">
+            <Card className="bg-gradient-card border-border/50 shadow-card h-full">
+              <CardHeader>
+                <CardTitle>Editar Perfil</CardTitle>
+                <CardDescription>
+                  Solo puedes modificar tu foto de perfil. Los demás datos personales están bloqueados y son gestionados por el administrador.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Form {...form}>
+                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                    
+                    {/* Campos Bloqueados Visualmente */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-muted-foreground">Nombre</Label>
+                        <Input 
+                          value={profile.first_name} 
+                          disabled 
+                          className="bg-muted/50 text-muted-foreground border-border/50 cursor-not-allowed opacity-70" 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-muted-foreground">Apellido</Label>
+                        <Input 
+                          value={profile.last_name} 
+                          disabled 
+                          className="bg-muted/50 text-muted-foreground border-border/50 cursor-not-allowed opacity-70" 
+                        />
                       </div>
                     </div>
-                    
-                    {profile.phone && (
-                      <div className="flex items-center gap-3">
-                        <Phone className="w-4 h-4 text-muted-foreground" />
-                        <div>
-                          <p className="text-sm text-muted-foreground">Teléfono</p>
-                          <p className="font-medium">{profile.phone}</p>
-                        </div>
-                      </div>
-                    )}
 
-                    <div className="flex items-center gap-3">
-                      <Calendar className="w-4 h-4 text-muted-foreground" />
-                      <div>
-                        <p className="text-sm text-muted-foreground">Miembro desde</p>
-                        <p className="font-medium">
-                          {user?.created_at ? new Date(user.created_at).toLocaleDateString('es-ES', {
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric'
-                          }) : 'No disponible'}
-                        </p>
-                      </div>
-                    </div>
-
-                    <Separator />
-                    
                     <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">Estado de la cuenta</p>
-                      <Badge variant={profile.is_active ? "default" : "destructive"}>
-                        {profile.is_active ? "Activo" : "Inactivo"}
-                      </Badge>
+                      <Label className="text-muted-foreground">Teléfono</Label>
+                      <Input 
+                        value={profile.phone || ''} 
+                        disabled 
+                        placeholder="Sin teléfono"
+                        className="bg-muted/50 text-muted-foreground border-border/50 cursor-not-allowed opacity-70" 
+                      />
                     </div>
-                  </CardContent>
-                </Card>
-              </div>
 
-              {/* Formulario de Edición */}
-              <div className="lg:col-span-2">
-                <Card className="bg-gradient-card border-border/50 shadow-card">
-                  <CardHeader>
-                    <CardTitle>Editar Perfil</CardTitle>
-                    <CardDescription>
-                      Actualiza tu información personal. Los cambios se guardarán automáticamente.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Form {...form}>
-                      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <FormField
-                            control={form.control}
-                            name="first_name"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Nombre</FormLabel>
-                                <FormControl>
-                                  <Input 
-                                    placeholder="Tu nombre" 
-                                    {...field}
-                                    className="bg-background/60 border-border/50 focus:border-primary"
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
+                    {/* Campo Editable (Avatar) */}
+                    <FormField
+                      control={form.control}
+                      name="avatar_url"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="font-semibold text-primary">URL del Avatar (Tu Foto)</FormLabel>
+                          <FormControl>
+                            <Input 
+                              placeholder="https://ejemplo.com/mi-foto.jpg" 
+                              {...field}
+                              className="bg-background border-border/50 focus:border-primary"
+                            />
+                          </FormControl>
+                          <p className="text-[0.8rem] text-muted-foreground">
+                            Pega un enlace directo a una imagen para usarla como foto de perfil.
+                          </p>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                          <FormField
-                            control={form.control}
-                            name="last_name"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Apellido</FormLabel>
-                                <FormControl>
-                                  <Input 
-                                    placeholder="Tu apellido" 
-                                    {...field}
-                                    className="bg-background/60 border-border/50 focus:border-primary"
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
+                    <Button 
+                      type="submit" 
+                      disabled={isLoading}
+                      className="w-full sm:w-auto bg-primary hover:bg-primary/90 transition-all duration-300"
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Guardando...
+                        </>
+                      ) : (
+                        "Guardar Foto de Perfil"
+                      )}
+                    </Button>
+                  </form>
+                </Form>
+              </CardContent>
+            </Card>
+          </div>
 
-                        <FormField
-                          control={form.control}
-                          name="phone"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Teléfono (Opcional)</FormLabel>
-                              <FormControl>
-                                <Input 
-                                  placeholder="Tu número de teléfono" 
-                                  {...field}
-                                  className="bg-background/60 border-border/50 focus:border-primary"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        <FormField
-                          control={form.control}
-                          name="avatar_url"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>URL del Avatar (Opcional)</FormLabel>
-                              <FormControl>
-                                <Input 
-                                  placeholder="https://ejemplo.com/mi-avatar.jpg" 
-                                  {...field}
-                                  className="bg-background/60 border-border/50 focus:border-primary"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        <Button 
-                          type="submit" 
-                          disabled={isLoading}
-                          className="w-full bg-gradient-primary hover:shadow-glow transition-all duration-300"
-                        >
-                          {isLoading ? "Guardando..." : "Guardar Cambios"}
-                        </Button>
-                      </form>
-                    </Form>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          </TabsContent>
-
-                <TabsContent value="attendance">
-                  {profile.role === 'student' ? <StudentAttendance /> : <div className="p-4 text-muted-foreground">La sección de asistencia está disponible sólo para estudiantes.</div>}
-                </TabsContent>
-
-                <TabsContent value="roles">
-                  <UserRolesManager />
-                </TabsContent>
-
-                <TabsContent value="notifications">
-                  <Notifications />
-                </TabsContent>
-              </Tabs>
+        </div>
       </div>
     </DashboardLayout>
   );

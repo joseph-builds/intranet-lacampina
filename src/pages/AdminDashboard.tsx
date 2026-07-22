@@ -11,10 +11,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { 
   Users, BookOpen, Activity, GraduationCap, UserCheck, 
-  ShieldAlert, School, AlertTriangle, CheckCircle2, UserMinus, FileWarning, TrendingUp, Clock, ArrowUpRight, BookMarked
+  ShieldAlert, School, AlertTriangle, CheckCircle2, UserMinus, FileWarning,
+  TrendingUp, Clock, ArrowUpRight, BookMarked
 } from 'lucide-react';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend 
 } from 'recharts';
 
@@ -131,11 +132,12 @@ const AdminDashboard = () => {
   const activeStudents = useMemo(() => activeProfiles.filter(p => p.role === 'student'), [activeProfiles]);
   const activeTeachers = useMemo(() => activeProfiles.filter(p => p.role === 'teacher'), [activeProfiles]);
   const activeTutors = useMemo(() => activeProfiles.filter(p => p.role === 'tutor'), [activeProfiles]);
-  const inactiveProfiles = useMemo(() => profiles.filter(p => !p.is_active), [profiles]);
-
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const newUsersThisMonth = profiles.filter(u => new Date(u.created_at) >= thirtyDaysAgo).length;
+  
+  // const inactiveProfiles = useMemo(() => profiles.filter(p => !p.is_active), [profiles]);
+  
+  // const thirtyDaysAgo = new Date();
+  // thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  // const newUsersThisMonth = profiles.filter(u => new Date(u.created_at) >= thirtyDaysAgo).length;
 
   // --- ALERTAS CRÍTICAS ---
   const studentsWithoutGrade = useMemo(() => activeStudents.filter(s => !s.current_grade_id), [activeStudents]);
@@ -204,9 +206,10 @@ const AdminDashboard = () => {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 bg-white p-6 rounded-xl border shadow-sm">
           <div>
             <h1 className="text-3xl font-black text-gray-900 tracking-tight">Centro de Mando Educativo</h1>
-            <p className="text-gray-500 mt-1 flex items-center gap-2 font-medium">
+            {/* CORRECCIÓN 1: Se reemplaza <p> por <div> para evitar el error de anidamiento del <Badge> */}
+            <div className="text-gray-500 mt-1 flex items-center gap-2 font-medium text-base">
               <Activity className="w-4 h-4 text-green-500" /> Año Escolar Operativo: <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">{CURRENT_YEAR}</Badge>
-            </p>
+            </div>
           </div>
           <div className="flex items-center gap-6">
             {totalAlerts > 0 && (
@@ -221,7 +224,8 @@ const AdminDashboard = () => {
                   {systemHealth}% Usuarios Activos
                 </p>
               </div>
-              <Progress value={systemHealth} className="w-24 h-2.5 bg-gray-200 rounded-full" indicatorColor={systemHealth >= 90 ? 'bg-green-500' : 'bg-amber-500'} />
+              {/* CORRECCIÓN 2: Se eliminó la propiedad 'indicatorColor' */}
+              <Progress value={systemHealth} className="w-24 h-2.5 bg-gray-200 rounded-full" />
             </div>
           </div>
         </div>
@@ -239,7 +243,7 @@ const AdminDashboard = () => {
 
           {/* ==========================================
               PESTAÑA 1: RESUMEN DIRECTIVO
-             ========================================== */}
+          ========================================== */}
           <TabsContent value="overview" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
             {/* KPIs Principales */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -372,14 +376,12 @@ const AdminDashboard = () => {
                   </Button>
                 </div>
               </Card>
-
             </div>
           </TabsContent>
 
-
           {/* ==========================================
               PESTAÑA 2: ANALÍTICA ACADÉMICA
-             ========================================== */}
+          ========================================== */}
           <TabsContent value="analytics" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               
@@ -442,14 +444,12 @@ const AdminDashboard = () => {
                   </ResponsiveContainer>
                 </CardContent>
               </Card>
-
             </div>
           </TabsContent>
 
-
           {/* ==========================================
               PESTAÑA 3: CENTRO DE ALERTAS
-             ========================================== */}
+          ========================================== */}
           <TabsContent value="alerts" className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
             
             {totalAlerts === 0 ? (

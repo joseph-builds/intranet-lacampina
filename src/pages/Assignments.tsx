@@ -251,7 +251,7 @@ const Assignments = () => {
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-foreground">Tareas</h1>
-          {(profile?.role === "teacher" || profile?.role === "tutor") && (
+          {(profile?.role === "teacher" || profile?.role === "admin") && (
             <Button
               className="bg-gradient-primary shadow-glow"
               onClick={() => setIsCreateDialogOpen(true)}
@@ -432,8 +432,7 @@ const Assignments = () => {
                       </Button>
 
                       {(profile?.role === "teacher" ||
-                        profile?.role === "admin" ||
-                        profile?.role === "tutor") && (
+                        profile?.role === "admin") && (
                         <Button
                           variant="outline"
                           onClick={() => setEditingAssignmentId(assignment.id)}

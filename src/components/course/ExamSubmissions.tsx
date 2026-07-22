@@ -221,7 +221,14 @@ export function ExamSubmissions({ examId, courseId }: ExamSubmissionsProps) {
                     <TableCell>
                       {submission ? (
                         <span className="font-medium">
-                          {submission.score}
+                          {(() => {
+                            const num = Number(submission.score);
+                            if (!isNaN(num) && submission.score !== null && submission.score !== '') {
+                              const letter = num >= 18 ? "AD" : num >= 14 ? "A" : num >= 11 ? "B" : "C";
+                              return `${num} (${letter})`;
+                            }
+                            return submission.score;
+                          })()}
                           {submission.hasUngradedQuestions && (
                             <span className="text-xs text-muted-foreground ml-1">
                               (parcial)

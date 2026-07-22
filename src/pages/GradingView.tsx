@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Loader2, Save } from "lucide-react";
 import PdfAnnotator, { PdfAnnotatorRef } from "@/components/assignments/PdfAnnotator";
@@ -67,7 +68,22 @@ export default function GradingView() {
             data.file_name = finalName;
 
             setSubmission(data);
-            setScore(data.score || "");
+            
+            let initialScore = "";
+            if (data.feedback_files && Array.isArray(data.feedback_files)) {
+                const meta = data.feedback_files.find((f: any) => f.is_metadata);
+                if (meta && meta.numeric_score !== undefined) {
+                    initialScore = String(meta.numeric_score);
+                }
+            }
+            if (!initialScore && data.score) {
+                initialScore = data.score;
+                if (initialScore === 'AD') initialScore = '18';
+                else if (initialScore === 'A') initialScore = '15';
+                else if (initialScore === 'B') initialScore = '12';
+                else if (initialScore === 'C') initialScore = '08';
+            }
+            setScore(initialScore);
             setFeedback(data.feedback || "");
 
             // Generar URL firmada si encontramos un path válido
@@ -82,23 +98,39 @@ export default function GradingView() {
             toast.error("Error cargando datos");
         } finally { setLoading(false); }
     };
-
     const handleSaveAll = async () => {
-        if (!score) {
-            toast.error("Selecciona una nota antes de guardar");
+        const numericScore = Number(score);
+        if (isNaN(numericScore) || numericScore < 0 || numericScore > 20) {
+            toast.error("La calificación debe ser un número entre 0 y 20");
             return;
         }
+
+        let letterGrade = 'C';
+        if (numericScore >= 18) letterGrade = 'AD';
+        else if (numericScore >= 14) letterGrade = 'A';
+        else if (numericScore >= 11) letterGrade = 'B';
 
         try {
             setIsSaving(true);
             toast.loading("Guardando calificación y PDF...", { id: "saving" });
 
+            let feedbackFilesData: any[] = [];
+            if (submission.feedback_files && Array.isArray(submission.feedback_files)) {
+                feedbackFilesData = submission.feedback_files.filter((f: any) => !f.is_metadata);
+            }
+
+            feedbackFilesData.push({
+                is_metadata: true,
+                numeric_score: numericScore
+            });
+
             // 1. Guardar Nota y Feedback en Base de Datos
             const { error: dbError } = await supabase
                 .from("assignment_submissions")
                 .update({
-                    score: score,
+                    score: letterGrade,
                     feedback: feedback,
+                    feedback_files: feedbackFilesData as any,
                     graded_at: new Date().toISOString()
                 })
                 .eq("id", submissionId);
@@ -170,18 +202,30 @@ export default function GradingView() {
                         
                         <div className="space-y-4">
                             <div className="space-y-2">
-                                <Label>Calificación</Label>
-                                <Select value={score} onValueChange={setScore}>
-                                    <SelectTrigger className="w-full">
-                                        <SelectValue placeholder="Seleccionar nota" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="AD">AD - Logro Destacado</SelectItem>
-                                        <SelectItem value="A">A - Logro Esperado</SelectItem>
-                                        <SelectItem value="B">B - En Proceso</SelectItem>
-                                        <SelectItem value="C">C - En Inicio</SelectItem>
-                                    </SelectContent>
-                                </Select>
+                                <Label htmlFor="score">Calificación (0 - 20)</Label>
+                                <div className="flex flex-col gap-2">
+                                    <Input
+                                        id="score"
+                                        type="number"
+                                        min={0}
+                                        max={20}
+                                        placeholder="Ingresa la nota"
+                                        value={score}
+                                        onChange={(e) => setScore(e.target.value)}
+                                        className="w-full"
+                                    />
+                                    {score && !isNaN(Number(score)) && (
+                                        <span className="text-xs font-medium text-muted-foreground bg-muted px-2.5 py-1.5 rounded-lg border block text-center">
+                                            Equivale a: {(() => {
+                                                const num = Number(score);
+                                                if (num >= 18) return "AD (Destacado)";
+                                                if (num >= 14) return "A (Esperado)";
+                                                if (num >= 11) return "B (Proceso)";
+                                                return "C (Inicio)";
+                                            })()}
+                                        </span>
+                                    )}
+                                </div>
                             </div>
 
                             <div className="space-y-2">

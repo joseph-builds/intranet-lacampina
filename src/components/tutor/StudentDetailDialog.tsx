@@ -66,6 +66,16 @@ interface Student {
   birth_date?: string;
 }
 
+interface CourseExam {
+  course_name: string;
+  course_code: string;
+  exam_title: string;
+  score: number;
+  max_score: number;
+  submitted_at: string;
+  status: 'Calificada' | 'Entregada' | 'No entregada';
+}
+
 interface CourseGrade {
   course_name: string;
   course_code: string;
@@ -75,6 +85,7 @@ interface CourseGrade {
   submitted_at: string;
   graded_at: string;
   feedback?: string;
+  status: 'Calificada' | 'Entregada' | 'No entregada';
 }
 
 interface CourseAttendance {
@@ -102,6 +113,7 @@ export function StudentDetailDialog({
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [grades, setGrades] = useState<CourseGrade[]>([]);
+  const [exams, setExams] = useState<CourseExam[]>([]);
   const [attendance, setAttendance] = useState<CourseAttendance[]>([]);
 
   useEffect(() => {
@@ -116,56 +128,119 @@ export function StudentDetailDialog({
     try {
       setLoading(true);
 
-      // Get courses from this classroom
-      const { data: coursesData, error: coursesError } = await supabase
-        .from("courses")
-        .select("id, name, code")
-        .eq("classroom_id", classroomId);
+      // 1. Get courses from the classroom (most reliable path for tutor)
+      const { data: classroomCourses } = await supabase
+        .from('courses')
+        .select('id')
+        .eq('classroom_id', classroomId);
 
-      if (coursesError) throw coursesError;
+      // 2. Also get courses from direct enrollments as fallback
+      const { data: directEnroll } = await supabase
+        .from('course_enrollments')
+        .select('course_id')
+        .eq('student_id', student.id);
 
-      const courseIds = coursesData.map((c) => c.id);
+      // 3. Merge all course IDs and deduplicate
+      let courseIds: string[] = [
+        ...(classroomCourses?.map(c => c.id) || []),
+        ...(directEnroll?.map(d => d.course_id) || []),
+      ];
+      courseIds = [...new Set(courseIds)];
 
-      // Fetch grades
-      const { data: gradesData, error: gradesError } = await supabase
-        .from("assignment_submissions")
-        .select(
-          `
-          score,
-          submitted_at,
-          graded_at,
-          feedback,
-          assignment_id,
-          assignments!inner(
-            title,
-            max_score,
-            course_id,
-            courses!inner(
-              name,
-              code
-            )
-          )
-        `,
-        )
-        .eq("student_id", student.id)
-        .in("assignments.course_id", courseIds)
-        .not("score", "is", null)
-        .order("graded_at", { ascending: false });
+      console.log('📚 courseIds for student', student.first_name, ':', courseIds);
 
-      if (gradesError) throw gradesError;
+      if (courseIds.length > 0) {
+        // Fetch all assignments for these courses
+        const { data: allAssignments } = await supabase
+          .from('assignments')
+          .select('id, title, max_score, course_id, courses!inner(name, code)')
+          .in('course_id', courseIds);
 
-      const formattedGrades: CourseGrade[] = gradesData.map((g) => ({
-        course_name: (g.assignments as any).courses.name,
-        course_code: (g.assignments as any).courses.code,
-        assignment_title: (g.assignments as any).title,
-        score: convertLetterGrade(g.score),
-        max_score: Number((g.assignments as any).max_score),
-        submitted_at: g.submitted_at || "",
-        graded_at: g.graded_at || "",
-        feedback: g.feedback || undefined,
-      }));
+        const { data: submissionsData } = await supabase
+          .from('assignment_submissions')
+          .select('assignment_id, score, submitted_at, graded_at, feedback')
+          .eq('student_id', student.id);
 
-      setGrades(formattedGrades);
+        console.log('📝 Assignments found:', allAssignments?.length, 'Submissions:', submissionsData?.length);
+
+        const formattedGrades: CourseGrade[] = (allAssignments || []).map(a => {
+          const sub = submissionsData?.find(s => s.assignment_id === a.id);
+          const isGraded = sub && sub.score !== null && sub.score !== undefined;
+          return {
+            course_name: (a.courses as any).name,
+            course_code: (a.courses as any).code,
+            assignment_title: a.title,
+            score: isGraded ? convertLetterGrade(sub.score) : 0,
+            max_score: Number(a.max_score),
+            submitted_at: sub?.submitted_at || "",
+            graded_at: sub?.graded_at || "",
+            feedback: sub?.feedback || undefined,
+            status: sub ? (isGraded ? 'Calificada' : 'Entregada') : 'No entregada'
+          };
+        });
+        setGrades(formattedGrades);
+
+        // Fetch exams (quizzes)
+        const { data: allQuizzes } = await supabase
+          .from('quizzes')
+          .select('id, title, course_id, courses!inner(name, code)')
+          .in('course_id', courseIds);
+
+        // Also fetch from exams table as fallback
+        const { data: allExams } = await supabase
+          .from('exams')
+          .select('id, title, course_id, max_score, courses:courses!exams_modulo_id_fkey(name, code)')
+          .in('course_id', courseIds);
+
+        const { data: quizSubs } = await supabase
+          .from('quiz_submissions')
+          .select('quiz_id, score, submitted_at')
+          .eq('student_id', student.id);
+
+        console.log('🎓 Quizzes found:', allQuizzes?.length, 'Exams found:', allExams?.length, 'Quiz submissions:', quizSubs?.length);
+
+        // Build exam list from quizzes
+        const examList: CourseExam[] = [];
+        const seenTitles = new Set<string>();
+
+        (allQuizzes || []).forEach(q => {
+          const sub = quizSubs?.find(s => s.quiz_id === q.id);
+          const isGraded = sub && sub.score !== null && sub.score !== undefined;
+          const key = `${q.title}-${q.course_id}`;
+          seenTitles.add(key);
+          examList.push({
+            course_name: (q.courses as any).name,
+            course_code: (q.courses as any).code,
+            exam_title: q.title,
+            score: isGraded ? convertLetterGrade(sub.score) : 0,
+            max_score: 20,
+            submitted_at: sub?.submitted_at || '',
+            status: sub ? (isGraded ? 'Calificada' : 'Entregada') : 'No entregada'
+          });
+        });
+
+        // Add exams that don't already exist from quizzes
+        (allExams || []).forEach(e => {
+          const key = `${e.title}-${e.course_id}`;
+          if (!seenTitles.has(key) && e.courses) {
+            seenTitles.add(key);
+            examList.push({
+              course_name: (e.courses as any).name,
+              course_code: (e.courses as any).code,
+              exam_title: e.title,
+              score: 0,
+              max_score: Number(e.max_score) || 20,
+              submitted_at: '',
+              status: 'No entregada'
+            });
+          }
+        });
+
+        setExams(examList);
+      } else {
+        setGrades([]);
+        setExams([]);
+      }
 
       // Fetch attendance - include classroom attendance and recorded_at
       const { data: attendanceData, error: attendanceError } = await supabase
@@ -182,9 +257,6 @@ export function StudentDetailDialog({
         `,
         )
         .eq("student_id", student.id)
-        .or(
-          `course_id.in.(${courseIds.join(",")}),classroom_id.eq.${classroomId}`,
-        )
         .order("date", { ascending: false })
         .order("recorded_at", { ascending: false });
 
@@ -258,14 +330,14 @@ export function StudentDetailDialog({
 
   if (!student) return null;
 
-  // Calculate stats
-  const totalGrades = grades.length;
+  const gradedGrades = grades.filter(g => g.status === 'Calificada');
+  const totalGrades = gradedGrades.length;
   const averageScore =
     totalGrades > 0
-      ? grades.reduce((acc, g) => acc + g.score, 0) / totalGrades
+      ? gradedGrades.reduce((acc, g) => acc + g.score, 0) / totalGrades
       : 0;
 
-  const gradeDistribution = grades.reduce(
+  const gradeDistribution = gradedGrades.reduce(
     (acc, g) => {
       if (g.score >= 18) acc.ad++;
       else if (g.score >= 14) acc.a++;
@@ -445,6 +517,9 @@ export function StudentDetailDialog({
                   <TabsTrigger value="attendance" className="flex-1">
                     Asistencia ({attendance.length})
                   </TabsTrigger>
+                  <TabsTrigger value="exams" className="flex-1">
+                    Exámenes ({exams.length})
+                  </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="grades" className="space-y-4">
@@ -516,9 +591,9 @@ export function StudentDetailDialog({
                                 </CardDescription>
                               </div>
                               <Badge
-                                variant={getGradeBadgeVariant(grade.score)}
+                                variant={grade.status === 'Calificada' ? getGradeBadgeVariant(grade.score) : 'outline'}
                               >
-                                {grade.score} - {getGradeLetter(grade.score)}
+                                {grade.status === 'Calificada' ? `${grade.score} - ${getGradeLetter(grade.score)}` : grade.status}
                               </Badge>
                             </div>
                           </CardHeader>
@@ -531,17 +606,19 @@ export function StudentDetailDialog({
                                 {grade.score} / {grade.max_score}
                               </span>
                             </div>
-                            <div className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">
-                                Calificado
-                              </span>
-                              <span>
-                                {format(
-                                  new Date(grade.graded_at),
-                                  "dd/MM/yyyy HH:mm",
-                                )}
-                              </span>
-                            </div>
+                            {grade.status === 'Calificada' && (
+                              <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">
+                                  Calificado
+                                </span>
+                                <span>
+                                  {format(
+                                    new Date(grade.graded_at),
+                                    "dd/MM/yyyy HH:mm",
+                                  )}
+                                </span>
+                              </div>
+                            )}
                             {grade.feedback && (
                               <div className="pt-2 border-t">
                                 <p className="text-sm font-medium mb-1">
@@ -552,6 +629,44 @@ export function StudentDetailDialog({
                                 </p>
                               </div>
                             )}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="exams" className="space-y-4">
+                  {exams.length === 0 ? (
+                    <Card>
+                      <CardContent className="py-8 text-center text-muted-foreground">
+                        No hay exámenes registrados
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <>
+                      {exams.map((exam, index) => (
+                        <Card key={index}>
+                          <CardHeader className="pb-3">
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <CardTitle className="text-base">{exam.exam_title}</CardTitle>
+                                <CardDescription>{exam.course_name} ({exam.course_code})</CardDescription>
+                              </div>
+                              <Badge variant={exam.status === 'Calificada' ? getGradeBadgeVariant(exam.score) : 'outline'}>
+                                {exam.status === 'Calificada' ? `${exam.score} / 20` : exam.status}
+                              </Badge>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="space-y-2">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Puntuación</span>
+                              <span className="font-medium">{exam.score} / 20</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Entregado</span>
+                              <span>{format(new Date(exam.submitted_at), 'dd/MM/yyyy HH:mm')}</span>
+                            </div>
                           </CardContent>
                         </Card>
                       ))}

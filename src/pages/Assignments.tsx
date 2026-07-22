@@ -163,10 +163,39 @@ const Assignments = () => {
 
     if (hasSubmission) {
       const submission = assignment.submissions[0];
-      // Score ya es letra directamente (AD, A, B, C)
+      // Score can be numeric (0-20) or letter (AD, A, B, C)
+      let label = "Entregada";
+      if (submission.score) {
+        let numericVal: number | null = null;
+        if (submission.feedback_files && Array.isArray(submission.feedback_files)) {
+          const meta = submission.feedback_files.find((f: any) => f.is_metadata);
+          if (meta && meta.numeric_score !== undefined) {
+            numericVal = meta.numeric_score;
+          }
+        }
+
+        if (numericVal !== null) {
+          let letter = "C";
+          if (numericVal >= 18) letter = "AD";
+          else if (numericVal >= 14) letter = "A";
+          else if (numericVal >= 11) letter = "B";
+          label = `${numericVal} (${letter})`;
+        } else {
+          const numericScore = Number(submission.score);
+          if (!isNaN(numericScore) && submission.score !== '') {
+            let letter = "C";
+            if (numericScore >= 18) letter = "AD";
+            else if (numericScore >= 14) letter = "A";
+            else if (numericScore >= 11) letter = "B";
+            label = `${numericScore} (${letter})`;
+          } else {
+            label = submission.score;
+          }
+        }
+      }
       return {
         status: "submitted",
-        label: submission.score || "Entregada",
+        label,
         variant: submission.score
           ? ("default" as const)
           : ("secondary" as const),

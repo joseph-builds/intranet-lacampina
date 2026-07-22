@@ -22,8 +22,7 @@ export const useExamMonitor = ({ examId, isActive, onExamClosed, userId }: UseEx
       await supabase.from('notifications').insert({
         user_id: userId,
         type: 'exam_abandoned',
-        title: `Abandono detectado en examen`,
-        message: `Se detectó que saliste del examen. Intento ${abandonCountRef.current} de ${maxAbandonAttempts}`,
+        message: `Abandono detectado en examen: Se detectó que saliste del examen. Intento ${abandonCountRef.current} de ${maxAbandonAttempts}`,
         is_read: false,
       });
     } catch (error) {

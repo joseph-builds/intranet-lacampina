@@ -40,9 +40,18 @@ interface Course {
     grade: string;
     education_level: string;
   };
+  course_teachers?: {
+    teacher: {
+      id: string;
+      first_name: string;
+      last_name: string;
+      email: string;
+    };
+  }[];
   enrollments?: { count: number }[];
   enrolled_at?: string; // For students
   enrollment_status?: string; // For students
+  schedule?: string | null;
 }
 
 const Courses = () => {
@@ -85,6 +94,11 @@ const Courses = () => {
               ),
               classroom:virtual_classrooms!courses_classroom_id_fkey (
                 id, name, grade, education_level
+              ),
+              course_teachers (
+                teacher:profiles (
+                  id, first_name, last_name, email
+                )
               )
             )
           `)
@@ -108,6 +122,9 @@ const Courses = () => {
               grade:academic_grades(name, level:academic_levels(name)),
               section_courses (
                 id,
+                teacher:profiles!section_courses_teacher_id_fkey (
+                  id, first_name, last_name, email
+                ),
                 base:base_courses (
                   course:courses (
                     *,
@@ -116,6 +133,11 @@ const Courses = () => {
                     ),
                     classroom:virtual_classrooms!courses_classroom_id_fkey (
                       id, name, grade, education_level
+                    ),
+                    course_teachers (
+                      teacher:profiles (
+                        id, first_name, last_name, email
+                      )
                     )
                   )
                 )
@@ -136,6 +158,7 @@ const Courses = () => {
               if (course && course.is_active && !isExempted && !coursesData.find(c => c.id === course.id)) {
                 coursesData.push({
                   ...course,
+                  teacher: course.teacher || sc.teacher,
                   enrolled_at: ss.created_at,
                   enrollment_status: 'enrolled'
                 });
@@ -154,6 +177,11 @@ const Courses = () => {
             ),
             classroom:virtual_classrooms!courses_classroom_id_fkey (
               id, name, grade, education_level
+            ),
+            course_teachers (
+              teacher:profiles (
+                id, first_name, last_name, email
+              )
             )
           `)
           .eq('teacher_principal_id', profile.id)
@@ -171,6 +199,11 @@ const Courses = () => {
               ),
               classroom:virtual_classrooms!courses_classroom_id_fkey (
                 id, name, grade, education_level
+              ),
+              course_teachers (
+                teacher:profiles (
+                  id, first_name, last_name, email
+                )
               )
             )
           `)
@@ -190,6 +223,11 @@ const Courses = () => {
                 ),
                 classroom:virtual_classrooms!courses_classroom_id_fkey (
                   id, name, grade, education_level
+                ),
+                course_teachers (
+                  teacher:profiles (
+                    id, first_name, last_name, email
+                  )
                 )
               )
             )
@@ -235,6 +273,11 @@ const Courses = () => {
             ),
             classroom:virtual_classrooms!courses_classroom_id_fkey (
               id, name, grade, education_level
+            ),
+            course_teachers (
+              teacher:profiles (
+                id, first_name, last_name, email
+              )
             )
           `)
           .eq('is_active', true);
@@ -383,13 +426,29 @@ const Courses = () => {
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Users className="w-4 h-4" />
                     <span>
-                      Prof. {course.teacher?.first_name || 'Sin asignar'} {course.teacher?.last_name || ''}
+                      Prof. {
+                        course.teacher?.first_name 
+                          ? `${course.teacher.first_name} ${course.teacher.last_name || ''}` 
+                          : course.course_teachers && course.course_teachers.length > 0
+                            ? `${course.course_teachers[0].teacher.first_name} ${course.course_teachers[0].teacher.last_name || ''}`
+                            : 'Sin asignar'
+                      }
                     </span>
                   </div>
                   
+                  {course.schedule && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Clock className="w-4 h-4 text-primary shrink-0" />
+                      <span className="line-clamp-1">Horario: {course.schedule}</span>
+                    </div>
+                  )}
+                  
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Clock className="w-4 h-4" />
-                    <span>{course.academic_year} - {course.semester}</span>
+                    <Calendar className="w-4 h-4 text-primary shrink-0" />
+                    <span>
+                      Año Académico: {course.academic_year || new Date().getFullYear()}
+                      {course.semester ? ` - ${course.semester}` : ''}
+                    </span>
                   </div>
 
                   {/* Enrollment date for students */}

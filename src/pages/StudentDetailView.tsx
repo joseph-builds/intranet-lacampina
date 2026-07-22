@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Card,
   CardContent,
@@ -43,6 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useAuth } from "@/hooks/useAuth";
 
 // Convert letter grades to numeric scores
 const convertLetterGrade = (score: string): number => {
@@ -70,6 +72,7 @@ interface Student {
   phone?: string;
   document_number?: string;
   birth_date?: string;
+  avatar_url?: string;
 }
 
 interface CourseGrade {
@@ -111,6 +114,8 @@ interface CourseStats {
 export default function StudentDetailView() {
   const { studentId } = useParams<{ studentId: string }>();
   const navigate = useNavigate();
+  const { profile } = useAuth();
+  const isStudentViewer = profile?.role === "student";
   const [loading, setLoading] = useState(true);
   const [student, setStudent] = useState<Student | null>(null);
   const [grades, setGrades] = useState<CourseGrade[]>([]);
@@ -137,12 +142,102 @@ export default function StudentDetailView() {
       if (studentError) throw studentError;
       setStudent(studentData);
 
+      // Fetch exemptions
+      const { data: exemptions } = await supabase
+        .from('student_course_exemptions')
+        .select('section_course_id')
+        .eq('student_id', studentId);
+      const exemptIds = exemptions?.map(e => e.section_course_id) || [];
+
+      // Fetch direct enrollments
+      const { data: direct } = await supabase
+        .from('course_enrollments')
+        .select(`
+          course:courses (
+            id,
+            name,
+            code,
+            is_active
+          )
+        `)
+        .eq('student_id', studentId);
+
+      const courseMap = new Map<string, CourseStats>();
+
+      if (direct) {
+        direct.forEach((e: any) => {
+          const c = e.course;
+          if (c && c.is_active) {
+            courseMap.set(c.id, {
+              course_id: c.id,
+              course_name: c.name,
+              course_code: c.code,
+              average_score: 0,
+              total_assignments: 0,
+              attendance_rate: 0,
+              total_attendance_records: 0,
+              ad_count: 0,
+              a_count: 0,
+              b_count: 0,
+              c_count: 0,
+            });
+          }
+        });
+      }
+
+      // Fetch section enrollments
+      const { data: sectionData } = await supabase
+        .from('student_sections')
+        .select(`
+          section:sections (
+            section_courses (
+              id,
+              base:base_courses (
+                course:courses (
+                  id,
+                  name,
+                  code,
+                  is_active
+                )
+              )
+            )
+          )
+        `)
+        .eq('student_id', studentId)
+        .eq('is_active', true);
+
+      if (sectionData) {
+        sectionData.forEach((ss: any) => {
+          const scs = ss.section?.section_courses || [];
+          scs.forEach((sc: any) => {
+            const course = sc.base?.course;
+            const isExempted = exemptIds.includes(sc.id);
+            if (course && course.is_active && !isExempted) {
+              courseMap.set(course.id, {
+                course_id: course.id,
+                course_name: course.name,
+                course_code: course.code,
+                average_score: 0,
+                total_assignments: 0,
+                attendance_rate: 0,
+                total_attendance_records: 0,
+                ad_count: 0,
+                a_count: 0,
+                b_count: 0,
+                c_count: 0,
+              });
+            }
+          });
+        });
+      }
+
       // Fetch all grades
       const { data: gradesData, error: gradesError } = await supabase
         .from("assignment_submissions")
         .select(
           `
           score,
+          feedback_files,
           submitted_at,
           graded_at,
           feedback,
@@ -164,17 +259,31 @@ export default function StudentDetailView() {
 
       if (gradesError) throw gradesError;
 
-      const formattedGrades: CourseGrade[] = gradesData.map((g) => ({
-        course_id: (g.assignments as any).courses.id,
-        course_name: (g.assignments as any).courses.name,
-        course_code: (g.assignments as any).courses.code,
-        assignment_title: (g.assignments as any).title,
-        score: convertLetterGrade(g.score),
-        max_score: Number((g.assignments as any).max_score),
-        submitted_at: g.submitted_at || "",
-        graded_at: g.graded_at || "",
-        feedback: g.feedback || undefined,
-      }));
+      const formattedGrades: CourseGrade[] = gradesData.map((g) => {
+        let numericScore = 0;
+        if (g.feedback_files && Array.isArray(g.feedback_files)) {
+          const meta = g.feedback_files.find((f: any) => f.is_metadata);
+          if (meta && meta.numeric_score !== undefined) {
+            numericScore = meta.numeric_score;
+          }
+        }
+        
+        if (numericScore === 0) {
+          numericScore = convertLetterGrade(g.score || '');
+        }
+
+        return {
+          course_id: (g.assignments as any).courses.id,
+          course_name: (g.assignments as any).courses.name,
+          course_code: (g.assignments as any).courses.code,
+          assignment_title: (g.assignments as any).title,
+          score: numericScore,
+          max_score: Number((g.assignments as any).max_score),
+          submitted_at: g.submitted_at || "",
+          graded_at: g.graded_at || "",
+          feedback: g.feedback || undefined,
+        };
+      });
 
       setGrades(formattedGrades);
 
@@ -211,9 +320,6 @@ export default function StudentDetailView() {
         }));
 
       setAttendance(formattedAttendance);
-
-      // Calculate course stats
-      const courseMap = new Map<string, CourseStats>();
 
       formattedGrades.forEach((grade) => {
         if (!courseMap.has(grade.course_id)) {
@@ -477,98 +583,109 @@ export default function StudentDetailView() {
               <ArrowLeft className="h-4 w-4 mr-2" />
               Volver
             </Button>
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-                <User className="h-8 w-8" />
-                {student.paternal_surname} {student.maternal_surname},{" "}
-                {student.first_name}
-              </h1>
-              <p className="text-muted-foreground">
-                Código: {student.student_code}
-              </p>
+            <div className="flex items-center gap-3">
+              <Avatar className="h-16 w-16 border-2 border-primary/20">
+                <AvatarImage src={student.avatar_url || ""} alt={student.first_name} />
+                <AvatarFallback className="bg-primary/10 text-primary font-semibold text-xl">
+                  {student.first_name?.[0]}
+                  {(student.last_name || student.paternal_surname)?.[0]}
+                </AvatarFallback>
+              </Avatar>
+              <div>
+                <h1 className="text-3xl font-bold tracking-tight">
+                  {[student.first_name, student.paternal_surname, student.maternal_surname, student.last_name]
+                    .filter(Boolean)
+                    .join(" ")}
+                </h1>
+                <p className="text-muted-foreground text-sm">
+                  Código: {student.student_code}
+                </p>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Summary Cards */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card className="bg-gradient-to-br from-primary/10 to-primary/5">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">
-                    Promedio General
-                  </p>
-                  <p className="text-3xl font-bold mt-1">
-                    {averageScore.toFixed(1)}
-                  </p>
-                  <Badge variant="outline" className="mt-2">
-                    {getGradeLetter(averageScore)}
-                  </Badge>
+        {!isStudentViewer && (
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card className="bg-gradient-to-br from-primary/10 to-primary/5">
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">
+                      Promedio General
+                    </p>
+                    <p className="text-3xl font-bold mt-1">
+                      {averageScore.toFixed(1)}
+                    </p>
+                    <Badge variant="outline" className="mt-2">
+                      {getGradeLetter(averageScore)}
+                    </Badge>
+                  </div>
+                  <Award className="h-12 w-12 text-primary opacity-50" />
                 </div>
-                <Award className="h-12 w-12 text-primary opacity-50" />
-              </div>
-              <p className="text-xs text-muted-foreground mt-3">
-                {totalGrades}{" "}
-                {totalGrades === 1 ? "calificación" : "calificaciones"}
-              </p>
-            </CardContent>
-          </Card>
+                <p className="text-xs text-muted-foreground mt-3">
+                  {totalGrades}{" "}
+                  {totalGrades === 1 ? "calificación" : "calificaciones"}
+                </p>
+              </CardContent>
+            </Card>
 
-          <Card className="bg-gradient-to-br from-green-500/10 to-green-500/5">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Asistencia</p>
-                  <p className="text-3xl font-bold mt-1">
-                    {attendanceRate.toFixed(1)}%
-                  </p>
-                  <Badge
-                    variant={
-                      attendanceRate >= 90
-                        ? "default"
+            <Card className="bg-gradient-to-br from-green-500/10 to-green-500/5">
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Asistencia</p>
+                    <p className="text-3xl font-bold mt-1">
+                      {attendanceRate.toFixed(1)}%
+                    </p>
+                    <Badge
+                      variant={
+                        attendanceRate >= 90
+                          ? "default"
+                          : attendanceRate >= 75
+                            ? "secondary"
+                            : "destructive"
+                      }
+                      className="mt-2"
+                    >
+                      {attendanceRate >= 90
+                        ? "Excelente"
                         : attendanceRate >= 75
-                          ? "secondary"
-                          : "destructive"
-                    }
-                    className="mt-2"
-                  >
-                    {attendanceRate >= 90
-                      ? "Excelente"
-                      : attendanceRate >= 75
-                        ? "Buena"
-                        : "Regular"}
-                  </Badge>
+                          ? "Buena"
+                          : "Regular"}
+                    </Badge>
+                  </div>
+                  <BarChart3 className="h-12 w-12 text-green-600 opacity-50" />
                 </div>
-                <BarChart3 className="h-12 w-12 text-green-600 opacity-50" />
-              </div>
-              <p className="text-xs text-muted-foreground mt-3">
-                {totalAttendance}{" "}
-                {totalAttendance === 1 ? "registro" : "registros"}
-              </p>
-            </CardContent>
-          </Card>
+                <p className="text-xs text-muted-foreground mt-3">
+                  {totalAttendance}{" "}
+                  {totalAttendance === 1 ? "registro" : "registros"}
+                </p>
+              </CardContent>
+            </Card>
 
-          <Card className="bg-gradient-to-br from-blue-500/10 to-blue-500/5">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Cursos</p>
-                  <p className="text-3xl font-bold mt-1">
-                    {courseStats.length}
-                  </p>
-                  <Badge variant="outline" className="mt-2">
-                    Activos
-                  </Badge>
+            <Card className="bg-gradient-to-br from-blue-500/10 to-blue-500/5">
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Cursos</p>
+                    <p className="text-3xl font-bold mt-1">
+                      {courseStats.length}
+                    </p>
+                    <Badge variant="outline" className="mt-2">
+                      Activos
+                    </Badge>
+                  </div>
+                  <GraduationCap className="h-12 w-12 text-blue-600 opacity-50" />
                 </div>
-                <GraduationCap className="h-12 w-12 text-blue-600 opacity-50" />
-              </div>
-              <p className="text-xs text-muted-foreground mt-3">
-                En aula virtual
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+                <p className="text-xs text-muted-foreground mt-3">
+                  En aula virtual
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Contact Information */}
         <Card>
@@ -621,27 +738,33 @@ export default function StudentDetailView() {
           </CardContent>
         </Card>
 
-        {/* Course Performance */}
+        {/* Course Performance or Enrolled Courses */}
         <Card>
           <CardHeader>
-            <CardTitle>Desempeño por Curso</CardTitle>
-            <CardDescription>
-              Resumen de calificaciones y asistencia en cada curso
-            </CardDescription>
+            <CardTitle>{isStudentViewer ? "Cursos Matriculados" : "Desempeño por Curso"}</CardTitle>
+            {!isStudentViewer && (
+              <CardDescription>
+                Resumen de calificaciones y asistencia en cada curso
+              </CardDescription>
+            )}
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Curso</TableHead>
-                  <TableHead className="text-center">Promedio</TableHead>
-                  <TableHead className="text-center">Tareas</TableHead>
-                  <TableHead className="text-center">AD</TableHead>
-                  <TableHead className="text-center">A</TableHead>
-                  <TableHead className="text-center">B</TableHead>
-                  <TableHead className="text-center">C</TableHead>
-                  <TableHead className="text-center">Asistencia</TableHead>
-                  <TableHead className="text-center">Registros</TableHead>
+                  {!isStudentViewer && (
+                    <>
+                      <TableHead className="text-center">Promedio</TableHead>
+                      <TableHead className="text-center">Tareas</TableHead>
+                      <TableHead className="text-center">AD</TableHead>
+                      <TableHead className="text-center">A</TableHead>
+                      <TableHead className="text-center">B</TableHead>
+                      <TableHead className="text-center">C</TableHead>
+                      <TableHead className="text-center">Asistencia</TableHead>
+                      <TableHead className="text-center">Registros</TableHead>
+                    </>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -655,53 +778,57 @@ export default function StudentDetailView() {
                         </p>
                       </div>
                     </TableCell>
-                    <TableCell className="text-center">
-                      {course.total_assignments > 0 ? (
-                        <Badge
-                          variant={getGradeBadgeVariant(course.average_score)}
-                        >
-                          {course.average_score.toFixed(1)} -{" "}
-                          {getGradeLetter(course.average_score)}
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {course.total_assignments}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <span className="text-green-600 font-medium">
-                        {course.ad_count}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <span className="text-blue-600 font-medium">
-                        {course.a_count}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <span className="text-yellow-600 font-medium">
-                        {course.b_count}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <span className="text-red-600 font-medium">
-                        {course.c_count}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {course.total_attendance_records > 0 ? (
-                        <span className="font-medium">
-                          {course.attendance_rate.toFixed(1)}%
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {course.total_attendance_records}
-                    </TableCell>
+                    {!isStudentViewer && (
+                      <>
+                        <TableCell className="text-center">
+                          {course.total_assignments > 0 ? (
+                            <Badge
+                              variant={getGradeBadgeVariant(course.average_score)}
+                            >
+                              {course.average_score.toFixed(1)} -{" "}
+                              {getGradeLetter(course.average_score)}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {course.total_assignments}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className="text-green-600 font-medium">
+                            {course.ad_count}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className="text-blue-600 font-medium">
+                            {course.a_count}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className="text-yellow-600 font-medium">
+                            {course.b_count}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className="text-red-600 font-medium">
+                            {course.c_count}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {course.total_attendance_records > 0 ? (
+                            <span className="font-medium">
+                              {course.attendance_rate.toFixed(1)}%
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {course.total_attendance_records}
+                        </TableCell>
+                      </>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -710,174 +837,175 @@ export default function StudentDetailView() {
         </Card>
 
         {/* Detailed Tabs */}
-        <Tabs defaultValue="grades" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="grades">Calificaciones Detalladas</TabsTrigger>
-            <TabsTrigger value="attendance">Asistencia Detallada</TabsTrigger>
-          </TabsList>
+        {!isStudentViewer && (
+          <Tabs defaultValue="grades" className="space-y-4">
+            <TabsList>
+              <TabsTrigger value="grades">Calificaciones Detalladas</TabsTrigger>
+              <TabsTrigger value="attendance">Asistencia Detallada</TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="grades" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Todas las Calificaciones</CardTitle>
-                    <CardDescription>
-                      Historial completo de tareas calificadas
-                    </CardDescription>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => exportToCSV("grades")}
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Exportar CSV
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {grades.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      No hay calificaciones registradas
+            <TabsContent value="grades" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Todas las Calificaciones</CardTitle>
+                      <CardDescription>
+                        Historial completo de tareas calificadas
+                      </CardDescription>
                     </div>
-                  ) : (
-                    grades.map((grade, index) => (
-                      <Card
-                        key={index}
-                        className="border-l-4"
-                        style={{
-                          borderLeftColor:
-                            grade.score >= 18
-                              ? "#22c55e"
-                              : grade.score >= 14
-                                ? "#3b82f6"
-                                : grade.score >= 11
-                                  ? "#eab308"
-                                  : "#ef4444",
-                        }}
-                      >
-                        <CardHeader className="pb-3">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <CardTitle className="text-base">
-                                {grade.assignment_title}
-                              </CardTitle>
-                              <CardDescription>
-                                {grade.course_name} ({grade.course_code})
-                              </CardDescription>
-                            </div>
-                            <Badge
-                              variant={getGradeBadgeVariant(grade.score)}
-                              className="text-lg px-3 py-1"
-                            >
-                              {grade.score} - {getGradeLetter(grade.score)}
-                            </Badge>
-                          </div>
-                        </CardHeader>
-                        <CardContent className="space-y-2">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">
-                              Puntuación
-                            </span>
-                            <span className="font-medium">
-                              {grade.score} / {grade.max_score}
-                            </span>
-                          </div>
-                          <Progress
-                            value={(grade.score / grade.max_score) * 100}
-                            className="h-2"
-                          />
-                          <div className="flex justify-between text-sm pt-2">
-                            <span className="text-muted-foreground">
-                              Calificado
-                            </span>
-                            <span>
-                              {format(
-                                new Date(grade.graded_at),
-                                "d 'de' MMMM yyyy 'a las' HH:mm",
-                                { locale: es },
-                              )}
-                            </span>
-                          </div>
-                          {grade.feedback && (
-                            <div className="pt-2 border-t">
-                              <p className="text-sm font-medium mb-1">
-                                Retroalimentación del Profesor:
-                              </p>
-                              <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg">
-                                {grade.feedback}
-                              </p>
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    ))
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="attendance" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Registro de Asistencia</CardTitle>
-                    <CardDescription>
-                      Historial completo de asistencia
-                    </CardDescription>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => exportToCSV("grades")}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Exportar CSV
+                    </Button>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => exportToCSV("attendance")}
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Exportar CSV
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {attendance.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      No hay registros de asistencia
-                    </div>
-                  ) : (
-                    attendance.map((record, index) => (
-                      <Card key={index}>
-                        <CardContent className="py-4">
-                          <div className="flex items-center justify-between">
-                            <div className="space-y-1 flex-1">
-                              <div className="flex items-center gap-2">
-                                {getAttendanceIcon(record.status)}
-                                <span className="font-medium">
-                                  {getAttendanceLabel(record.status)}
-                                </span>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {grades.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        No hay calificaciones registradas
+                      </div>
+                    ) : (
+                      grades.map((grade, index) => (
+                        <Card
+                          key={index}
+                          className="border-l-4"
+                          style={{
+                            borderLeftColor:
+                              grade.score >= 18
+                                ? "#22c55e"
+                                : grade.score >= 14
+                                  ? "#3b82f6"
+                                  : grade.score >= 11
+                                    ? "#eab308"
+                                    : "#ef4444",
+                          }}
+                        >
+                          <CardHeader className="pb-3">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <CardTitle className="text-base">
+                                  {grade.assignment_title}
+                                </CardTitle>
+                                <CardDescription>
+                                  {grade.course_name} ({grade.course_code})
+                                </CardDescription>
                               </div>
-                              <p className="text-sm text-muted-foreground">
-                                {record.course_name} ({record.course_code})
-                              </p>
-                              {record.notes && (
-                                <p className="text-sm text-muted-foreground italic">
-                                  📝 {record.notes}
-                                </p>
-                              )}
-                              {record.recorded_at && (
-                                <p className="text-xs text-muted-foreground flex items-center gap-1">
-                                  <Clock className="h-3 w-3" />
-                                  Registrado:{" "}
-                                  {format(
-                                    new Date(record.recorded_at),
-                                    "d MMM yyyy 'a las' HH:mm",
-                                    { locale: es },
-                                  )}
-                                </p>
-                              )}
+                              <Badge
+                                variant={getGradeBadgeVariant(grade.score)}
+                                className="text-lg px-3 py-1"
+                              >
+                                {grade.score} - {getGradeLetter(grade.score)}
+                              </Badge>
                             </div>
+                          </CardHeader>
+                          <CardContent className="space-y-2">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">
+                                Puntuación
+                              </span>
+                              <span className="font-medium">
+                                {grade.score} / {grade.max_score}
+                              </span>
+                            </div>
+                            <Progress
+                              value={(grade.score / grade.max_score) * 100}
+                              className="h-2"
+                            />
+                            <div className="flex justify-between text-sm pt-2">
+                              <span className="text-muted-foreground">
+                                Calificado
+                              </span>
+                              <span>
+                                {format(
+                                  new Date(grade.graded_at),
+                                  "d 'de' MMMM yyyy 'a las' HH:mm",
+                                  { locale: es },
+                                )}
+                              </span>
+                            </div>
+                            {grade.feedback && (
+                              <div className="pt-2 border-t">
+                                <p className="text-sm font-medium mb-1">
+                                  Retroalimentación del Profesor:
+                                </p>
+                                <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg">
+                                  {grade.feedback}
+                                </p>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="attendance" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Registro de Asistencia</CardTitle>
+                      <CardDescription>
+                        Historial completo de asistencia
+                      </CardDescription>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => exportToCSV("attendance")}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Exportar CSV
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {attendance.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        No hay registros de asistencia
+                      </div>
+                    ) : (
+                      attendance.map((record, index) => (
+                        <Card key={index}>
+                          <CardContent className="py-4">
+                            <div className="flex items-center justify-between">
+                              <div className="space-y-1 flex-1">
+                                <div className="flex items-center gap-2">
+                                  {getAttendanceIcon(record.status)}
+                                  <span className="font-medium">
+                                    {getAttendanceLabel(record.status)}
+                                  </span>
+                                </div>
+                                <p className="text-sm text-muted-foreground">
+                                  {record.course_name} ({record.course_code})
+                                </p>
+                                {record.notes && (
+                                  <p className="text-sm text-muted-foreground italic">
+                                    📝 {record.notes}
+                                  </p>
+                                )}
+                                {record.recorded_at && (
+                                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                    <Clock className="h-3 w-3" />
+                                    Registrado:{" "}
+                                    {format(
+                                      new Date(record.recorded_at),
+                                      "d MMM yyyy 'a las' HH:mm",
+                                      { locale: es },
+                                    )}
+                                  </p>
+                                )}
+                              </div>
                             <div className="text-right">
                               <p className="text-sm font-medium">
                                 {format(new Date(record.date), "EEEE", {
@@ -905,6 +1033,7 @@ export default function StudentDetailView() {
             </Card>
           </TabsContent>
         </Tabs>
+        )}
       </div>
     </DashboardLayout>
   );

@@ -51,7 +51,7 @@ export function RecentActivity() {
       // Get enrolled courses
       const { data: enrollments } = await supabase
         .from("course_enrollments")
-        .select("course_id, modulos!inner(course_id, courses(name))")
+        .select("course_id, course_modules!inner(course_id, courses(name))")
         .eq("student_id", profile!.id);
 
       const courseIds = enrollments?.map((e) => e.course_id) || [];
@@ -72,7 +72,7 @@ export function RecentActivity() {
           score,
           assignments!inner(
             title,
-            modulos!inner(
+            course_modules!inner(
               courses(name)
             )
           )
@@ -108,7 +108,7 @@ export function RecentActivity() {
           id,
           title,
           due_date,
-          modulos!inner(
+          course_modules!inner(
             courses(name)
           )
         `,
@@ -156,7 +156,7 @@ export function RecentActivity() {
           id,
           title,
           start_time,
-          modulos!inner(
+          course_modules!inner(
             courses(name)
           )
         `,

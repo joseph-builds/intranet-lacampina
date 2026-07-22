@@ -654,44 +654,49 @@ const AssignmentDetail = () => {
                       {assignment.teacher_files.length})
                     </h3>
                     <div className="space-y-2">
-                      {assignment.teacher_files.map((file, index) => (
-                        <div
-                          key={index}
-                          className="p-4 rounded-lg bg-muted/50 border border-border"
-                        >
-                          <div className="flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-3 flex-1 min-w-0">
-                              <FileText className="w-5 h-5 text-primary flex-shrink-0" />
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium text-foreground truncate">
-                                  {file.file_name}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {file.file_size
-                                    ? (file.file_size / 1024).toFixed(2)
-                                    : "0.00"}{" "}
-                                  KB
-                                </p>
+                      {assignment.teacher_files.map((file: any, index) => {
+                        const filePath = file.file_path || file.filePath || file.path;
+                        const fileName = file.file_name || file.fileName || file.name || "Archivo sin nombre";
+                        const fileSize = file.file_size || file.fileSize || file.size;
+                        return (
+                          <div
+                            key={index}
+                            className="p-4 rounded-lg bg-muted/50 border border-border"
+                          >
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <FileText className="w-5 h-5 text-primary flex-shrink-0" />
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-foreground truncate">
+                                    {fileName}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {fileSize
+                                      ? (fileSize / 1024).toFixed(2)
+                                      : "0.00"}{" "}
+                                    KB
+                                  </p>
+                                </div>
                               </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  handleDownloadTeacherFile(
+                                    filePath,
+                                    fileName,
+                                  )
+                                }
+                                disabled={isDownloading}
+                                className="flex-shrink-0"
+                              >
+                                <Download className="w-4 h-4 mr-2" />
+                                {isDownloading ? "Descargando..." : "Descargar"}
+                              </Button>
                             </div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                handleDownloadTeacherFile(
-                                  file.file_path,
-                                  file.file_name,
-                                )
-                              }
-                              disabled={isDownloading}
-                              className="flex-shrink-0"
-                            >
-                              <Download className="w-4 h-4 mr-2" />
-                              {isDownloading ? "Descargando..." : "Descargar"}
-                            </Button>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 </>
@@ -767,44 +772,49 @@ const AssignmentDetail = () => {
                       Archivos adjuntos ({submission.student_files.length})
                     </p>
                     <div className="space-y-2">
-                      {submission.student_files.map((file, index) => (
-                        <div
-                          key={index}
-                          className="p-3 rounded-lg bg-muted/50 border border-border"
-                        >
-                          <div className="flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-3 flex-1 min-w-0">
-                              <FileText className="w-5 h-5 text-primary flex-shrink-0" />
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium text-foreground truncate">
-                                  {file.file_name}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {file.file_size
-                                    ? (file.file_size / 1024).toFixed(2)
-                                    : "0.00"}{" "}
-                                  KB
-                                </p>
+                      {submission.student_files.map((file: any, index) => {
+                        const filePath = file.file_path || file.filePath || file.path;
+                        const fileName = file.file_name || file.fileName || file.name || "Archivo sin nombre";
+                        const fileSize = file.file_size || file.fileSize || file.size;
+                        return (
+                          <div
+                            key={index}
+                            className="p-3 rounded-lg bg-muted/50 border border-border"
+                          >
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <FileText className="w-5 h-5 text-primary flex-shrink-0" />
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-foreground truncate">
+                                    {fileName}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {fileSize
+                                      ? (fileSize / 1024).toFixed(2)
+                                      : "0.00"}{" "}
+                                    KB
+                                  </p>
+                                </div>
                               </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  handleDownloadStudentFile(
+                                    filePath,
+                                    fileName,
+                                  )
+                                }
+                                disabled={isDownloading}
+                                className="flex-shrink-0"
+                              >
+                                <Download className="w-4 h-4 mr-2" />
+                                {isDownloading ? "Descargando..." : "Descargar"}
+                              </Button>
                             </div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                handleDownloadStudentFile(
-                                  file.file_path,
-                                  file.file_name,
-                                )
-                              }
-                              disabled={isDownloading}
-                              className="flex-shrink-0"
-                            >
-                              <Download className="w-4 h-4 mr-2" />
-                              {isDownloading ? "Descargando..." : "Descargar"}
-                            </Button>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -854,7 +864,31 @@ const AssignmentDetail = () => {
                       Calificación
                     </p>
                     <Badge variant="default" className="text-lg px-4 py-1">
-                      {submission.score}
+                      {(() => {
+                        let displayScore = '';
+                        if (submission.feedback_files && Array.isArray(submission.feedback_files)) {
+                          const meta = submission.feedback_files.find((f: any) => f.is_metadata);
+                          if (meta && meta.numeric_score !== undefined) {
+                            const num = meta.numeric_score;
+                            let letter = "C";
+                            if (num >= 18) letter = "AD";
+                            else if (num >= 14) letter = "A";
+                            else if (num >= 11) letter = "B";
+                            displayScore = `${num} (${letter})`;
+                          }
+                        }
+                        if (displayScore) return displayScore;
+
+                        const numericScore = Number(submission.score);
+                        if (!isNaN(numericScore) && submission.score !== '') {
+                          let letter = "C";
+                          if (numericScore >= 18) letter = "AD";
+                          else if (numericScore >= 14) letter = "A";
+                          else if (numericScore >= 11) letter = "B";
+                          return `${numericScore} (${letter})`;
+                        }
+                        return submission.score; // Fallback for letter grades
+                      })()}
                     </Badge>
                   </div>
 
@@ -871,15 +905,17 @@ const AssignmentDetail = () => {
 
                   {/* Archivos de feedback del profesor */}
                   {submission.feedback_files &&
-                    submission.feedback_files.length > 0 && (
+                    submission.feedback_files.filter((file: any) => !file.is_metadata).length > 0 && (
                       <div className="mt-4 space-y-2">
                         <p className="text-xs font-medium text-muted-foreground">
                           Archivos adjuntos del profesor (
-                          {submission.feedback_files.length})
+                          {submission.feedback_files.filter((file: any) => !file.is_metadata).length})
                         </p>
                         <div className="space-y-2">
-                          {submission.feedback_files.map(
-                            (file: any, index: number) => {
+                          {submission.feedback_files
+                            .filter((file: any) => !file.is_metadata)
+                            .map(
+                              (file: any, index: number) => {
                               // 🔥 ESTA ES LA CLAVE: Detectamos cualquier nombre de variable
                               const filePath =
                                 file.path || file.file_path || file.filePath;

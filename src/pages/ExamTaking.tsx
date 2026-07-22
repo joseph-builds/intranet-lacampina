@@ -135,7 +135,7 @@ const ExamTaking = () => {
         .select("id")
         .eq("quiz_id", quizData.id)
         .eq("student_id", profile.id)
-        .single();
+        .maybeSingle();
 
       if (submission) {
         toast.error("Ya has completado este examen");
@@ -183,6 +183,7 @@ const ExamTaking = () => {
 
       // Calculate score and prepare answers
       let totalScore = 0;
+      let hasManualGrading = false;
       const answersData: Record<string, any> = {};
 
       questions.forEach((question) => {
@@ -195,10 +196,11 @@ const ExamTaking = () => {
           question.question_type === "multiple_choice" ||
           question.question_type === "true_false"
         ) {
-          isCorrect = studentAnswer === question.correct_answer;
+          isCorrect = studentAnswer.trim() === question.correct_answer?.trim();
           pointsEarned = isCorrect ? question.points : 0;
         } else {
           requiresGrading = true;
+          hasManualGrading = true;
         }
 
         totalScore += pointsEarned;
@@ -218,38 +220,35 @@ const ExamTaking = () => {
         totalPossiblePoints += q.points || 0;
       });
 
-      // Convertir puntaje numérico a letra (Basado en porcentaje)
-      let finalLetterGrade = "C";
+      let roundedScore = 0;
       if (totalPossiblePoints > 0) {
-        const percentage = (totalScore / totalPossiblePoints) * 100;
-        if (percentage >= 90) finalLetterGrade = "AD"; // 90-100% (18-20)
-        else if (percentage >= 75) finalLetterGrade = "A"; // 75-89% (15-17)
-        else if (percentage >= 55) finalLetterGrade = "B"; // 55-74% (11-14)
-        else finalLetterGrade = "C"; // < 55% (0-10)
+        roundedScore = Math.round((totalScore / totalPossiblePoints) * 20);
       } else {
-        // Fallback al sistema estricto de 20 puntos si algo falla
-        finalLetterGrade =
-          totalScore >= 18
-            ? "AD"
-            : totalScore >= 15
-              ? "A"
-              : totalScore >= 12
-                ? "B"
-                : "C";
+        roundedScore = Math.round(totalScore);
       }
+
+      let finalAnswersData = Array.isArray(answersData) ? [...answersData] : [answersData];
+      finalAnswersData.push({
+        is_metadata: true,
+        numeric_score: roundedScore
+      });
 
       // Submit to database
       const { error } = await supabase.from("quiz_submissions").insert({
         quiz_id: exam.quiz_id,
         student_id: profile.id,
-        answers: answersData,
-        score: finalLetterGrade, // Guardar como letra
+        answers: finalAnswersData,
+        score: hasManualGrading ? null : roundedScore.toString(), // Si requiere manual, se guarda como null (pendiente)
         attempt_number: 1,
       });
 
       if (error) throw error;
 
-      toast.success("Examen enviado exitosamente");
+      if (hasManualGrading) {
+        toast.success("Se envió para la calificación. El examen contiene preguntas de desarrollo que serán revisadas por el profesor.");
+      } else {
+        toast.success("Examen calificado y enviado exitosamente");
+      }
       navigate("/exams");
     } catch (error) {
       console.error("Error submitting exam:", error);
@@ -373,7 +372,7 @@ const ExamTaking = () => {
                           className="flex items-start space-x-3 p-3 rounded-lg hover:bg-accent/50 transition-colors"
                         >
                           <RadioGroupItem
-                            value={option}
+                            value={String.fromCharCode(65 + optIndex)}
                             id={`q${question.id}-opt${optIndex}`}
                             className="mt-0.5"
                           />

@@ -34,10 +34,10 @@ export const getLetterGrade = (score: number | null | undefined): string => {
 export const parseScoreToNumeric = (val: string | null | undefined): number | null => {
   if (!val) return null;
   const str = val.toString().trim().toUpperCase();
-  if (str === 'AD') return 20;
-  if (str === 'A') return 17;
-  if (str === 'B') return 13;
-  if (str === 'C') return 10;
+  if (str === 'AD') return 19;
+  if (str === 'A') return 15.5;
+  if (str === 'B') return 12;
+  if (str === 'C') return 5;
   
   const parsed = parseFloat(str);
   if (!isNaN(parsed)) return parsed;
@@ -169,12 +169,13 @@ export default function GradesSpreadsheet({ courseId, bimestreId, isClosed }: Gr
         const { data: aData } = await supabase.from('assignments').select('id, max_score').in('id', assignmentIds);
         if (aData) assignmentsData = aData;
         
-        const { data } = await supabase.from('assignment_submissions').select('student_id, score, assignment_id').in('assignment_id', assignmentIds);
+        const { data } = await supabase.from('assignment_submissions').select('student_id, score, assignment_id, feedback_files').in('assignment_id', assignmentIds);
         if (data) asuData = data;
       }
 
       let qsuData: any[] = [];
       let examsData: any[] = [];
+      let allQuizQuestions: any[] = [];
       if (examIds.length > 0) {
         const { data: exams } = await supabase.from('exams').select('id, title, course_id, max_score').in('id', examIds);
         if (exams && exams.length > 0) {
@@ -183,7 +184,7 @@ export default function GradesSpreadsheet({ courseId, bimestreId, isClosed }: Gr
           const { data: quizzes } = await supabase.from('quizzes').select('id, title').eq('course_id', courseId).in('title', titles);
           if (quizzes && quizzes.length > 0) {
             const quizIds = quizzes.map(q => q.id);
-            const { data: qSubs } = await supabase.from('quiz_submissions').select('student_id, score, quiz_id').in('quiz_id', quizIds);
+            const { data: qSubs } = await supabase.from('quiz_submissions').select('student_id, score, quiz_id, answers').in('quiz_id', quizIds);
             
             if (qSubs) {
               qsuData = qSubs.map(qs => {
@@ -192,6 +193,9 @@ export default function GradesSpreadsheet({ courseId, bimestreId, isClosed }: Gr
                 return { ...qs, exam_id: exam?.id };
               });
             }
+            
+            const { data: qQuestions } = await supabase.from('quiz_questions').select('*').in('quiz_id', quizIds);
+            if (qQuestions) allQuizQuestions = qQuestions;
           }
         }
       }
@@ -217,14 +221,19 @@ export default function GradesSpreadsheet({ courseId, bimestreId, isClosed }: Gr
                 const maxScore = asg?.max_score ? parseFloat(asg.max_score) : 20;
                 
                 if (sub && sub.score !== null) {
-                  const s = parseScoreToNumeric(sub.score);
-                  if (s !== null) {
-                    const isLetter = ['AD', 'A', 'B', 'C'].includes(sub.score.toString().trim().toUpperCase());
-                    if (isLetter) {
-                      total += s;
-                    } else {
-                      total += (s / maxScore) * 20;
+                  let s: number | null = null;
+                  if (sub.feedback_files && Array.isArray(sub.feedback_files)) {
+                    const meta = sub.feedback_files.find((f: any) => f.is_metadata);
+                    if (meta && meta.numeric_score !== undefined) {
+                      s = meta.numeric_score;
                     }
+                  }
+                  if (s === null) {
+                    s = parseScoreToNumeric(sub.score);
+                  }
+                  
+                  if (s !== null) {
+                    total += s;
                   }
                 }
               });
@@ -233,18 +242,43 @@ export default function GradesSpreadsheet({ courseId, bimestreId, isClosed }: Gr
               count = relevantExams.length;
               relevantExams.forEach(sa => {
                 const sub = qsuData.find(s => s.student_id === student.id && s.exam_id === sa.exam_id);
-                const exm = examsData.find(e => e.id === sa.exam_id);
-                const maxScore = exm?.max_score ? parseFloat(exm.max_score) : 20;
                 
                 if (sub && sub.score !== null) {
-                  const s = parseScoreToNumeric(sub.score);
-                  if (s !== null) {
-                    const isLetter = ['AD', 'A', 'B', 'C'].includes(sub.score.toString().trim().toUpperCase());
-                    if (isLetter) {
-                      total += s;
-                    } else {
-                      total += (s / maxScore) * 20;
+                  let s: number | null = null;
+                  if (sub.answers && Array.isArray(sub.answers)) {
+                    const meta = sub.answers.find((a: any) => a.is_metadata);
+                    if (meta && meta.numeric_score !== undefined) {
+                      s = meta.numeric_score;
                     }
+                  }
+                  if (s === null) {
+                    if (sub.answers && Array.isArray(sub.answers)) {
+                      const quizQs = allQuizQuestions.filter(q => q.quiz_id === sub.quiz_id);
+                      if (quizQs.length > 0) {
+                        let tScore = 0;
+                        let mScore = 0;
+                        for (const ans of sub.answers) {
+                          if (ans.is_metadata) continue;
+                          const q = quizQs.find(qq => qq.id === ans.question_id);
+                          if (!q) continue;
+                          const pts = Number(q.points) || 0;
+                          mScore += pts;
+                          if (q.type === 'multiple_choice' || q.type === 'true_false') {
+                            const cOpt = q.options?.find((o:any)=>o.isCorrect);
+                            if (cOpt && cOpt.id === ans.selected_option_id) tScore += pts;
+                          } else if (q.type === 'short_answer') {
+                            if (ans.isCorrect) tScore += pts;
+                          }
+                        }
+                        s = mScore > 0 ? Math.round((tScore / mScore) * 20) : 0;
+                      }
+                    }
+                  }
+                  if (s === null) {
+                    s = parseScoreToNumeric(sub.score);
+                  }
+                  if (s !== null) {
+                    total += s;
                   }
                 }
               });

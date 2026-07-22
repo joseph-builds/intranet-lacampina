@@ -4,6 +4,7 @@ import { Navigate } from "react-router-dom";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { QuickActions } from "@/components/dashboard/QuickActions";
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
+import { StudentIncidents } from "@/components/dashboard/StudentIncidents";
 import { StudentCourses } from "@/components/dashboard/StudentCourses";
 import { TeacherCourses } from "@/components/dashboard/TeacherCourses";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -72,6 +73,13 @@ const Index = () => {
       let upcomingExams = 0;
 
       if (profile?.role === 'student') {
+        // Fetch exemptions first
+        const { data: exemptions } = await supabase
+          .from('student_course_exemptions')
+          .select('section_course_id')
+          .eq('student_id', profile!.id);
+        const exemptIds = exemptions?.map(e => e.section_course_id) || [];
+
         // 1. Direct enrollments
         const { data: direct } = await supabase
           .from('course_enrollments')
@@ -85,6 +93,7 @@ const Index = () => {
           .select(`
             section:sections!inner (
               section_courses (
+                id,
                 base:base_courses (
                   course:courses (id, is_active)
                 )
@@ -113,6 +122,8 @@ const Index = () => {
         sectionData?.forEach(ss => {
           const scs = (ss.section as any)?.section_courses || [];
           scs.forEach((sc: any) => {
+            const isExempted = exemptIds.includes(sc.id);
+            if (isExempted) return;
             let items = Array.isArray(sc.base?.course) ? sc.base.course : [sc.base?.course];
             items.forEach((c: any) => {
               if (c && c.is_active !== false) allStudentCourseIds.add(c.id);
@@ -355,6 +366,7 @@ const Index = () => {
             {profile?.role === 'student' && <StudentCourses />}
             {profile?.role === 'teacher' && <TeacherCourses />}
             {profile?.role === 'student' && <RecentActivity />}
+            {profile?.role === 'student' && <StudentIncidents />}
           </div>
 
           {/* Right Column */}

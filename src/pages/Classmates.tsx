@@ -421,19 +421,10 @@ const Classmates = () => {
                   )}
 
                   {/* Actions */}
-                  <div className="flex items-center gap-2 mt-4 pt-3 border-t border-border/50">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 gap-1.5 text-xs h-8"
-                      onClick={() => navigate(`/messages`)}
-                    >
-                      <MessageSquare className="w-3.5 h-3.5" />
-                      Mensaje
-                    </Button>
+                  <div className="mt-4 pt-3 border-t border-border/50">
                     <Button
                       size="sm"
-                      className="flex-1 gap-1.5 text-xs h-8 bg-gradient-primary shadow-glow opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                      className="w-full gap-1.5 text-xs h-8 bg-gradient-primary shadow-glow"
                       onClick={() => navigate(`/student/${classmate.id}`)}
                     >
                       <UserPlus className="w-3.5 h-3.5" />

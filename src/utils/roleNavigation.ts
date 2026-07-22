@@ -63,7 +63,7 @@ export const navigationItems: NavItem[] = [
     title: 'Tareas',
     url: '/assignments',
     icon: FileText,
-    roles: ['teacher', 'student', 'tutor']
+    roles: ['teacher', 'student']
   },
   {
     title: 'Exámenes',

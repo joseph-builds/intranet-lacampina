@@ -177,17 +177,43 @@ const ExamGradingPage = () => {
         totalScore
       });
 
-      // Convertir puntaje numérico total a letra
-      const finalLetterGrade = totalScore >= 18 ? 'AD' : 
-                                totalScore >= 15 ? 'A' : 
-                                totalScore >= 12 ? 'B' : 'C';
+      // Convertir a escala vigesimal (0-20) de Minedu
+      const maxPossibleScore = questions.reduce((sum, q) => sum + (q.points || 0), 0);
+      let finalLetterGrade = "C";
+      
+      if (maxPossibleScore > 0) {
+        // Convertir cualquier puntaje a base 20 y redondear
+        const base20Score = Math.round((totalScore / maxPossibleScore) * 20);
+        
+        if (base20Score >= 18) finalLetterGrade = "AD"; // 18 - 20
+        else if (base20Score >= 14) finalLetterGrade = "A"; // 14 - 17
+        else if (base20Score >= 11) finalLetterGrade = "B"; // 11 - 13
+        else finalLetterGrade = "C"; // 0 - 10
+      } else {
+        // Fallback al sistema directo 0-20
+        const roundedScore = Math.round(totalScore);
+        finalLetterGrade = roundedScore >= 18 ? 'AD' : 
+                           roundedScore >= 14 ? 'A' : 
+                           roundedScore >= 11 ? 'B' : 'C';
+      }
+
+      const calculatedNumericScore = maxPossibleScore > 0 ? Math.round((totalScore / maxPossibleScore) * 20) : Math.round(totalScore);
+
+      let finalAnswersPayload = Array.isArray(updatedAnswers) 
+        ? updatedAnswers.filter((a: any) => !a.is_metadata) 
+        : [updatedAnswers];
+      
+      finalAnswersPayload.push({
+        is_metadata: true,
+        numeric_score: calculatedNumericScore
+      });
 
       // Update submission
       const { error } = await supabase
         .from('quiz_submissions')
         .update({
-          answers: updatedAnswers,
-          score: finalLetterGrade  // Guardar como letra
+          answers: finalAnswersPayload,
+          score: calculatedNumericScore.toString()  // Guardar como número
         })
         .eq('id', submissionId);
 
@@ -362,20 +388,22 @@ const ExamGradingPage = () => {
                         <Label htmlFor={`score-${question.id}`}>
                           Calificación
                         </Label>
-                        <Select 
-                          value={grades[question.id]?.score || ''} 
-                          onValueChange={(value) => handleGradeChange(question.id, 'score', value)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecciona una calificación" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="AD">AD - Logro Destacado</SelectItem>
-                            <SelectItem value="A">A - Logro Esperado</SelectItem>
-                            <SelectItem value="B">B - En Proceso</SelectItem>
-                            <SelectItem value="C">C - En Inicio</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <div className="flex items-center gap-2">
+                          <Input 
+                            type="number"
+                            min="0"
+                            max={question.points}
+                            value={grades[question.id]?.score || ''}
+                            onChange={(e) => {
+                              const val = Math.min(Math.max(0, Number(e.target.value)), question.points);
+                              handleGradeChange(question.id, 'score', val.toString());
+                            }}
+                            className="w-32"
+                          />
+                          <span className="text-sm text-muted-foreground">
+                            / {question.points} {question.points === 1 ? 'punto' : 'puntos'}
+                          </span>
+                        </div>
                        </div>
 
                        <div>

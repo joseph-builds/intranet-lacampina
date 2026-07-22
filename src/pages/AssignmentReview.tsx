@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
@@ -173,7 +174,24 @@ const AssignmentReview = () => {
 
   const handleSelectSubmission = (submission: Submission) => {
     setSelectedSubmission(submission);
-    setScore(submission.score || '');
+    
+    let initialScore = '';
+    if (submission.feedback_files && Array.isArray(submission.feedback_files)) {
+      const meta = submission.feedback_files.find((f: any) => f.is_metadata);
+      if (meta && meta.numeric_score !== undefined) {
+        initialScore = String(meta.numeric_score);
+      }
+    }
+    
+    if (!initialScore && submission.score) {
+      initialScore = submission.score;
+      if (initialScore === 'AD') initialScore = '18';
+      else if (initialScore === 'A') initialScore = '15';
+      else if (initialScore === 'B') initialScore = '12';
+      else if (initialScore === 'C') initialScore = '08';
+    }
+    
+    setScore(initialScore);
     setFeedback(submission.feedback || '');
     setFeedbackFiles([]);
   };
@@ -250,9 +268,20 @@ const AssignmentReview = () => {
     if (!selectedSubmission) return;
 
     if (!score) {
-      toast.error('Debes seleccionar una calificación');
+      toast.error('Debes ingresar una calificación');
       return;
     }
+
+    const numericScore = Number(score);
+    if (isNaN(numericScore) || numericScore < 0 || numericScore > 20) {
+      toast.error('La calificación debe ser un número entre 0 y 20');
+      return;
+    }
+
+    let letterGrade = 'C';
+    if (numericScore >= 18) letterGrade = 'AD';
+    else if (numericScore >= 14) letterGrade = 'A';
+    else if (numericScore >= 11) letterGrade = 'B';
 
     const maxSize = 5 * 1024 * 1024; // 5MB
     const oversizedFiles = feedbackFiles.filter((file) => file.size > maxSize);
@@ -263,11 +292,16 @@ const AssignmentReview = () => {
 
     try {
       setGrading(true);
-      let feedbackFilesData: FileInfo[] = [];
+      let feedbackFilesData: any[] = [];
 
       if (selectedSubmission.feedback_files && Array.isArray(selectedSubmission.feedback_files)) {
-        feedbackFilesData = [...selectedSubmission.feedback_files];
+        feedbackFilesData = selectedSubmission.feedback_files.filter((f: any) => !f.is_metadata);
       }
+
+      feedbackFilesData.push({
+        is_metadata: true,
+        numeric_score: numericScore
+      });
 
       if (feedbackFiles.length > 0) {
         for (const file of feedbackFiles) {
@@ -291,7 +325,7 @@ const AssignmentReview = () => {
       const { error } = await supabase
         .from('assignment_submissions')
         .update({
-          score: score,
+          score: letterGrade,
           feedback: feedback.trim() || null,
           feedback_files: feedbackFilesData as any,
           graded_at: new Date().toISOString()
@@ -571,18 +605,30 @@ const AssignmentReview = () => {
                     <Label className="text-base font-semibold">Calificación</Label>
 
                     <div>
-                      <Label htmlFor="score">Calificación</Label>
-                      <Select value={score} onValueChange={setScore}>
-                        <SelectTrigger className="mt-1">
-                          <SelectValue placeholder="Selecciona una calificación" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="AD">AD - Logro Destacado</SelectItem>
-                          <SelectItem value="A">A - Logro Esperado</SelectItem>
-                          <SelectItem value="B">B - En Proceso</SelectItem>
-                          <SelectItem value="C">C - En Inicio</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Label htmlFor="score">Calificación (0 - 20)</Label>
+                      <div className="flex items-center gap-3 mt-1">
+                        <Input
+                          id="score"
+                          type="number"
+                          min={0}
+                          max={20}
+                          placeholder="Ingresa la nota"
+                          value={score}
+                          onChange={(e) => setScore(e.target.value)}
+                          className="w-32"
+                        />
+                        {score && !isNaN(Number(score)) && (
+                          <span className="text-sm font-medium text-muted-foreground bg-muted px-3 py-1.5 rounded-lg border">
+                            Equivale a: {(() => {
+                              const num = Number(score);
+                              if (num >= 18) return "AD (Destacado)";
+                              if (num >= 14) return "A (Esperado)";
+                              if (num >= 11) return "B (Proceso)";
+                              return "C (Inicio)";
+                            })()}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <div>
@@ -606,10 +652,12 @@ const AssignmentReview = () => {
 
                       <div className="mt-2 space-y-2">
                         {/* Mostrar archivos existentes guardados */}
-                        {selectedSubmission.feedback_files && selectedSubmission.feedback_files.length > 0 && (
+                        {selectedSubmission.feedback_files && selectedSubmission.feedback_files.filter((file: any) => !file.is_metadata).length > 0 && (
                           <div className="space-y-2">
                             <p className="text-xs font-medium text-muted-foreground">Archivos ya guardados:</p>
-                            {selectedSubmission.feedback_files.map((file: any, index: number) => {
+                            {selectedSubmission.feedback_files
+                              .filter((file: any) => !file.is_metadata)
+                              .map((file: any, index: number) => {
                               
                               // 🔥 CORRECCIÓN: Aquí también buscamos todas las propiedades
                               const filePath = file.file_path || file.filePath || file.path;

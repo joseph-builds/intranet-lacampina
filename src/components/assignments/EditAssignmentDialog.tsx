@@ -176,7 +176,7 @@ export function EditAssignmentDialog({
         const filePath = `assignments/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
-          .from("course_files")
+          .from("course-documents")
           .upload(filePath, file);
 
         if (uploadError) throw uploadError;

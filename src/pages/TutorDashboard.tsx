@@ -39,6 +39,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { StudentDetailDialog } from "@/components/tutor/StudentDetailDialog";
+import { IncidentsManager } from "@/components/tutor/IncidentsManager";
 import { StatCard } from "@/components/tutor/StatCard";
 import { GradeDistributionChart } from "@/components/tutor/GradeDistributionChart";
 import { StudentsAtRiskTable } from "@/components/tutor/StudentsAtRiskTable";
@@ -739,7 +740,7 @@ export default function TutorDashboard() {
         </div>
 
         {/* Enhanced Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-2">
           <StatCard
             title="Total Estudiantes"
             value={students.length}
@@ -768,51 +769,10 @@ export default function TutorDashboard() {
             }
           />
 
-          <StatCard
-            title="Promedio General"
-            value={`${overallAverageScore.toFixed(1)} - ${getGradeLetter(overallAverageScore)}`}
-            icon={GraduationCap}
-            description="De tareas calificadas"
-            trend={
-              overallAverageScore >= 14
-                ? "up"
-                : overallAverageScore >= 11
-                  ? "neutral"
-                  : "down"
-            }
-            trendValue={
-              overallAverageScore >= 14
-                ? "Sobresaliente"
-                : overallAverageScore >= 11
-                  ? "Satisfactorio"
-                  : "Necesita mejorar"
-            }
-          />
 
-          <StatCard
-            title="Estudiantes Destacados"
-            value={studentsWithGoodPerformance}
-            icon={Target}
-            description="Con +90% asistencia y +14 promedio"
-            trend={
-              studentsWithGoodPerformance > students.length * 0.5
-                ? "up"
-                : "neutral"
-            }
-            trendValue={`${((studentsWithGoodPerformance / students.length) * 100).toFixed(0)}% del aula`}
-          />
         </div>
 
-        {/* Visualizations */}
-        <div className="grid gap-4">
-          <GradeDistributionChart data={totalGradeDistribution} />
-        </div>
 
-        {/* Students at Risk */}
-        <StudentsAtRiskTable
-          students={studentsAtRisk}
-          onViewDetails={setSelectedStudent}
-        />
 
         {/* Student Details with Search */}
         <Card>
@@ -842,7 +802,7 @@ export default function TutorDashboard() {
             <TabsTrigger value="grades">Calificaciones</TabsTrigger>
             <TabsTrigger value="attendance">Asistencia</TabsTrigger>
             <TabsTrigger value="take_attendance">Tomar Asistencia</TabsTrigger>
-            <TabsTrigger value="schedules">Horarios</TabsTrigger>
+            <TabsTrigger value="incidents">Incidencias</TabsTrigger>
           </TabsList>
 
           <TabsContent value="grades" className="space-y-4">
@@ -1236,49 +1196,8 @@ export default function TutorDashboard() {
             <VirtualClassroomAttendance classroomId={selectedClassroomId} canManage={true} />
           </TabsContent>
 
-          <TabsContent value="schedules" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Gestión de Horarios de Cursos</CardTitle>
-                <CardDescription>
-                  Administra los horarios de los cursos de tu aula virtual
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {courses.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      No hay cursos asignados a esta aula virtual
-                    </div>
-                  ) : (
-                    <div className="grid gap-3">
-                      {courses.map((course) => (
-                        <div
-                          key={course.id}
-                          className="flex items-center justify-between p-4 border rounded-lg"
-                        >
-                          <div>
-                            <p className="font-medium">{course.name}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {course.code}
-                            </p>
-                          </div>
-                          <Button
-                            variant="outline"
-                            onClick={() =>
-                              setSelectedCourseForSchedule(course.id)
-                            }
-                          >
-                            <Clock className="h-4 w-4 mr-2" />
-                            Editar Horario
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+          <TabsContent value="incidents" className="space-y-4">
+            <IncidentsManager classroomId={selectedClassroomId || ""} students={students} />
           </TabsContent>
         </Tabs>
 

@@ -57,6 +57,13 @@ export function StudentCourses() {
 
       console.log("Fetching courses for student:", profile!.id);
 
+      // Fetch exemptions first
+      const { data: exemptions } = await supabase
+        .from('student_course_exemptions')
+        .select('section_course_id')
+        .eq('student_id', profile!.id);
+      const exemptIds = exemptions?.map(e => e.section_course_id) || [];
+
       // 1. Direct enrollments
       const { data: direct, error: dError } = await supabase
         .from('course_enrollments')
@@ -86,6 +93,7 @@ export function StudentCourses() {
             id, name, room_number,
             grade:academic_grades(name, level:academic_levels(name)),
             section_courses (
+              id,
               base:base_courses (
                 course:courses (
                   *,
@@ -119,6 +127,8 @@ export function StudentCourses() {
       sectionData?.forEach(ss => {
         const scs = (ss.section as any)?.section_courses || [];
         scs.forEach((sc: any) => {
+          const isExempted = exemptIds.includes(sc.id);
+          if (isExempted) return;
           let items = Array.isArray(sc.base?.course) ? sc.base.course : [sc.base?.course];
           items.forEach((c: any) => {
             if (c) allCourses.push({ ...c, enrolled_at: ss.created_at });
@@ -220,8 +230,8 @@ export function StudentCourses() {
 
   const totalPages = Math.ceil(totalCourses / ITEMS_PER_PAGE);
 
-  const formatSchedule = (course: Course) => {
-    if (!course.schedule || course.schedule.length === 0) {
+    const formatSchedule = (course: Course) => {
+    if (!Array.isArray(course.schedule) || course.schedule.length === 0) {
       return "Horario no definido";
     }
 

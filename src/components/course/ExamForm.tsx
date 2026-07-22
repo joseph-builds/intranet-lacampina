@@ -462,11 +462,12 @@ export function ExamForm({ courseId, onClose, onSuccess }: ExamFormProps) {
                           </SelectTrigger>
                           <SelectContent>
                             {question.options
-                              ?.filter((opt) => opt.trim() !== "")
-                              .map((option, index) => (
-                                <SelectItem key={index} value={option}>
-                                  {String.fromCharCode(65 + index)}. {option}
-                                </SelectItem>
+                              ?.map((option, index) => (
+                                option.trim() !== "" ? (
+                                  <SelectItem key={index} value={String.fromCharCode(65 + index)}>
+                                    {String.fromCharCode(65 + index)}. {option}
+                                  </SelectItem>
+                                ) : null
                               ))}
                           </SelectContent>
                         </Select>

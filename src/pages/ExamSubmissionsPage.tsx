@@ -169,13 +169,9 @@ const ExamSubmissionsPage = () => {
 
         if (submissionsError) throw submissionsError;
 
-        // Check which submissions have ungraded questions
+        // Check which submissions are pending manual grading
         const submissionsWithStatus = (submissionsData || []).map((sub) => {
-          const answers = sub.answers as Record<string, any>;
-          const hasUngraded = Object.values(answers).some(
-            (ans: any) =>
-              ans.requires_grading && ans.points_earned === undefined,
-          );
+          const hasUngraded = sub.score === null;
 
           return {
             ...sub,
@@ -408,7 +404,14 @@ const ExamSubmissionsPage = () => {
                           {submission ? (
                             <div className="flex items-center gap-2">
                               <span className="font-medium">
-                                {submission.score}
+                                {(() => {
+                                  const num = Number(submission.score);
+                                  if (!isNaN(num) && submission.score !== null && submission.score !== '') {
+                                    const letter = num >= 18 ? "AD" : num >= 14 ? "A" : num >= 11 ? "B" : "C";
+                                    return `${num} (${letter})`;
+                                  }
+                                  return submission.score;
+                                })()}
                               </span>
                               {submission.hasUngradedQuestions && (
                                 <Badge variant="secondary" className="text-xs">

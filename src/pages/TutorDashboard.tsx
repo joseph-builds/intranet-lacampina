@@ -13,6 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   Users,
   GraduationCap,
   Calendar,
@@ -27,6 +32,7 @@ import {
   Award,
   CheckCircle2,
   Building2,
+  ChevronDown,
 } from "lucide-react";
 import {
   Select,
@@ -325,58 +331,19 @@ export default function TutorDashboard() {
 
         setAttendanceData(Array.from(attendanceMap.values()));
 
-        // Fetch grades data - Get ALL grades for students, not just classroom courses
-        console.log("📡 Consultando calificaciones de estudiantes...");
-        const { data: submissionsData, error: submissionsError } =
-          await supabase
-            .from("assignment_submissions")
-            .select(
-              `
-            student_id, 
-            score, 
-            assignment_id, 
-            assignments!inner(
-              course_id,
-              courses!inner(
-                id,
-                name,
-                code
-              )
-            )
-          `,
-            )
-            .in("student_id", studentIds)
-            .not("score", "is", null);
-
-        console.log("📦 Respuesta de calificaciones:", {
-          submissionsData,
-          submissionsError,
-        });
-
-        if (submissionsError) throw submissionsError;
-
-        console.log(
-          "📊 Total submissions found:",
-          submissionsData?.length || 0,
+        // Fetch grades data via RPC - bypasses RLS chain issues
+        console.log("📡 Consultando calificaciones de estudiantes (vía RPC)...");
+        const { data: rpcGrades, error: rpcError } = await supabase.rpc(
+          "get_tutor_grades_dashboard"
         );
-        console.log("📝 Sample submission:", submissionsData?.[0]);
-        console.log(
-          "📋 All submissions:",
-          submissionsData?.map((s) => ({
-            student_id: s.student_id,
-            course_id: (s.assignments as any).courses.id,
-            course_name: (s.assignments as any).courses.name,
-            score: s.score,
-          })),
-        );
-        console.log("👥 Student IDs:", studentIds);
 
-        // NO FILTER - Show all grades from all courses the students are enrolled in
-        const allSubmissions = submissionsData || [];
+        console.log("📦 Respuesta de calificaciones (RPC):", { rpcGrades, rpcError });
 
-        console.log("✅ Total submissions to show:", allSubmissions.length);
+        if (rpcError) throw rpcError;
 
-        // Process grades data with course breakdown
+        console.log("📊 Total grade_records encontrados:", rpcGrades?.length || 0);
+
+        // Process RPC grades data into the existing GradeRecord structure
         const gradeMap = new Map<string, GradeRecord>();
         studentIds.forEach((studentId) => {
           gradeMap.set(studentId, {
@@ -405,49 +372,50 @@ export default function TutorDashboard() {
           >
         >();
 
-        allSubmissions.forEach((sub) => {
-          const current = gradeMap.get(sub.student_id)!;
-          current.total_graded++;
-          const score = convertLetterGrade(sub.score);
+        (rpcGrades || []).forEach((row: any) => {
+          // Only process students in current classroom
+          if (!gradeMap.has(row.student_id)) return;
 
+          const current = gradeMap.get(row.student_id)!;
+          const score = Number(row.score_value);
+          if (isNaN(score) || row.score_value === null) return;
+
+          current.total_graded++;
           if (score >= 18) current.ad_count++;
           else if (score >= 14) current.a_count++;
           else if (score >= 11) current.b_count++;
           else current.c_count++;
 
           // Track by course
-          if (!studentCourseGrades.has(sub.student_id)) {
-            studentCourseGrades.set(sub.student_id, new Map());
+          if (!studentCourseGrades.has(row.student_id)) {
+            studentCourseGrades.set(row.student_id, new Map());
           }
-          const courseGradesMap = studentCourseGrades.get(sub.student_id)!;
-          const courseId = (sub.assignments as any).courses.id;
+          const courseGradesMap = studentCourseGrades.get(row.student_id)!;
 
-          if (!courseGradesMap.has(courseId)) {
-            courseGradesMap.set(courseId, {
+          if (!courseGradesMap.has(row.course_id)) {
+            courseGradesMap.set(row.course_id, {
               total: 0,
               count: 0,
-              course_name: (sub.assignments as any).courses.name,
-              course_code: (sub.assignments as any).courses.code,
+              course_name: row.course_name || "Curso",
+              course_code: row.course_name || "",
             });
           }
-
-          const courseData = courseGradesMap.get(courseId)!;
+          const courseData = courseGradesMap.get(row.course_id)!;
           courseData.total += score;
           courseData.count++;
         });
 
         gradeMap.forEach((record, studentId) => {
           if (record.total_graded > 0) {
-            const studentSubmissions = allSubmissions.filter(
-              (s) => s.student_id === record.student_id,
+            const studentRows = (rpcGrades || []).filter(
+              (r: any) => r.student_id === studentId && r.score_value !== null
             );
-            const sum = studentSubmissions.reduce(
-              (acc, s) => acc + convertLetterGrade(s.score),
-              0,
+            const sum = studentRows.reduce(
+              (acc: number, r: any) => acc + Number(r.score_value),
+              0
             );
             record.average_score = sum / record.total_graded;
 
-            // Add course breakdown
             const courseGradesMap = studentCourseGrades.get(record.student_id);
             if (courseGradesMap) {
               record.course_grades = Array.from(courseGradesMap.entries()).map(
@@ -457,14 +425,12 @@ export default function TutorDashboard() {
                   course_code: data.course_code,
                   average: data.total / data.count,
                   count: data.count,
-                }),
+                })
               );
               console.log(
                 `📚 Student ${studentId} course grades:`,
-                record.course_grades,
+                record.course_grades
               );
-            } else {
-              console.log(`⚠️ No course grades map for student ${studentId}`);
             }
           }
         });
@@ -878,145 +844,51 @@ export default function TutorDashboard() {
                             </Button>
                           </div>
 
-                          {/* Main Score Display */}
-                          <div className="flex items-center justify-between p-3 bg-gradient-to-r from-primary/10 to-primary/5 rounded-lg border">
-                            <div className="flex items-center gap-3">
-                              <Award className="h-8 w-8 text-primary" />
-                              <div>
-                                <div className="text-2xl font-bold">
-                                  {grades.average_score.toFixed(1)}
-                                </div>
-                                <div className="text-sm text-muted-foreground">
-                                  Promedio General
-                                </div>
-                              </div>
-                            </div>
-                            <Badge
-                              variant="default"
-                              className="text-lg px-4 py-1"
-                            >
-                              {getGradeLetter(grades.average_score)}
-                            </Badge>
-                          </div>
-
-                          {/* Grade Distribution */}
-                          <div className="grid grid-cols-4 gap-2">
-                            <div className="text-center p-3 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-200 dark:border-green-800">
-                              <div className="font-bold text-green-700 dark:text-green-400 text-2xl">
-                                {grades.ad_count}
-                              </div>
-                              <div className="text-xs text-green-600 dark:text-green-500 font-medium">
-                                AD (18-20)
-                              </div>
-                              <div className="text-xs text-muted-foreground mt-1">
-                                Logro Destacado
-                              </div>
-                            </div>
-                            <div className="text-center p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
-                              <div className="font-bold text-blue-700 dark:text-blue-400 text-2xl">
-                                {grades.a_count}
-                              </div>
-                              <div className="text-xs text-blue-600 dark:text-blue-500 font-medium">
-                                A (14-17)
-                              </div>
-                              <div className="text-xs text-muted-foreground mt-1">
-                                Logro Esperado
-                              </div>
-                            </div>
-                            <div className="text-center p-3 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg border border-yellow-200 dark:border-yellow-800">
-                              <div className="font-bold text-yellow-700 dark:text-yellow-400 text-2xl">
-                                {grades.b_count}
-                              </div>
-                              <div className="text-xs text-yellow-600 dark:text-yellow-500 font-medium">
-                                B (11-13)
-                              </div>
-                              <div className="text-xs text-muted-foreground mt-1">
-                                En Proceso
-                              </div>
-                            </div>
-                            <div className="text-center p-3 bg-red-50 dark:bg-red-950/30 rounded-lg border border-red-200 dark:border-red-800">
-                              <div className="font-bold text-red-700 dark:text-red-400 text-2xl">
-                                {grades.c_count}
-                              </div>
-                              <div className="text-xs text-red-600 dark:text-red-500 font-medium">
-                                C (0-10)
-                              </div>
-                              <div className="text-xs text-muted-foreground mt-1">
-                                En Inicio
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Progress Indicator */}
-                          <div className="flex items-center justify-between text-sm pt-2 border-t">
-                            <span className="text-muted-foreground">
-                              {grades.total_graded}{" "}
-                              {grades.total_graded === 1
-                                ? "tarea calificada"
-                                : "tareas calificadas"}
-                            </span>
-                            {grades.average_score >= 14 ? (
-                              <div className="flex items-center gap-1 text-green-600">
-                                <TrendingUp className="h-4 w-4" />
-                                <span className="font-medium">
-                                  Rendimiento Excelente
-                                </span>
-                              </div>
-                            ) : grades.average_score >= 11 ? (
-                              <div className="flex items-center gap-1 text-blue-600">
-                                <Target className="h-4 w-4" />
-                                <span className="font-medium">
-                                  Rendimiento Satisfactorio
-                                </span>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1 text-red-600">
-                                <TrendingDown className="h-4 w-4" />
-                                <span className="font-medium">
-                                  Necesita Apoyo
-                                </span>
-                              </div>
-                            )}
-                          </div>
+                          {/* Removed Main Score Display, Grade Distribution and Progress Indicator as they don't apply cross-course */}
 
                           {/* Course Breakdown */}
                           {grades.course_grades &&
                             grades.course_grades.length > 0 && (
-                              <div className="pt-3 border-t space-y-2">
-                                <p className="text-xs font-medium text-muted-foreground">
-                                  Desempeño por Curso:
-                                </p>
-                                <div className="grid grid-cols-1 gap-2">
-                                  {grades.course_grades.map((cg) => (
-                                    <div
-                                      key={cg.course_id}
-                                      className="flex items-center justify-between p-2 bg-muted/50 rounded"
-                                    >
-                                      <div className="flex-1">
-                                        <p className="text-xs font-medium">
-                                          {cg.course_name}
-                                        </p>
-                                        <p className="text-xs text-muted-foreground">
-                                          {cg.course_code}
-                                        </p>
+                              <Collapsible className="pt-3 border-t">
+                                <CollapsibleTrigger className="flex items-center justify-between w-full hover:bg-muted/50 p-2 rounded-md transition-colors">
+                                  <p className="text-xs font-medium text-muted-foreground">
+                                    Desempeño por Curso:
+                                  </p>
+                                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                </CollapsibleTrigger>
+                                <CollapsibleContent className="space-y-2 mt-2">
+                                  <div className="grid grid-cols-1 gap-2">
+                                    {grades.course_grades.map((cg) => (
+                                      <div
+                                        key={cg.course_id}
+                                        className="flex items-center justify-between p-2 bg-muted/50 rounded"
+                                      >
+                                        <div className="flex-1">
+                                          <p className="text-xs font-medium">
+                                            {cg.course_name}
+                                          </p>
+                                          <p className="text-xs text-muted-foreground">
+                                            {cg.course_code}
+                                          </p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <Badge
+                                            variant={getGradeBadgeVariant(
+                                              cg.average,
+                                            )}
+                                          >
+                                            {cg.average.toFixed(1)} -{" "}
+                                            {getGradeLetter(cg.average)}
+                                          </Badge>
+                                          <span className="text-xs text-muted-foreground">
+                                            ({cg.count})
+                                          </span>
+                                        </div>
                                       </div>
-                                      <div className="flex items-center gap-2">
-                                        <Badge
-                                          variant={getGradeBadgeVariant(
-                                            cg.average,
-                                          )}
-                                        >
-                                          {cg.average.toFixed(1)} -{" "}
-                                          {getGradeLetter(cg.average)}
-                                        </Badge>
-                                        <span className="text-xs text-muted-foreground">
-                                          ({cg.count})
-                                        </span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
+                                    ))}
+                                  </div>
+                                </CollapsibleContent>
+                              </Collapsible>
                             )}
                         </div>
                       </div>

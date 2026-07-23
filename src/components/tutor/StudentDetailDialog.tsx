@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import {
@@ -67,6 +68,7 @@ interface Student {
 }
 
 interface CourseExam {
+  course_id?: string;
   course_name: string;
   course_code: string;
   exam_title: string;
@@ -77,6 +79,7 @@ interface CourseExam {
 }
 
 interface CourseGrade {
+  course_id?: string;
   course_name: string;
   course_code: string;
   assignment_title: string;
@@ -115,6 +118,11 @@ export function StudentDetailDialog({
   const [grades, setGrades] = useState<CourseGrade[]>([]);
   const [exams, setExams] = useState<CourseExam[]>([]);
   const [attendance, setAttendance] = useState<CourseAttendance[]>([]);
+  const [bimestres, setBimestres] = useState<CourseGrade[]>([]);
+  const [coursesList, setCoursesList] = useState<{id: string, name: string}[]>([]);
+  const [selectedBimestreCourse, setSelectedBimestreCourse] = useState<string>("all");
+  const [selectedAssignmentCourse, setSelectedAssignmentCourse] = useState<string>("all");
+  const [selectedExamCourse, setSelectedExamCourse] = useState<string>("all");
 
   useEffect(() => {
     if (student && open) {
@@ -128,119 +136,74 @@ export function StudentDetailDialog({
     try {
       setLoading(true);
 
-      // 1. Get courses from the classroom (most reliable path for tutor)
-      const { data: classroomCourses } = await supabase
-        .from('courses')
-        .select('id')
-        .eq('classroom_id', classroomId);
+      // Fetch grades and exams via RPC - bypasses all RLS chain issues
+      const { data: detailData, error: detailError } = await supabase
+        .rpc('get_tutor_student_detail', { p_student_id: student.id });
 
-      // 2. Also get courses from direct enrollments as fallback
-      const { data: directEnroll } = await supabase
-        .from('course_enrollments')
-        .select('course_id')
-        .eq('student_id', student.id);
+      if (detailError) throw detailError;
 
-      // 3. Merge all course IDs and deduplicate
-      let courseIds: string[] = [
-        ...(classroomCourses?.map(c => c.id) || []),
-        ...(directEnroll?.map(d => d.course_id) || []),
-      ];
-      courseIds = [...new Set(courseIds)];
+      // Extract unique courses
+      const uniqueCourses = new Map();
+      (detailData || []).forEach((r: any) => {
+        if (r.course_id && !uniqueCourses.has(r.course_id)) {
+          uniqueCourses.set(r.course_id, { id: r.course_id, name: r.course_name });
+        }
+      });
+      setCoursesList(Array.from(uniqueCourses.values()));
 
-      console.log('📚 courseIds for student', student.first_name, ':', courseIds);
+      // Format bimestres
+      const bimestreRows = (detailData || []).filter((r: any) => r.record_type === 'bimestre');
+      const formattedBimestres: CourseGrade[] = bimestreRows
+        .filter((r: any) => r.score_value !== null)
+        .map((r: any) => ({
+          course_id: r.course_id,
+          course_name: r.course_name,
+          course_code: r.course_code,
+          assignment_title: `${r.evaluation_type_name} — ${r.bimestre_name}`,
+          score: Number(r.score_value),
+          max_score: Number(r.max_score) || 20,
+          submitted_at: r.submitted_at || '',
+          graded_at: r.graded_at || '',
+          feedback: r.feedback || undefined,
+          status: 'Calificada' as const,
+        }));
+      setBimestres(formattedBimestres);
 
-      if (courseIds.length > 0) {
-        // Fetch all assignments for these courses
-        const { data: allAssignments } = await supabase
-          .from('assignments')
-          .select('id, title, max_score, course_id, courses!inner(name, code)')
-          .in('course_id', courseIds);
+      // Format assignments
+      const assignmentRows = (detailData || []).filter((r: any) => r.record_type === 'assignment');
+      const formattedAssignments: CourseGrade[] = assignmentRows.map((r: any) => {
+         const isGraded = r.score_value !== null;
+         return {
+          course_id: r.course_id,
+          course_name: r.course_name,
+          course_code: r.course_code,
+          assignment_title: r.item_title,
+          score: isGraded ? convertLetterGrade(r.score_value) : 0,
+          max_score: Number(r.max_score) || 20,
+          submitted_at: r.submitted_at || '',
+          graded_at: r.graded_at || '',
+          feedback: r.feedback || undefined,
+          status: isGraded ? 'Calificada' : (r.submitted_at ? 'Entregada' : 'No entregada'),
+        }
+      });
+      setGrades(formattedAssignments);
 
-        const { data: submissionsData } = await supabase
-          .from('assignment_submissions')
-          .select('assignment_id, score, submitted_at, graded_at, feedback')
-          .eq('student_id', student.id);
-
-        console.log('📝 Assignments found:', allAssignments?.length, 'Submissions:', submissionsData?.length);
-
-        const formattedGrades: CourseGrade[] = (allAssignments || []).map(a => {
-          const sub = submissionsData?.find(s => s.assignment_id === a.id);
-          const isGraded = sub && sub.score !== null && sub.score !== undefined;
-          return {
-            course_name: (a.courses as any).name,
-            course_code: (a.courses as any).code,
-            assignment_title: a.title,
-            score: isGraded ? convertLetterGrade(sub.score) : 0,
-            max_score: Number(a.max_score),
-            submitted_at: sub?.submitted_at || "",
-            graded_at: sub?.graded_at || "",
-            feedback: sub?.feedback || undefined,
-            status: sub ? (isGraded ? 'Calificada' : 'Entregada') : 'No entregada'
-          };
-        });
-        setGrades(formattedGrades);
-
-        // Fetch exams (quizzes)
-        const { data: allQuizzes } = await supabase
-          .from('quizzes')
-          .select('id, title, course_id, courses!inner(name, code)')
-          .in('course_id', courseIds);
-
-        // Also fetch from exams table as fallback
-        const { data: allExams } = await supabase
-          .from('exams')
-          .select('id, title, course_id, max_score, courses:courses!exams_modulo_id_fkey(name, code)')
-          .in('course_id', courseIds);
-
-        const { data: quizSubs } = await supabase
-          .from('quiz_submissions')
-          .select('quiz_id, score, submitted_at')
-          .eq('student_id', student.id);
-
-        console.log('🎓 Quizzes found:', allQuizzes?.length, 'Exams found:', allExams?.length, 'Quiz submissions:', quizSubs?.length);
-
-        // Build exam list from quizzes
-        const examList: CourseExam[] = [];
-        const seenTitles = new Set<string>();
-
-        (allQuizzes || []).forEach(q => {
-          const sub = quizSubs?.find(s => s.quiz_id === q.id);
-          const isGraded = sub && sub.score !== null && sub.score !== undefined;
-          const key = `${q.title}-${q.course_id}`;
-          seenTitles.add(key);
-          examList.push({
-            course_name: (q.courses as any).name,
-            course_code: (q.courses as any).code,
-            exam_title: q.title,
-            score: isGraded ? convertLetterGrade(sub.score) : 0,
-            max_score: 20,
-            submitted_at: sub?.submitted_at || '',
-            status: sub ? (isGraded ? 'Calificada' : 'Entregada') : 'No entregada'
-          });
-        });
-
-        // Add exams that don't already exist from quizzes
-        (allExams || []).forEach(e => {
-          const key = `${e.title}-${e.course_id}`;
-          if (!seenTitles.has(key) && e.courses) {
-            seenTitles.add(key);
-            examList.push({
-              course_name: (e.courses as any).name,
-              course_code: (e.courses as any).code,
-              exam_title: e.title,
-              score: 0,
-              max_score: Number(e.max_score) || 20,
-              submitted_at: '',
-              status: 'No entregada'
-            });
-          }
-        });
-
-        setExams(examList);
-      } else {
-        setGrades([]);
-        setExams([]);
-      }
+      // Format exams
+      const examRows = (detailData || []).filter((r: any) => r.record_type === 'exam');
+      const formattedExams: CourseExam[] = examRows.map((r: any) => {
+         const isGraded = r.score_value !== null;
+         return {
+          course_id: r.course_id,
+          course_name: r.course_name,
+          course_code: r.course_code,
+          exam_title: r.item_title,
+          score: isGraded ? convertLetterGrade(r.score_value) : 0,
+          max_score: Number(r.max_score) || 20,
+          submitted_at: r.submitted_at || '',
+          status: isGraded ? 'Calificada' : (r.submitted_at ? 'Entregada' : 'No entregada'),
+        }
+      });
+      setExams(formattedExams);
 
       // Fetch attendance - include classroom attendance and recorded_at
       const { data: attendanceData, error: attendanceError } = await supabase
@@ -396,68 +359,6 @@ export function StudentDetailDialog({
 
         <ScrollArea className="h-[calc(90vh-120px)]">
           <div className="space-y-6 pr-4">
-            {/* Performance Summary Cards */}
-            <div className="grid grid-cols-2 gap-4">
-              <Card className="bg-gradient-to-br from-primary/10 to-primary/5">
-                <CardContent className="pt-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-muted-foreground">
-                        Promedio General
-                      </p>
-                      <p className="text-3xl font-bold mt-1">
-                        {averageScore.toFixed(1)}
-                      </p>
-                      <Badge variant="outline" className="mt-2">
-                        {getGradeLetter(averageScore)}
-                      </Badge>
-                    </div>
-                    <Award className="h-12 w-12 text-primary opacity-50" />
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-3">
-                    {totalGrades}{" "}
-                    {totalGrades === 1 ? "calificación" : "calificaciones"}
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-gradient-to-br from-green-500/10 to-green-500/5">
-                <CardContent className="pt-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-muted-foreground">
-                        Asistencia
-                      </p>
-                      <p className="text-3xl font-bold mt-1">
-                        {attendanceRate.toFixed(1)}%
-                      </p>
-                      <Badge
-                        variant={
-                          attendanceRate >= 90
-                            ? "default"
-                            : attendanceRate >= 75
-                              ? "secondary"
-                              : "destructive"
-                        }
-                        className="mt-2"
-                      >
-                        {attendanceRate >= 90
-                          ? "Excelente"
-                          : attendanceRate >= 75
-                            ? "Buena"
-                            : "Regular"}
-                      </Badge>
-                    </div>
-                    <BarChart3 className="h-12 w-12 text-green-600 opacity-50" />
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-3">
-                    {totalAttendance}{" "}
-                    {totalAttendance === 1 ? "registro" : "registros"}
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-
             {/* Contact Information */}
             <Card>
               <CardHeader>
@@ -509,26 +410,87 @@ export function StudentDetailDialog({
                 <div className="h-32 bg-muted rounded"></div>
               </div>
             ) : (
-              <Tabs defaultValue="grades" className="space-y-4">
-                <TabsList className="w-full">
-                  <TabsTrigger value="grades" className="flex-1">
-                    Calificaciones ({grades.length})
+              <Tabs defaultValue="bimestres" className="space-y-4">
+                <TabsList className="flex flex-wrap w-full h-auto">
+                  <TabsTrigger value="bimestres" className="flex-1 min-w-[100px]">
+                    Bimestres ({bimestres.length})
                   </TabsTrigger>
-                  <TabsTrigger value="attendance" className="flex-1">
-                    Asistencia ({attendance.length})
+                  <TabsTrigger value="grades" className="flex-1 min-w-[100px]">
+                    Tareas ({grades.length})
                   </TabsTrigger>
-                  <TabsTrigger value="exams" className="flex-1">
+                  <TabsTrigger value="exams" className="flex-1 min-w-[100px]">
                     Exámenes ({exams.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="attendance" className="flex-1 min-w-[100px]">
+                    Asistencia ({attendance.length})
                   </TabsTrigger>
                 </TabsList>
 
+                {/* BIMESTRES TAB */}
+                <TabsContent value="bimestres" className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-medium">Filtrar por curso</h3>
+                    <Select value={selectedBimestreCourse} onValueChange={setSelectedBimestreCourse}>
+                      <SelectTrigger className="w-[250px]">
+                        <SelectValue placeholder="Todos los cursos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos los cursos</SelectItem>
+                        {coursesList.map(c => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {bimestres.filter(b => selectedBimestreCourse === 'all' || b.course_id === selectedBimestreCourse).length === 0 ? (
+                    <Card><CardContent className="py-8 text-center text-muted-foreground">No hay notas bimestrales registradas para el curso seleccionado</CardContent></Card>
+                  ) : (
+                    <div className="space-y-4">
+                      {bimestres
+                        .filter(b => selectedBimestreCourse === 'all' || b.course_id === selectedBimestreCourse)
+                        .map((grade, index) => (
+                          <Card key={index}>
+                            <CardHeader className="pb-3">
+                              <div className="flex items-start justify-between">
+                                <div>
+                                  <CardTitle className="text-base">{grade.assignment_title}</CardTitle>
+                                  <CardDescription>{grade.course_name} ({grade.course_code})</CardDescription>
+                                </div>
+                                <Badge variant={grade.status === 'Calificada' ? getGradeBadgeVariant(grade.score) : 'outline'}>
+                                  {grade.status === 'Calificada' ? `${grade.score} - ${getGradeLetter(grade.score)}` : grade.status}
+                                </Badge>
+                              </div>
+                            </CardHeader>
+                            <CardContent className="space-y-2">
+                              <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">Puntuación</span>
+                                <span className="font-medium">{grade.score} / {grade.max_score}</span>
+                              </div>
+                            </CardContent>
+                          </Card>
+                      ))}
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* TAREAS TAB */}
                 <TabsContent value="grades" className="space-y-4">
-                  {grades.length === 0 ? (
-                    <Card>
-                      <CardContent className="py-8 text-center text-muted-foreground">
-                        No hay calificaciones registradas
-                      </CardContent>
-                    </Card>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-medium">Filtrar por curso</h3>
+                    <Select value={selectedAssignmentCourse} onValueChange={setSelectedAssignmentCourse}>
+                      <SelectTrigger className="w-[250px]">
+                        <SelectValue placeholder="Todos los cursos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos los cursos</SelectItem>
+                        {coursesList.map(c => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {grades.filter(g => selectedAssignmentCourse === 'all' || g.course_id === selectedAssignmentCourse).length === 0 ? (
+                    <Card><CardContent className="py-8 text-center text-muted-foreground">No hay tareas registradas para el curso seleccionado</CardContent></Card>
                   ) : (
                     <>
                       {/* Grade Distribution Summary */}
@@ -578,7 +540,7 @@ export function StudentDetailDialog({
                       </Card>
 
                       {/* Individual Grades */}
-                      {grades.map((grade, index) => (
+                      {grades.filter(g => selectedAssignmentCourse === "all" || g.course_id === selectedAssignmentCourse).map((grade, index) => (
                         <Card key={index}>
                           <CardHeader className="pb-3">
                             <div className="flex items-start justify-between">
@@ -636,16 +598,27 @@ export function StudentDetailDialog({
                   )}
                 </TabsContent>
 
+                {/* EXAMENES TAB */}
                 <TabsContent value="exams" className="space-y-4">
-                  {exams.length === 0 ? (
-                    <Card>
-                      <CardContent className="py-8 text-center text-muted-foreground">
-                        No hay exámenes registrados
-                      </CardContent>
-                    </Card>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-medium">Filtrar por curso</h3>
+                    <Select value={selectedExamCourse} onValueChange={setSelectedExamCourse}>
+                      <SelectTrigger className="w-[250px]">
+                        <SelectValue placeholder="Todos los cursos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos los cursos</SelectItem>
+                        {coursesList.map(c => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {exams.filter(e => selectedExamCourse === 'all' || e.course_id === selectedExamCourse).length === 0 ? (
+                    <Card><CardContent className="py-8 text-center text-muted-foreground">No hay exámenes registrados para el curso seleccionado</CardContent></Card>
                   ) : (
                     <>
-                      {exams.map((exam, index) => (
+                      {exams.filter(e => selectedExamCourse === "all" || e.course_id === selectedExamCourse).map((exam, index) => (
                         <Card key={index}>
                           <CardHeader className="pb-3">
                             <div className="flex items-start justify-between">

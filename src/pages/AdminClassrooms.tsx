@@ -15,10 +15,27 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 
-interface Nivel { id: string; name: string; }
-interface Grado { id: string; level_id: string; name: string; }
+interface Nivel { id: string; name: string; level_order: number; }
+interface Grado { id: string; level_id: string; name: string; grade_order: number; }
 interface Seccion { id: string; grade_id: string; name: string; room_number: string; academic_year: number; alumno_count?: number; tutor?: { first_name: string; last_name: string }; }
 interface AlumnoEnGrado { id: string; first_name: string; last_name: string; email: string; section_id?: string; is_active: boolean; }
+
+// Interfaz para el resumen global
+interface GlobalSummaryLevel {
+  level_id: string;
+  level_name: string;
+  grades: {
+    grade_id: string;
+    grade_name: string;
+    sections: {
+      id: string;
+      name: string;
+      room_number: string;
+      tutor_name: string | null;
+      student_count: number;
+    }[];
+  }[];
+}
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -52,6 +69,10 @@ const AdminClassrooms = () => {
   const [isDeleteInactiveModalOpen, setIsDeleteInactiveModalOpen] = useState(false);
   const [deletingInactiveStudents, setDeletingInactiveStudents] = useState<AlumnoEnGrado[]>([]);
 
+  // Estado del Resumen Global
+  const [globalSummary, setGlobalSummary] = useState<GlobalSummaryLevel[]>([]);
+  const [refreshSummaryTrigger, setRefreshSummaryTrigger] = useState(0);
+
   useEffect(() => { initLoad(); }, []);
   
   useEffect(() => {
@@ -68,6 +89,13 @@ const AdminClassrooms = () => {
       setSelectedInactiveIds([]);
     } else { setSecciones([]); setAlumnos([]); }
   }, [gradoActivo]);
+
+  // Recargar el resumen global cada vez que haya un cambio
+  useEffect(() => {
+    if (niveles.length > 0 && grados.length > 0) {
+      fetchGlobalSummary();
+    }
+  }, [niveles, grados, refreshSummaryTrigger]);
 
   const initLoad = async () => {
     setLoading(true);
@@ -106,6 +134,64 @@ const AdminClassrooms = () => {
     } catch (error) { console.error("Error cargando estructura:", error); } finally { setLoading(false); }
   };
 
+  // Función para poblar la tabla de resumen inferior
+  const fetchGlobalSummary = async () => {
+    try {
+      const { data: secsData } = await supabase
+        .from('sections')
+        .select('id, name, room_number, grade_id, tutor:profiles!tutor_id(first_name, last_name)')
+        .eq('academic_year', CURRENT_YEAR);
+
+      const { data: enrollsData } = await supabase
+        .from('student_sections')
+        .select('section_id, student:profiles!inner(is_active)')
+        .eq('academic_year', CURRENT_YEAR)
+        .eq('profiles.is_active', true);
+
+      const counts: Record<string, number> = {};
+      enrollsData?.forEach(e => {
+         counts[e.section_id] = (counts[e.section_id] || 0) + 1;
+      });
+
+      const sortedLevels = [...niveles].sort((a: any, b: any) => a.level_order - b.level_order);
+      
+      const finalSummary: GlobalSummaryLevel[] = sortedLevels.map(level => {
+         const levelGrades = grados
+           .filter(g => g.level_id === level.id)
+           .sort((a: any, b: any) => a.grade_order - b.grade_order);
+           
+         const gradesWithSections = levelGrades.map(grade => {
+            const gradeSections = (secsData || [])
+               .filter(s => s.grade_id === grade.id)
+               .map(sec => ({
+                  id: sec.id,
+                  name: sec.name,
+                  room_number: sec.room_number,
+                  tutor_name: sec.tutor ? `${sec.tutor.first_name} ${sec.tutor.last_name}` : null,
+                  student_count: counts[sec.id] || 0
+               }))
+               .sort((a, b) => a.name.localeCompare(b.name));
+               
+            return {
+               grade_id: grade.id,
+               grade_name: grade.name,
+               sections: gradeSections
+            };
+         });
+         
+         return {
+            level_id: level.id,
+            level_name: level.name,
+            grades: gradesWithSections
+         };
+      });
+
+      setGlobalSummary(finalSummary);
+    } catch (e) {
+      console.error("Error al cargar resumen global:", e);
+    }
+  };
+
   const handleCrearSeccion = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!gradoActivo) return;
@@ -127,7 +213,8 @@ const AdminClassrooms = () => {
       setIsSeccionModalOpen(false);
       setFormSeccion({ name: '', room_number: '' });
       fetchDataEstructura(gradoActivo);
-    } catch (error: any) { toast({ title: "Error", description: error.message, variant: "destructive" }); } finally { setProcesando(false); }
+    } catch (error: any) { toast({ title: "Error", description: error.message, variant: "destructive" }); } 
+    finally { setProcesando(false); setRefreshSummaryTrigger(prev => prev + 1); }
   };
 
   const handleEditarSeccion = async (e: React.FormEvent) => {
@@ -141,7 +228,8 @@ const AdminClassrooms = () => {
       toast({ title: "Sección Actualizada" });
       setIsEditSeccionModalOpen(false);
       fetchDataEstructura(gradoActivo);
-    } catch (error: any) { toast({ title: "Error", description: error.message, variant: "destructive" }); } finally { setProcesando(false); }
+    } catch (error: any) { toast({ title: "Error", description: error.message, variant: "destructive" }); } 
+    finally { setProcesando(false); setRefreshSummaryTrigger(prev => prev + 1); }
   };
 
   const handleEliminarSeccion = async (id: string) => {
@@ -151,6 +239,7 @@ const AdminClassrooms = () => {
       toast({ title: "Sección eliminada" });
       fetchDataEstructura(gradoActivo);
     } catch (error) { toast({ title: "Error al eliminar", variant: "destructive" }); }
+    finally { setRefreshSummaryTrigger(prev => prev + 1); }
   };
 
   const handleAsignacionIndividual = async (studentId: string, newSectionId: string) => {
@@ -174,7 +263,8 @@ const AdminClassrooms = () => {
       }
       toast({ title: "Asignación actualizada", description: `Se movieron ${studentIds.length} alumno(s).` });
       fetchDataEstructura(gradoActivo);
-    } catch (error) { toast({ title: "Error", variant: "destructive" }); } finally { setProcesando(false); }
+    } catch (error) { toast({ title: "Error", variant: "destructive" }); } 
+    finally { setProcesando(false); setRefreshSummaryTrigger(prev => prev + 1); }
   };
 
   const toggleStudentSelection = (id: string) => setSelectedStudentIds(prev => prev.includes(id) ? prev.filter(sId => sId !== id) : [...prev, id]);
@@ -192,7 +282,8 @@ const AdminClassrooms = () => {
       await supabase.from('student_sections').insert(registros);
       toast({ title: "Éxito", description: `Se repartieron ${registros.length} alumnos equitativamente.` });
       fetchDataEstructura(gradoActivo);
-    } catch (error) { toast({ title: "Error", variant: "destructive" }); } finally { setProcesando(false); }
+    } catch (error) { toast({ title: "Error", variant: "destructive" }); } 
+    finally { setProcesando(false); setRefreshSummaryTrigger(prev => prev + 1); }
   };
 
   const handleToggleStatus = async (studentId: string, currentStatus: boolean) => {
@@ -203,7 +294,8 @@ const AdminClassrooms = () => {
       setSelectedStudentIds(prev => prev.filter(id => id !== studentId));
       setSelectedInactiveIds(prev => prev.filter(id => id !== studentId));
       fetchDataEstructura(gradoActivo);
-    } catch (error: any) { toast({ title: "Error", variant: "destructive" }); } finally { setProcesando(false); }
+    } catch (error: any) { toast({ title: "Error", variant: "destructive" }); } 
+    finally { setProcesando(false); setRefreshSummaryTrigger(prev => prev + 1); }
   };
 
   const handleBulkDesmatricular = async () => {
@@ -214,7 +306,8 @@ const AdminClassrooms = () => {
       toast({ title: "Alumnos desmatriculados", description: "Fueron movidos a la lista de inactivos." });
       setSelectedStudentIds([]);
       fetchDataEstructura(gradoActivo);
-    } catch (error) { toast({ title: "Error", variant: "destructive" }); } finally { setProcesando(false); }
+    } catch (error) { toast({ title: "Error", variant: "destructive" }); } 
+    finally { setProcesando(false); setRefreshSummaryTrigger(prev => prev + 1); }
   };
 
   const handleBulkReactivar = async () => {
@@ -224,7 +317,8 @@ const AdminClassrooms = () => {
       toast({ title: "Alumnos reactivados", description: `Se volvieron a matricular ${selectedInactiveIds.length} alumno(s).` });
       setSelectedInactiveIds([]);
       fetchDataEstructura(gradoActivo);
-    } catch (error) { toast({ title: "Error", variant: "destructive" }); } finally { setProcesando(false); }
+    } catch (error) { toast({ title: "Error", variant: "destructive" }); } 
+    finally { setProcesando(false); setRefreshSummaryTrigger(prev => prev + 1); }
   };
 
   const handleBulkDesvincular = async () => {
@@ -236,7 +330,8 @@ const AdminClassrooms = () => {
       toast({ title: "Alumnos desvinculados" });
       setSelectedInactiveIds([]);
       fetchDataEstructura(gradoActivo);
-    } catch (error) { toast({ title: "Error", variant: "destructive" }); } finally { setProcesando(false); }
+    } catch (error) { toast({ title: "Error", variant: "destructive" }); } 
+    finally { setProcesando(false); setRefreshSummaryTrigger(prev => prev + 1); }
   };
 
   const handleDesvincularInactivo = async (studentId: string) => {
@@ -248,9 +343,9 @@ const AdminClassrooms = () => {
       setSelectedInactiveIds(prev => prev.filter(id => id !== studentId));
       fetchDataEstructura(gradoActivo);
     } catch (error) { toast({ title: "Error", variant: "destructive" }); }
+    finally { setRefreshSummaryTrigger(prev => prev + 1); }
   };
 
-  // --- LÓGICA DE SEGURIDAD ELIMINAR INACTIVOS ---
   const blockedInactive = useMemo(() => deletingInactiveStudents.filter(s => !!s.section_id), [deletingInactiveStudents]);
   const safeInactive = useMemo(() => deletingInactiveStudents.filter(s => !s.section_id), [deletingInactiveStudents]);
 
@@ -265,7 +360,8 @@ const AdminClassrooms = () => {
       setSelectedInactiveIds([]);
       setIsDeleteInactiveModalOpen(false);
       fetchDataEstructura(gradoActivo);
-    } catch (error: any) { toast({ title: "Error", description: error.message, variant: "destructive" }); } finally { setProcesando(false); }
+    } catch (error: any) { toast({ title: "Error", description: error.message, variant: "destructive" }); } 
+    finally { setProcesando(false); setRefreshSummaryTrigger(prev => prev + 1); }
   };
 
   const alumnosActivos = useMemo(() => alumnos.filter(a => a.is_active), [alumnos]);
@@ -552,6 +648,84 @@ const AdminClassrooms = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* ============================================================== */}
+        {/* RESUMEN INSTITUCIONAL DE AULAS (Dashboard Inferior)              */}
+        {/* ============================================================== */}
+        <Card className="mt-10 border-0 shadow-sm bg-white overflow-hidden">
+          <CardHeader className="bg-gray-50/60 border-b pb-4">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <School className="w-5 h-5 text-blue-600" /> Resumen Institucional de Aulas
+            </CardTitle>
+            <CardDescription>
+              Vista global de todas las secciones, tutores y cantidad de alumnos matriculados.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader className="bg-gray-50">
+                  <TableRow>
+                    <TableHead className="pl-6 w-1/3">Grado y Sección</TableHead>
+                    <TableHead>Tutor Principal</TableHead>
+                    <TableHead>Ubicación</TableHead>
+                    <TableHead className="text-center pr-6">Alumnos Matriculados</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {globalSummary.map(level => (
+                    <React.Fragment key={level.level_id}>
+                      <TableRow className="bg-slate-100/80 hover:bg-slate-100/80">
+                        <TableCell colSpan={4} className="pl-6 py-3 font-black text-slate-800 uppercase tracking-wider text-xs border-y">
+                          {level.level_name}
+                        </TableCell>
+                      </TableRow>
+                      {level.grades.map(grade => (
+                        <React.Fragment key={grade.grade_id}>
+                          {grade.sections.map((sec) => (
+                            <TableRow key={sec.id} className="hover:bg-gray-50/50 bg-white">
+                              <TableCell className="pl-12 font-medium text-gray-700">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-blue-400"></div>
+                                  {grade.grade_name} - Aula "{sec.name}"
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-gray-600 text-sm">
+                                {sec.tutor_name || <span className="text-red-400 italic font-medium">Sin tutor asignado</span>}
+                              </TableCell>
+                              <TableCell className="text-gray-500 text-sm">
+                                {sec.room_number || '-'}
+                              </TableCell>
+                              <TableCell className="text-center pr-6">
+                                <Badge variant={sec.student_count === 0 ? 'destructive' : 'secondary'} className={`shadow-sm ${sec.student_count > 0 ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                  <Users className="w-3 h-3 mr-1.5" /> {sec.student_count}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          {grade.sections.length === 0 && (
+                            <TableRow className="bg-white hover:bg-gray-50/50">
+                              <TableCell className="pl-12 font-medium text-gray-400 italic" colSpan={4}>
+                                {grade.grade_name} - Sin aulas registradas
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                  {globalSummary.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center py-12 text-gray-500">
+                        No hay información registrada en el sistema.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
 
       </div>
     </DashboardLayout>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,17 +7,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { BookOpen, Plus, Trash2, Layers, Loader2, Library, Tags, AlertCircle } from 'lucide-react';
+import { BookOpen, Plus, Trash2, Layers, Loader2, Library, Tags, AlertCircle, AlertTriangle, CheckCircle2, Unlink } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 
 interface Nivel { id: string; name: string; level_order: number; }
-interface Grado { id: string; level_id: string; name: string; grade_order: number; }
+interface Grado { id: string; level_id: string; name: string; grade_order: number; course_count?: number; }
 interface CursoCatalogo { id: string; name: string; code: string; course_type: string | null; }
 
-// Modificamos la interfaz para incluir la relación con la tabla de cursos y saber si está activo
 interface CursoBase { 
   id: string; 
   grade_id: string; 
@@ -71,7 +70,6 @@ const AdminMallaCurricular = () => {
   }, [gradoActivo]);
 
   const fetchCatalogoCursos = async () => {
-    // Para agregar nuevos cursos, solo traemos los activos
     const { data, error } = await supabase.from('courses').select('id, name, code, course_type').eq('is_active', true).order('name');
     if (!error) {
       setCatalogoCursos(data || []);
@@ -85,9 +83,16 @@ const AdminMallaCurricular = () => {
     try {
       const { data: dataNiveles } = await supabase.from('academic_levels').select('*').order('level_order');
       const { data: dataGrados } = await supabase.from('academic_grades').select('*').order('grade_order');
+      const { data: dataBaseCourses } = await supabase.from('base_courses').select('grade_id');
       
       setNiveles(dataNiveles || []);
-      setGrados(dataGrados || []);
+      
+      // Mapeamos los grados con su cantidad exacta de cursos en la malla
+      const gradosConConteo = (dataGrados || []).map(g => ({
+        ...g,
+        course_count: (dataBaseCourses || []).filter(bc => bc.grade_id === g.id).length
+      }));
+      setGrados(gradosConConteo);
       
       if (dataNiveles && dataNiveles.length > 0 && !nivelActivo) {
         setNivelActivo(dataNiveles[0].id);
@@ -100,16 +105,15 @@ const AdminMallaCurricular = () => {
   };
 
   const fetchCursosPorGrado = async (gradeId: string) => {
-    // MEJORA: Hacemos un JOIN con la tabla 'courses' para traer la columna 'is_active' del catálogo general
     const { data, error } = await supabase
-      .from('base_courses')
-      .select(`
-        *,
-        courses ( is_active )
-      `)
-      .eq('grade_id', gradeId)
-      .order('name');
-      
+    .from('base_courses')
+    .select(`
+      *,
+      courses ( is_active )
+    `)
+    .eq('grade_id', gradeId)
+    .order('name');
+    
     if (!error) {
       setCursosMalla(data || []);
     } else {
@@ -178,6 +182,7 @@ const AdminMallaCurricular = () => {
       
       toast({ title: "Éxito", description: "Asignatura agregada a la malla curricular." });
       fetchCursosPorGrado(gradoActivo);
+      fetchEstructura(); // Actualizamos el conteo de la izquierda y del dashboard inferior
       setIsCursoModalOpen(false);
       setFormData({ course_id: '', is_mandatory: true });
     } catch (error) {
@@ -192,15 +197,39 @@ const AdminMallaCurricular = () => {
     await supabase.from('base_courses').delete().eq('id', id);
     toast({ title: "Removido", description: "Curso quitado de la malla exitosamente." });
     fetchCursosPorGrado(gradoActivo);
+    fetchEstructura(); // Actualizamos el conteo
   };
 
   const cursoActualmenteSeleccionado = catalogoCursos.find(c => c.id === formData.course_id);
+  
+  // FILTRO INTELIGENTE: Ocultar los cursos del catálogo que ya fueron agregados a este grado
+  const cursosDisponiblesParaAgregar = useMemo(() => {
+    return catalogoCursos.filter(catalogoItem => 
+      !cursosMalla.some(mallaItem => mallaItem.course_id === catalogoItem.id)
+    );
+  }, [catalogoCursos, cursosMalla]);
 
-  if (loading) return <DashboardLayout><div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin w-8 h-8 text-blue-600" /></div></DashboardLayout>;
+  // AGRUPACIÓN PARA EL DASHBOARD INFERIOR ORDENADO POR NIVELES
+  const groupedMallas = useMemo(() => {
+    const sortedLevels = [...niveles].sort((a, b) => a.level_order - b.level_order);
+    return sortedLevels.map(level => {
+      const levelGrades = grados
+        .filter(g => g.level_id === level.id)
+        .sort((a, b) => a.grade_order - b.grade_order);
+      
+      return {
+        levelId: level.id,
+        levelName: level.name,
+        grades: levelGrades
+      };
+    });
+  }, [niveles, grados]);
+
+  if (loading && niveles.length === 0) return <DashboardLayout><div className="flex justify-center items-center h-screen"><Loader2 className="animate-spin w-8 h-8 text-blue-600" /></div></DashboardLayout>;
 
   return (
     <DashboardLayout>
-      <div className="container mx-auto px-4 py-8 max-w-6xl space-y-6">
+      <div className="container mx-auto px-4 py-8 max-w-6xl space-y-8">
         
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-3 text-gray-800">
@@ -231,7 +260,7 @@ const AdminMallaCurricular = () => {
               <div className="space-y-2 pt-4 border-t">
                 <div className="flex items-center justify-between">
                   <Label className="text-gray-700">Grados Registrados</Label>
-                  <Dialog open={isGradoModalOpen} onOpenChange={setIsGradoModalOpen}>
+                  <Dialog open={isGradoModalOpen} onOpenChange={isGradoModalOpen => setIsGradoModalOpen(isGradoModalOpen)}>
                     <DialogTrigger asChild>
                       <Button variant="ghost" size="sm" className="h-7 w-7 p-0 bg-blue-50 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-full" title="Añadir Grado">
                         <Plus className="h-4 w-4" />
@@ -259,7 +288,12 @@ const AdminMallaCurricular = () => {
                         gradoActivo === grado.id ? 'bg-blue-50 text-blue-700 font-bold border border-blue-200' : 'hover:bg-gray-100 text-gray-600 font-medium'
                       }`}
                     >
-                      <span>{grado.name}</span>
+                      <div className="flex flex-col">
+                        <span>{grado.name}</span>
+                        <span className={`text-[10px] ${grado.course_count === 0 ? 'text-red-500 font-bold' : 'text-gray-400'}`}>
+                          {grado.course_count} cursos
+                        </span>
+                      </div>
                       <Trash2 
                         className="h-4 w-4 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-red-600 transition-opacity" 
                         onClick={(e) => handleEliminarGrado(grado.id, e)}
@@ -305,10 +339,10 @@ const AdminMallaCurricular = () => {
                       <Select required value={formData.course_id} onValueChange={val => setFormData({...formData, course_id: val})}>
                         <SelectTrigger><SelectValue placeholder="Elige un curso del catálogo general..." /></SelectTrigger>
                         <SelectContent className="max-h-60 overflow-y-auto">
-                          {catalogoCursos.length > 0 ? (
-                            catalogoCursos.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.code})</SelectItem>)
+                          {cursosDisponiblesParaAgregar.length > 0 ? (
+                            cursosDisponiblesParaAgregar.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.code})</SelectItem>)
                           ) : (
-                            <SelectItem value="none" disabled>No hay cursos activos registrados</SelectItem>
+                            <SelectItem value="none" disabled className="text-red-500 italic">Todos los cursos del catálogo ya están en esta malla</SelectItem>
                           )}
                         </SelectContent>
                       </Select>
@@ -351,7 +385,7 @@ const AdminMallaCurricular = () => {
                   </TableHeader>
                   <TableBody>
                     {cursosMalla.map((curso) => {
-                      // VERIFICACIÓN: Comprobamos si el curso está inactivo o si fue eliminado físicamente
+                      // VERIFICACIÓN: Comprobamos si el curso está inactivo o si fue eliminado físicamente del catálogo base
                       const esInactivo = curso.courses && curso.courses.is_active === false;
                       const fueEliminado = !curso.courses;
 
@@ -401,7 +435,7 @@ const AdminMallaCurricular = () => {
                           </TableCell>
                           
                           <TableCell className="text-right pr-6">
-                            <Button variant="ghost" size="sm" onClick={() => handleEliminarCursoMalla(curso.id)} className="text-red-600 hover:text-red-800 hover:bg-red-50 h-8 w-8 p-0">
+                            <Button variant="ghost" size="sm" onClick={() => handleEliminarCursoMalla(curso.id)} className="text-red-600 hover:text-red-800 hover:bg-red-50 h-8 w-8 p-0" title="Quitar curso de esta malla">
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </TableCell>
@@ -423,6 +457,86 @@ const AdminMallaCurricular = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* ============================================================== */}
+        {/* TABLA DASHBOARD INFERIOR: RESUMEN ORDENADO POR NIVELES          */}
+        {/* ============================================================== */}
+        <Card className="border-0 shadow-sm bg-white mt-10 overflow-hidden">
+          <CardHeader className="border-b bg-gray-50/60 pb-4">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Library className="w-5 h-5 text-blue-600" /> Resumen de Mallas Curriculares
+            </CardTitle>
+            <CardDescription>Vista de alertas y cantidad de cursos estructurada por nivel educativo.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader className="bg-gray-50">
+                  <TableRow>
+                    <TableHead className="pl-6 w-1/2">Grado Académico</TableHead>
+                    <TableHead className="text-center">Cursos en Malla</TableHead>
+                    <TableHead className="text-right pr-6">Estado</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {groupedMallas.map((group) => (
+                    <React.Fragment key={group.levelId}>
+                      {/* Fila separadora del Nivel Educativo */}
+                      <TableRow className="bg-slate-100/80 hover:bg-slate-100/80">
+                        <TableCell colSpan={3} className="pl-6 py-3 font-black text-slate-800 uppercase tracking-wider text-xs border-y">
+                          {group.levelName}
+                        </TableCell>
+                      </TableRow>
+
+                      {/* Filas de los grados pertenecientes a este nivel */}
+                      {group.grades.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={3} className="text-center py-4 text-gray-500 text-sm italic bg-white">
+                            No hay grados registrados en este nivel.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        group.grades.map(grade => {
+                          const isEmpty = grade.course_count === 0;
+                          return (
+                            <TableRow key={grade.id} className={`hover:bg-gray-50/50 bg-white ${isEmpty ? 'bg-red-50/20' : ''}`}>
+                              <TableCell className="pl-12 font-medium text-gray-700">
+                                {grade.name}
+                              </TableCell>
+                              <TableCell className="text-center font-mono font-bold text-gray-700">
+                                {grade.course_count}
+                              </TableCell>
+                              <TableCell className="text-right pr-6">
+                                {isEmpty ? (
+                                  <Badge variant="destructive" className="bg-red-100 text-red-700 border-red-200 shadow-sm">
+                                    <AlertTriangle className="w-3 h-3 mr-1" /> Sin cursos (Alerta)
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                                    <CheckCircle2 className="w-3 h-3 mr-1" /> Configurado
+                                  </Badge>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </React.Fragment>
+                  ))}
+
+                  {groupedMallas.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-center py-8 text-gray-500">
+                        No hay niveles ni grados registrados en el sistema.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+
       </div>
     </DashboardLayout>
   );

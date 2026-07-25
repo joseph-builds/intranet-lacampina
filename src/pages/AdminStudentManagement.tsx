@@ -103,69 +103,39 @@ const AdminStudentManagement = () => {
 
   useEffect(() => { 
     fetchInitialData(); 
-    fetchImportHistory(); // Cargamos el historial global al iniciar
+    fetchImportHistory(); 
   }, []);
   
   useEffect(() => { setGradoFilter('all'); }, [nivelFilter]);
 
-  // ============================================================================
-  // LÓGICA DE HISTORIAL EN LA NUBE (GLOBAL)
-  // ============================================================================
   const fetchImportHistory = async () => {
     try {
-      const { data, error } = await supabase
-        .from('student_import_history')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(10);
-        
+      const { data, error } = await supabase.from('student_import_history').select('*').order('created_at', { ascending: false }).limit(10);
       if (error) throw error;
       if (data) setImportHistory(data);
-    } catch (error) {
-      console.error("Error al cargar el historial global", error);
-    }
+    } catch (error) { console.error("Error al cargar el historial global", error); }
   };
 
   const saveImportToHistory = async (newCredentials: ImportReport[]) => {
     try {
-      // 1. Guardar en Supabase
-      const { error } = await supabase.from('student_import_history').insert([{
-        total_students: newCredentials.length,
-        report_data: newCredentials
-      }]);
+      const { error } = await supabase.from('student_import_history').insert([{ total_students: newCredentials.length, report_data: newCredentials }]);
       if (error) throw error;
-
-      // 2. Limpieza Inteligente: Mantener solo los últimos 10 (Garbage Collection)
-      const { data: latest } = await supabase
-        .from('student_import_history')
-        .select('id')
-        .order('created_at', { ascending: false })
-        .limit(10);
-        
+      const { data: latest } = await supabase.from('student_import_history').select('id').order('created_at', { ascending: false }).limit(10);
       if (latest && latest.length === 10) {
          const idsToKeep = latest.map(l => l.id);
-         await supabase
-           .from('student_import_history')
-           .delete()
-           .not('id', 'in', `(${idsToKeep.join(',')})`);
+         await supabase.from('student_import_history').delete().not('id', 'in', `(${idsToKeep.join(',')})`);
       }
-
-      // 3. Refrescar la vista
       await fetchImportHistory();
-    } catch (error) { 
-      console.error("Error guardando el historial", error); 
-    }
+    } catch (error) { console.error("Error guardando el historial", error); }
   };
 
   const clearImportHistory = async () => {
-    if(window.confirm('¿Estás seguro que deseas borrar el registro histórico de credenciales en LA NUBE? Esto afectará a todos los administradores.')) {
+   if(window.confirm('¿Estás seguro que deseas borrar el registro histórico de credenciales en LA NUBE? Esto afectará a todos los administradores.')) {
       try {
         await supabase.from('student_import_history').delete().neq('id', '00000000-0000-0000-0000-000000000000');
         setImportHistory([]);
         toast({ title: "Historial global limpiado" });
-      } catch (error: any) {
-        toast({ title: "Error limpiando historial", description: error.message, variant: "destructive" });
-      }
+      } catch (error: any) { toast({ title: "Error limpiando historial", description: error.message, variant: "destructive" }); }
     }
   };
 
@@ -178,7 +148,6 @@ const AdminStudentManagement = () => {
     link.download = `credenciales_alumnos_${safeDate}.csv`;
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
-  // ============================================================================
 
   const fetchInitialData = async () => {
     setLoading(true);
@@ -189,9 +158,9 @@ const AdminStudentManagement = () => {
   const fetchLevelsAndGrades = async () => {
     try {
       const [levelsRes, gradesRes, sectionsRes] = await Promise.all([
-        supabase.from('academic_levels').select('*').order('level_order'),
-        supabase.from('academic_grades').select('*, level:academic_levels(id, name)').order('grade_order'),
-        supabase.from('sections').select('*').eq('academic_year', CURRENT_YEAR).order('name')
+       supabase.from('academic_levels').select('*').order('level_order'),
+       supabase.from('academic_grades').select('*, level:academic_levels(id, name)').order('grade_order'),
+       supabase.from('sections').select('*').eq('academic_year', CURRENT_YEAR).order('name')
       ]);
       if (levelsRes.data) setLevels(levelsRes.data);
       if (gradesRes.data) setGrades(gradesRes.data);
@@ -209,7 +178,7 @@ const AdminStudentManagement = () => {
         const matricula = matriculas?.find(m => m.student_id === perfil.id);
         return { ...perfil, section_id: matricula?.section_id, section_name: matricula?.sections?.name } as Student;
       });
-      setStudents(alumnosMapeados); setSelectedIds([]);
+     setStudents(alumnosMapeados); setSelectedIds([]);
     } catch (error) { toast({ title: "Error", description: "No se pudieron cargar los estudiantes.", variant: "destructive" }); }
   };
 
@@ -295,7 +264,6 @@ const AdminStudentManagement = () => {
 
   const isAllPageSelected = paginatedStudents.length > 0 && paginatedStudents.every(c => selectedIds.includes(c.id));
 
-  // --- REGLAS ESTRICTAS DE ELIMINACIÓN ---
   const blockedFromDeletion = useMemo(() => deletingStudents.filter(s => s.current_grade_id), [deletingStudents]);
   const safeToDelete = useMemo(() => deletingStudents.filter(s => !s.current_grade_id), [deletingStudents]);
 
@@ -376,7 +344,7 @@ const AdminStudentManagement = () => {
   const handleSaveStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // --- VALIDACIONES ESTRICTAS ---
+    // VALIDACIONES ESTRICTAS
     if (formData.dni.length !== 8) return toast({ title: "DNI Inválido", description: "El DNI debe tener exactamente 8 dígitos numéricos.", variant: "destructive" });
     if (!formData.first_name.trim() || !formData.last_name.trim()) return toast({ title: "Nombres Inválidos", description: "Nombres y Apellidos son obligatorios.", variant: "destructive" });
     if (formData.phone && formData.phone.length !== 9) return toast({ title: "Celular Inválido", description: "El número de celular debe tener 9 dígitos.", variant: "destructive" });
@@ -389,6 +357,8 @@ const AdminStudentManagement = () => {
     }
     
     setSaving(true);
+    let createdUserId: string | null = null;
+
     try {
       if (editingStudent) {
         // MODO EDICIÓN
@@ -405,7 +375,7 @@ const AdminStudentManagement = () => {
       } else {
         // MODO CREACIÓN
         const isDup = students.some(s => s.dni === formData.dni.trim() || s.email === cleanEmail);
-        if (isDup) throw new Error("Ya existe un estudiante con este DNI o Correo en la lista.");
+        if (isDup) throw new Error("Ya existe un estudiante con este DNI o Correo en el sistema.");
         
         const { data: newProfileRes, error: authError } = await createUserByAdmin({
           email: cleanEmail, password: formData.password as string,
@@ -417,22 +387,42 @@ const AdminStudentManagement = () => {
         
         if (authError) throw authError; 
 
-        if (newProfileRes?.id && formData.section_id !== 'unassigned') {
-           await guardarMatriculaAula(newProfileRes.id, formData.section_id);
+        // Recuperamos el ID del usuario recién creado para continuar el proceso o guardarlo por si hay rollback
+        const { data: fallbackUser } = await supabase.from('profiles').select('id').eq('email', cleanEmail).single();
+        createdUserId = newProfileRes?.id || fallbackUser?.id;
+
+        if (createdUserId && formData.section_id !== 'unassigned') {
+           const { error: matriculaError } = await supabase.from('student_sections').insert({ student_id: createdUserId, section_id: formData.section_id, academic_year: CURRENT_YEAR });
+           if (matriculaError) throw new Error("La cuenta se creó, pero falló la asignación de aula.");
         }
+
         toast({ title: "Cuenta Creada", description: "El estudiante ha sido registrado exitosamente." });
       }
       closeModal();
       fetchStudents(); 
     } catch (error: any) { 
-      toast({ title: "Error al guardar", description: error.message, variant: "destructive" }); 
-    } finally { setSaving(false); }
+      // SISTEMA DE ROLLBACK ANTI-USUARIOS FANTASMAS
+      if (!editingStudent && createdUserId) {
+        await supabase.rpc('delete_user_admin_v2', { target_user_id: createdUserId, target_email: cleanEmail });
+        toast({ title: "Error crítico revertido", description: `Hubo un error (${error.message}). Se canceló la creación para evitar una cuenta a medias.`, variant: "destructive" });
+      } else {
+        toast({ title: "Error al guardar", description: error.message, variant: "destructive" });
+      }
+    } finally { 
+      setSaving(false); 
+    }
   };
 
-  const openCreateModal = () => { setEditingStudent(null); setFormData(initialFormState); setNewManualPassword(''); setIsModalOpen(true); };
+  const openCreateModal = () => {
+    setEditingStudent(null); 
+    setFormData(initialFormState); 
+    setNewManualPassword(''); 
+    setIsModalOpen(true); 
+  };
   
   const openEditModal = (student: Student) => {
-    setEditingStudent(student); setNewManualPassword('');
+    setEditingStudent(student);
+    setNewManualPassword('');
     setFormData({
       first_name: student.first_name || '', last_name: student.last_name || '', email: student.email || '', dni: student.dni || '', birth_date: student.birth_date || '',
       phone: student.phone || '', guardian_name: student.guardian_name || '', emergency_phone: student.emergency_phone || '',
@@ -441,10 +431,16 @@ const AdminStudentManagement = () => {
     setIsModalOpen(true);
   };
 
-  const closeModal = () => { setIsModalOpen(false); setEditingStudent(null); setFormData(initialFormState); setNewManualPassword(''); };
+  const closeModal = () => {
+    setIsModalOpen(false); 
+    setEditingStudent(null); 
+    setFormData(initialFormState); 
+    setNewManualPassword(''); 
+  };
 
   const openEnrollModal = async (student: Student) => {
-    setSelectedStudent(student); setStudentMallaCourses([]); setExemptions([]); setIsEnrollModalOpen(true);
+    setSelectedStudent(student);
+    setStudentMallaCourses([]); setExemptions([]); setIsEnrollModalOpen(true);
     if (student.current_grade_id) {
       setLoadingCourses(true);
       try {
@@ -471,7 +467,7 @@ const AdminStudentManagement = () => {
         const combinedCourses: CourseDisplay[] = (baseCourses || []).map((bc: any) => ({
            base_course_id: bc.id, section_course_id: secCourseMap[bc.id] || null, name: bc.name, area: bc.area, is_mandatory: bc.is_mandatory, isActive: Array.isArray(bc.course) ? bc.course[0]?.is_active : bc.course?.is_active
         }));
-        setStudentMallaCourses(combinedCourses);
+       setStudentMallaCourses(combinedCourses);
         const { data: exempData } = await supabase.from('student_course_exemptions').select(COLUMNA_CURSO).eq('student_id', student.id);
         setExemptions(exempData?.map(e => e[COLUMNA_CURSO]) || []);
       } catch (err: any) { toast({ title: "Error cargando cursos", description: err.message, variant: "destructive" }); } finally { setLoadingCourses(false); }
@@ -496,7 +492,6 @@ const AdminStudentManagement = () => {
     } catch (error:any) { toast({ title: "Error al guardar", description: error.message, variant: "destructive" }); }
   };
 
-  // --- PLANTILLA DINÁMICA ---
   const downloadTemplate = () => {
     const headers = "DNI;Nombres;Apellidos;Correo;Telefono;Apoderado;Telefono_Emergencia\n";
     const rand1 = Math.floor(Math.random() * 10000);
@@ -510,7 +505,6 @@ const AdminStudentManagement = () => {
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  // --- IMPORTACIÓN MASIVA ---
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -534,7 +528,6 @@ const AdminStudentManagement = () => {
           const cols = rows[i].split(regex).map(col => col.replace(/^"|"$/g, '').trim());
           if (cols.length < 4) continue;
           
-          // Limpieza rigurosa de formato
           const dni = cols[0].replace(ONLY_NUMBERS_REGEX, '').slice(0, 8); 
           const first_name = cols[1].replace(ONLY_LETTERS_REGEX, '');
           const last_name = cols[2].replace(ONLY_LETTERS_REGEX, '');
@@ -564,7 +557,6 @@ const AdminStudentManagement = () => {
            for (const row of validRowsToCreate) {
              const generatedPass = generateRandomPassword(); 
              
-             // 1 SOLA PETICIÓN AL MOTOR CENTRAL
              const { error: authError } = await createUserByAdmin({ 
                  email: row.email, password: generatedPass, 
                  first_name: row.first_name, last_name: row.last_name, role: 'student', 
@@ -582,18 +574,16 @@ const AdminStudentManagement = () => {
            }
         }
 
-        // GUARDAMOS EN EL HISTORIAL Y DESCARGAMOS EL REPORTE
         if (newCredentials.length > 0) {
            await saveImportToHistory(newCredentials);
-           // Usamos la fecha actual en formato Peru para el nombre del archivo
            const dateStr = new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' });
-           downloadCredentialsReport(newCredentials, dateStr);
+          downloadCredentialsReport(newCredentials, dateStr);
         }
 
         let message = `Se crearon ${insertedCount} accesos exitosamente.`;
         if (duplicates.length > 0) message += ` Se omitieron ${duplicates.length} duplicados locales.`;
         if (formatErrors > 0) message += ` Se omitieron ${formatErrors} correos con formato inválido.`;
-        if (authErrors > 0) message += ` Fallaron ${authErrors} cuentas (El correo ya existía en la bóveda).`;
+        if (authErrors > 0) message += ` Fallaron ${authErrors} cuentas (El correo ya existía).`;
         
         toast({ title: "Importación finalizada", description: message });
         await fetchStudents();
@@ -635,15 +625,15 @@ const AdminStudentManagement = () => {
               </div>
               <Select value={nivelFilter} onValueChange={(val) => { setNivelFilter(val); setGradoFilter('all'); }}>
                 <SelectTrigger className="min-w-[160px] w-auto"><SelectValue placeholder="Niveles" /></SelectTrigger>
-                <SelectContent><SelectItem value="all">Todos los Niveles</SelectItem>{levels.map(l => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}</SelectContent>
+               <SelectContent><SelectItem value="all">Todos los Niveles</SelectItem>{levels.map(l => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}</SelectContent>
               </Select>
               <Select value={gradoFilter} onValueChange={setGradoFilter} disabled={nivelFilter === 'all'}>
                 <SelectTrigger className="min-w-[160px] w-auto"><SelectValue placeholder="Grados" /></SelectTrigger>
-                <SelectContent><SelectItem value="all">Todos los Grados</SelectItem>{availableGradesForFilter.map(g => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}</SelectContent>
+               <SelectContent><SelectItem value="all">Todos los Grados</SelectItem>{availableGradesForFilter.map(g => <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>)}</SelectContent>
               </Select>
               <Select value={filterStatus} onValueChange={setFilterStatus}>
                 <SelectTrigger className="min-w-[160px] w-auto"><SelectValue placeholder="Estado" /></SelectTrigger>
-                <SelectContent><SelectItem value="all">Todos los estados</SelectItem><SelectItem value="active">Activos</SelectItem><SelectItem value="inactive">Desmatriculados</SelectItem></SelectContent>
+               <SelectContent><SelectItem value="all">Todos los estados</SelectItem><SelectItem value="active">Activos</SelectItem><SelectItem value="inactive">Desmatriculados</SelectItem></SelectContent>
               </Select>
               <Select value={assignmentFilter} onValueChange={setAssignmentFilter}>
                 <SelectTrigger className="min-w-[160px] w-auto border-amber-300 bg-amber-50/50"><SelectValue placeholder="Estado de Asignación" /></SelectTrigger>
@@ -676,7 +666,7 @@ const AdminStudentManagement = () => {
                 <Button variant="outline" size="sm" className="bg-white border-blue-200 hover:bg-blue-50" onClick={() => setIsBulkStatusModalOpen(true)}>Cambiar Estado</Button>
                 <Button variant="outline" size="sm" className="bg-white border-blue-200 hover:bg-blue-50" onClick={() => setIsBulkGradeModalOpen(true)}>Asignar Grado</Button>
                 <Button variant="destructive" size="sm" onClick={() => { 
-                  setDeletingStudents(students.filter(s => selectedIds.includes(s.id))); 
+                 setDeletingStudents(students.filter(s => selectedIds.includes(s.id))); 
                   setDeleteConfirmText(''); 
                   setIsDeleteModalOpen(true); 
                 }}>Eliminar Seleccionados</Button>
@@ -698,16 +688,16 @@ const AdminStudentManagement = () => {
                       <TableHead className="cursor-pointer hover:bg-gray-100 group select-none" onClick={() => requestSort('name')}><div className="flex items-center gap-1">Estudiante <ArrowUpDown className={`w-3 h-3 ${sortConfig?.key === 'name' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} /></div></TableHead>
                       <TableHead className="w-24 cursor-pointer hover:bg-gray-100 group select-none" onClick={() => requestSort('dni')}><div className="flex items-center gap-1">DNI <ArrowUpDown className={`w-3 h-3 ${sortConfig?.key === 'dni' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} /></div></TableHead>
                       <TableHead className="cursor-pointer hover:bg-gray-100 group select-none" onClick={() => requestSort('grade')}><div className="flex items-center gap-1">Ubicación Académica <ArrowUpDown className={`w-3 h-3 ${sortConfig?.key === 'grade' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} /></div></TableHead>
-                      <TableHead>Apoderado / Contacto</TableHead>
+                     <TableHead>Apoderado / Contacto</TableHead>
                       <TableHead className="text-center w-28">Estado</TableHead>
                       <TableHead className="text-right pr-6 w-32">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {paginatedStudents.length === 0 ? (
-                      <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground"><GraduationCap className="w-12 h-12 mx-auto mb-3 text-gray-300" /> No se encontraron estudiantes.</TableCell></TableRow>
+                     <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground"><GraduationCap className="w-12 h-12 mx-auto mb-3 text-gray-300" /> No se encontraron estudiantes.</TableCell></TableRow>
                     ) : (
-                      paginatedStudents.map((student) => (
+                     paginatedStudents.map((student) => (
                         <TableRow key={student.id} className={`hover:bg-gray-50/50 ${!student.is_active ? 'bg-red-50/30 opacity-75' : ''} ${selectedIds.includes(student.id) ? 'bg-blue-50/30' : ''}`}>
                           <TableCell className="text-center"><input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer" checked={selectedIds.includes(student.id)} onChange={(e) => handleSelectOne(student.id, e.target.checked)} /></TableCell>
                           <TableCell>
@@ -720,7 +710,7 @@ const AdminStudentManagement = () => {
                               <div>
                                 <div className="flex items-center gap-2">
                                   <Badge variant="outline" className={`${student.is_active ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-100 text-gray-600 border-gray-200'} font-semibold`}>{student.grade.name}</Badge>
-                                  {student.section_id ? (
+                                 {student.section_id ? (
                                     <Badge variant="secondary" className="bg-green-50 text-green-700 hover:bg-green-100 text-[10px] px-1.5 py-0 border-green-200 border">Aula {student.section_name}</Badge>
                                   ) : (
                                     <span className="text-[10px] font-medium text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-200 flex items-center"><ShieldAlert className="w-3 h-3 mr-1"/> No asignado</span>
@@ -733,8 +723,8 @@ const AdminStudentManagement = () => {
                             )}
                           </TableCell>
                           <TableCell>
-                            {student.guardian_name ? (<div className="text-sm font-medium text-gray-700">{student.guardian_name}</div>) : <span className="text-xs text-gray-400 italic">No registrado</span>}
-                            {student.emergency_phone ? (<div className="text-xs text-red-600 flex items-center mt-1 font-medium"><Phone className="w-3 h-3 mr-1" /> {student.emergency_phone}</div>) : (student.phone && <div className="text-xs text-gray-500 flex items-center mt-1"><Phone className="w-3 h-3 mr-1" /> {student.phone}</div>)}
+                           {student.guardian_name ? (<div className="text-sm font-medium text-gray-700">{student.guardian_name}</div>) : <span className="text-xs text-gray-400 italic">No registrado</span>}
+                           {student.emergency_phone ? (<div className="text-xs text-red-600 flex items-center mt-1 font-medium"><Phone className="w-3 h-3 mr-1" /> {student.emergency_phone}</div>) : (student.phone && <div className="text-xs text-gray-500 flex items-center mt-1"><Phone className="w-3 h-3 mr-1" /> {student.phone}</div>)}
                           </TableCell>
                           <TableCell className="text-center">
                              <div className="flex items-center justify-center gap-2">
@@ -747,9 +737,9 @@ const AdminStudentManagement = () => {
                               <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-indigo-600 hover:bg-indigo-50" onClick={() => openEnrollModal(student)} title="Ver Cursos/Matrícula"><BookOpen className="w-4 h-4" /></Button>
                               <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50" onClick={() => openEditModal(student)} title="Editar Ficha"><Edit className="w-4 h-4" /></Button>
                               <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-600 hover:bg-red-50" onClick={() => { 
-                                setDeletingStudents([student]); 
-                                setDeleteConfirmText(''); 
-                                setIsDeleteModalOpen(true); 
+                               setDeletingStudents([student]); 
+                               setDeleteConfirmText(''); 
+                               setIsDeleteModalOpen(true); 
                               }} title="Eliminar Alumno"><Trash2 className="w-4 h-4" /></Button>
                             </div>
                           </TableCell>
@@ -768,8 +758,8 @@ const AdminStudentManagement = () => {
                 <div className="flex items-center px-4 py-2 text-sm font-medium bg-white rounded-md border">Página {currentPage} de {Math.max(1, totalPages)}</div>
                 <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}>Siguiente</Button>
               </div>
-            </div>
-          </CardContent>
+           </div>
+         </CardContent>
         </Card>
 
         {/* ============================================================== */}
@@ -813,8 +803,8 @@ const AdminStudentManagement = () => {
                       <label htmlFor="file-upload" className="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-md text-sm cursor-pointer hover:bg-blue-700 shadow-sm transition-transform hover:scale-105">Seleccionar Archivo</label>
                     </>
                   )}
-                </div>
-              </div>
+               </div>
+             </div>
               
               {/* --- HISTORIAL DE IMPORTACIONES (Global / Nube) --- */}
               {importHistory.length > 0 && (
@@ -825,7 +815,7 @@ const AdminStudentManagement = () => {
                   
                   <div className="bg-emerald-50/50 rounded-xl border border-emerald-100 p-3">
                      <div className="max-h-56 overflow-y-auto space-y-2 pr-2">
-                        {importHistory.map((entry) => (
+                       {importHistory.map((entry) => (
                            <div key={entry.id} className="flex flex-col sm:flex-row items-center justify-between p-3 bg-white border border-emerald-100 rounded-lg shadow-sm hover:border-emerald-300 transition-colors">
                               <div>
                                  <div className="font-semibold text-emerald-900">
@@ -834,36 +824,40 @@ const AdminStudentManagement = () => {
                                  <div className="text-xs font-medium text-emerald-600 mt-0.5">{entry.total_students} estudiantes procesados</div>
                               </div>
                               <Button 
-                                 size="sm" 
+                                size="sm" 
                                  onClick={() => downloadCredentialsReport(entry.report_data, new Date(entry.created_at).toLocaleString('es-PE'))} 
-                                 className="bg-emerald-600 hover:bg-emerald-700 text-white mt-3 sm:mt-0 shadow-sm w-full sm:w-auto"
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white mt-3 sm:mt-0 shadow-sm w-full sm:w-auto"
                               >
                                  <Download className="w-4 h-4 mr-2" /> Descargar Excel
                               </Button>
                            </div>
-                        ))}
+                       ))}
                      </div>
                      
                      <div className="flex justify-end mt-3 pt-2 border-t border-emerald-100/50">
                         <Button 
-                           variant="ghost" 
+                          variant="ghost" 
                            size="sm" 
-                           className="text-gray-400 hover:text-red-500 hover:bg-red-50 text-xs px-2 h-7" 
-                           onClick={clearImportHistory}
+                          className="text-gray-400 hover:text-red-500 hover:bg-red-50 text-xs px-2 h-7" 
+                          onClick={clearImportHistory}
                         >
                            <Trash className="w-3 h-3 mr-1" /> Limpiar historial global
                         </Button>
-                     </div>
-                  </div>
-                  <p className="text-[10px] text-gray-500 mt-2 italic text-right">Este historial se sincroniza en la nube entre todos los administradores. Se conservan las últimas 10 importaciones de forma automática.</p>
-                </div>
+                    </div>
+                 </div>
+                 <p className="text-[10px] text-gray-500 mt-2 italic text-right">Este historial se sincroniza en la nube entre todos los administradores. Se conservan las últimas 10 importaciones de forma automática.</p>
+               </div>
               )}
             </CardContent>
           </Card>
         </div>
 
-      <Dialog open={isModalOpen} onOpenChange={(open) => { if(!open) closeModal(); }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <Dialog open={isModalOpen} onOpenChange={(open) => { if (!open && !saving) closeModal(); }}>
+        <DialogContent 
+           className="max-w-3xl max-h-[90vh] overflow-y-auto"
+           onPointerDownOutside={(e) => saving && e.preventDefault()}
+           onEscapeKeyDown={(e) => saving && e.preventDefault()}
+        >
         <DialogHeader>
             <DialogTitle className="text-xl">{editingStudent ? 'Editar Ficha del Estudiante' : 'Registrar Nuevo Estudiante y Cuenta'}</DialogTitle>
         </DialogHeader>
@@ -883,7 +877,7 @@ const AdminStudentManagement = () => {
                 <div className="space-y-2">
                    <Label>Nombres <span className="text-red-500">*</span></Label>
                    <Input 
-                      value={formData.first_name} 
+                     value={formData.first_name} 
                       onChange={e => setFormData({...formData, first_name: e.target.value.replace(ONLY_LETTERS_REGEX, '')})} 
                       required 
                    />
@@ -891,12 +885,13 @@ const AdminStudentManagement = () => {
                 <div className="space-y-2">
                    <Label>Apellidos <span className="text-red-500">*</span></Label>
                    <Input 
-                      value={formData.last_name} 
+                     value={formData.last_name} 
                       onChange={e => setFormData({...formData, last_name: e.target.value.replace(ONLY_LETTERS_REGEX, '')})} 
                       required 
                    />
                 </div>
-                
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                    <Label>Correo (Login) <span className="text-red-500">*</span></Label>
                    <Input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} required disabled={!!editingStudent} className={editingStudent ? "bg-gray-100 cursor-not-allowed" : ""}/>
@@ -910,8 +905,8 @@ const AdminStudentManagement = () => {
                     <Button type="button" variant="outline" className="shrink-0" onClick={() => setFormData({...formData, password: generateRandomPassword()})} title="Generar contraseña segura aleatoria">
                       <RefreshCw className="w-4 h-4 text-blue-600" />
                     </Button>
-                  </div>
-                  <p className="text-[10px] text-gray-500">Se requiere para el primer ingreso del estudiante.</p>
+                 </div>
+                 <p className="text-[10px] text-gray-500">Se requiere para el primer ingreso del estudiante.</p>
                 </div>
                 )}
                 
@@ -921,11 +916,11 @@ const AdminStudentManagement = () => {
                       value={formData.phone} 
                       onChange={e => setFormData({...formData, phone: e.target.value.replace(ONLY_NUMBERS_REGEX, '').slice(0, 9)})} 
                       placeholder="9 dígitos numéricos"
-                   />
-                </div>
-                <div className="space-y-2">
-                   <Label>Fecha Nacimiento <span className="text-gray-400 font-normal text-xs ml-1">(Opcional)</span></Label>
-                   <Input type="date" value={formData.birth_date} onChange={e => setFormData({...formData, birth_date: e.target.value})} />
+                  />
+               </div>
+               <div className="space-y-2">
+                  <Label>Fecha Nacimiento <span className="text-gray-400 font-normal text-xs ml-1">(Opcional)</span></Label>
+                  <Input type="date" value={formData.birth_date} onChange={e => setFormData({...formData, birth_date: e.target.value})} />
                 </div>
               </div>
             </div>
@@ -950,15 +945,15 @@ const AdminStudentManagement = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-blue-50/50 p-4 rounded-lg border border-blue-100">
                 <div className="space-y-2">
                   <Label>Grado a cursar <span className="text-gray-400 font-normal text-xs ml-1">(Opcional)</span></Label>
-                  <Select value={formData.current_grade_id || "unassigned"} onValueChange={val => setFormData({...formData, current_grade_id: val, section_id: 'unassigned'})}>
-                    <SelectTrigger className="bg-white"><SelectValue placeholder="Seleccionar grado" /></SelectTrigger>
+                  <Select value={formData.current_grade_id || "unassigned"} onValueChange={val => setFormData({...formData, current_grade_id: val === "none" ? "" : val, section_id: 'unassigned'})}>
+                    <SelectTrigger className="bg-white"><SelectValue placeholder="Dejar sin asignar temporalmente" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="unassigned" className="text-orange-600 font-medium">Dejar sin asignar temporalmente</SelectItem>
                       {levels.map(level => (
                         <div key={`group-${level.id}`}>
                           <div className="px-2 py-1.5 text-xs font-bold text-gray-400 uppercase bg-gray-50">{level.name}</div>
                           {grades.filter(g => g.level_id === level.id).map(grade => (
-                            <SelectItem key={grade.id} value={grade.id} className="pl-6">{grade.name}</SelectItem>
+                            <SelectItem key={grade.id} value={grade.id} className="pl-6">{grade.name} ({level.name})</SelectItem>
                           ))}
                         </div>
                       ))}
@@ -974,7 +969,7 @@ const AdminStudentManagement = () => {
                     <SelectContent>
                       <SelectItem value="unassigned" className="text-gray-500">Sin aula asignada (General)</SelectItem>
                       {aulasDelGrado.map(sec => (
-                        <SelectItem key={sec.id} value={sec.id}>Aula {sec.name}</SelectItem>
+                        <SelectItem key={sec.id} value={sec.id}>Aula "{sec.name}"</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -985,10 +980,10 @@ const AdminStudentManagement = () => {
             <div className="space-y-4">
               <h3 className="text-sm font-bold text-gray-500 uppercase border-b pb-2">3. Apoderado / Contacto</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                   <Label>Nombre del Apoderado</Label>
+               <div className="space-y-2">
+                  <Label>Nombre del Apoderado</Label>
                    <Input 
-                      value={formData.guardian_name} 
+                     value={formData.guardian_name} 
                       onChange={e => setFormData({...formData, guardian_name: e.target.value.replace(ONLY_LETTERS_REGEX, '')})} 
                       placeholder="Nombre completo" 
                    />
@@ -996,7 +991,7 @@ const AdminStudentManagement = () => {
                 <div className="space-y-2">
                    <Label className="text-red-600">Teléfono de Emergencia</Label>
                    <Input 
-                      value={formData.emergency_phone} 
+                     value={formData.emergency_phone} 
                       onChange={e => setFormData({...formData, emergency_phone: e.target.value.replace(ONLY_NUMBERS_REGEX, '').slice(0, 9)})} 
                       placeholder="Nro de urgencias (9 dígitos)" className="border-red-200 focus-visible:ring-red-500" 
                    />
@@ -1007,9 +1002,9 @@ const AdminStudentManagement = () => {
             <DialogFooter className="pt-4 border-t">
               <Button type="button" variant="outline" onClick={closeModal} disabled={saving}>Cancelar</Button>
               <Button type="submit" className="bg-blue-600 text-white" disabled={saving}>{saving ? 'Guardando...' : (editingStudent ? 'Actualizar Ficha' : 'Registrar Cuenta y Perfil')}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
+           </DialogFooter>
+         </form>
+       </DialogContent>
       </Dialog>
 
       <Dialog open={isDeleteModalOpen} onOpenChange={(open) => { setIsDeleteModalOpen(open); if (!open) { setDeletingStudents([]); setDeleteConfirmText(''); } }}>
@@ -1024,7 +1019,7 @@ const AdminStudentManagement = () => {
                   <div className="flex items-center gap-2 text-red-800 font-bold mb-2"><ShieldAlert className="w-5 h-5" /> ALUMNOS PROTEGIDOS</div>
                   <p className="text-sm text-red-700 mb-2">No puedes eliminar a los siguientes alumnos porque <strong>tienen un Grado asignado</strong>. Edita sus fichas a "Dejar sin asignar temporalmente" primero para poder eliminarlos del sistema:</p>
                   <ul className="list-disc list-inside text-xs font-semibold text-red-900 max-h-32 overflow-y-auto pl-2">
-                    {blockedFromDeletion.map(s => <li key={s.id}>{s.first_name} {s.last_name}</li>)}
+                    {blockedFromDeletion.map(s => <li key={s.id}>{s.first_name} {s.last_name} ({s.grade?.name} - {s.grade?.level?.name})</li>)}
                   </ul>
                 </div>
               </div>
@@ -1038,10 +1033,10 @@ const AdminStudentManagement = () => {
                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-inner">
                     <Label className="text-red-600 font-bold mb-2 block text-center">Escribe "ELIMINAR" para confirmar:</Label>
                     <Input 
-                       placeholder="Escribe ELIMINAR aquí" 
-                       value={deleteConfirmText} 
+                      placeholder="Escribe ELIMINAR aquí" 
+                      value={deleteConfirmText} 
                        onChange={(e) => setDeleteConfirmText(e.target.value)} 
-                       className="border-red-200 focus-visible:ring-red-500 text-center font-bold tracking-widest"
+                      className="border-red-200 focus-visible:ring-red-500 text-center font-bold tracking-widest bg-white"
                     />
                  </div>
               </div>
@@ -1052,15 +1047,15 @@ const AdminStudentManagement = () => {
             )}
           </div>
           <DialogFooter>
-            <DialogClose asChild><Button variant="outline" type="button">Cancelar</Button></DialogClose>
+            <DialogClose asChild><Button variant="outline" type="button" disabled={saving}>Cancelar</Button></DialogClose>
             {safeToDelete.length > 0 && (
               <Button variant="destructive" onClick={handleBulkDelete} disabled={saving || deleteConfirmText !== 'ELIMINAR'}>
                 {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />} 
                 Confirmar Eliminación
-              </Button>
+             </Button>
             )}
-          </DialogFooter>
-        </DialogContent>
+         </DialogFooter>
+       </DialogContent>
       </Dialog>
 
       <Dialog open={isBulkStatusModalOpen} onOpenChange={setIsBulkStatusModalOpen}>
@@ -1069,7 +1064,7 @@ const AdminStudentManagement = () => {
             <div className="py-4 space-y-4">
           <Label>Selecciona el nuevo estado para los {selectedIds.length} alumnos:</Label>
               <Select value={bulkStatusValue} onValueChange={(val: any) => setBulkStatusValue(val)}>
-            <SelectTrigger><SelectValue/></SelectTrigger>
+           <SelectTrigger><SelectValue/></SelectTrigger>
             <SelectContent>
               <SelectItem value="active">Activos / Matriculados</SelectItem>
               <SelectItem value="inactive">Inactivos / Desmatriculados</SelectItem>
@@ -1086,20 +1081,20 @@ const AdminStudentManagement = () => {
     <Dialog open={isBulkGradeModalOpen} onOpenChange={setIsBulkGradeModalOpen}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-              <DialogTitle>Asignar Grado Masivamente</DialogTitle>
-              <DialogDescription>Los alumnos perderán su asignación de aula actual si cambian de grado.</DialogDescription>
-            </DialogHeader>
+             <DialogTitle>Asignar Grado Masivamente</DialogTitle>
+             <DialogDescription>Los alumnos perderán su asignación de aula actual si cambian de grado.</DialogDescription>
+           </DialogHeader>
             <div className="py-4 space-y-4">
-              <Label>Selecciona el grado para los {selectedIds.length} alumnos:</Label>
+             <Label>Selecciona el grado para los {selectedIds.length} alumnos:</Label>
               <Select value={bulkGradeValue} onValueChange={setBulkGradeValue}>
-            <SelectTrigger><SelectValue/></SelectTrigger>
+           <SelectTrigger><SelectValue/></SelectTrigger>
             <SelectContent>
               <SelectItem value="unassigned" className="text-orange-600 font-medium">Dejar sin asignar</SelectItem>
               {levels.map(level => (
                 <div key={`bulk-group-${level.id}`}>
                   <div className="px-2 py-1.5 text-xs font-bold text-gray-400 uppercase bg-gray-50">{level.name}</div>
                   {grades.filter(g => g.level_id === level.id).map(grade => (
-                    <SelectItem key={grade.id} value={grade.id} className="pl-6">{grade.name}</SelectItem>
+                    <SelectItem key={grade.id} value={grade.id} className="pl-6">{grade.name} ({level.name})</SelectItem>
                   ))}
                 </div>
               ))}
@@ -1117,7 +1112,7 @@ const AdminStudentManagement = () => {
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><BookOpen className="w-5 h-5 text-indigo-600" /> Cursos y Exoneraciones</DialogTitle>
-          <DialogDescription>{selectedStudent?.first_name} {selectedStudent?.last_name}</DialogDescription>
+         <DialogDescription>{selectedStudent?.first_name} {selectedStudent?.last_name}</DialogDescription>
         </DialogHeader>
         
         <div className="py-4">
@@ -1139,7 +1134,7 @@ const AdminStudentManagement = () => {
                   <p><strong>Aviso:</strong> El estudiante no tiene Aula Virtual asignada. Puedes ver su malla de cursos, pero para guardar exoneraciones necesitarás asignarle una Sección editando su ficha.</p>
                 </div>
               )}
-              <p className="text-sm text-gray-600 font-medium">Malla curricular correspondiente a {selectedStudent.grade?.name}.</p>
+              <p className="text-sm text-gray-600 font-medium">Malla curricular correspondiente a {selectedStudent.grade?.name} ({selectedStudent.grade?.level?.name}).</p>
               
               <div className="grid gap-2 max-h-[50vh] overflow-y-auto pr-2">
                 {studentMallaCourses.map(course => {

@@ -3,7 +3,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
-import { Search, UserCog, Pencil, Trash2, ShieldAlert, Plus, User, CheckSquare, Edit, IdCard, Calendar, BookOpen, School, Info, ArrowUpDown, RefreshCw, AlertTriangle, Loader2, UserMinus } from 'lucide-react';
+import { Search, UserCog, Pencil, Trash2, ShieldAlert, Plus, User, CheckSquare, Edit, IdCard, Calendar, BookOpen, School, Info, ArrowUpDown, RefreshCw, AlertTriangle, Loader2, UserMinus, XCircle, Unlink, GraduationCap } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -87,10 +87,11 @@ const AdminUserManagement: React.FC = () => {
   const [sectionCourses, setSectionCourses] = useState<any[]>([]);
   const [studentEnrollments, setStudentEnrollments] = useState<any[]>([]);
 
-  const [newUser, setNewUser] = useState({ 
+  const initialNewUserState = { 
     dni: '', first_name: '', last_name: '', email: '', password: '', phone: '', birth_date: '', 
     role: 'student' as UserRole, current_grade_id: '', current_section_id: '', guardian_name: '', emergency_phone: '' 
-  });
+  };
+  const [newUser, setNewUser] = useState(initialNewUserState);
   
   const [editUser, setEditUser] = useState<any>({ 
     id: '', dni: '', first_name: '', last_name: '', email: '', phone: '', birth_date: '', role: 'student', newPassword: '',
@@ -114,18 +115,21 @@ const AdminUserManagement: React.FC = () => {
       if (levelsRes.data) setLevels(levelsRes.data);
       if (gradesRes.data) setGrades(gradesRes.data);
 
-      const { data: secsData } = await supabase.from('sections').select('*, grade:academic_grades(name)').eq('academic_year', CURRENT_YEAR);
+      const { data: secsData } = await supabase.from('sections').select('*, grade:academic_grades(name, level:academic_levels(name))').eq('academic_year', CURRENT_YEAR);
       const activeSecs = secsData || [];
       setSections(activeSecs);
 
       if (activeSecs.length > 0) {
         const secIds = activeSecs.map(s => s.id);
         const [coursesRes, enrollsRes] = await Promise.all([
-          supabase.from('section_courses').select('*, section:sections(name, grade:academic_grades(name)), base:base_courses(name)').in('section_id', secIds),
+          supabase.from('section_courses').select('*, section:sections(name, grade:academic_grades(name, level:academic_levels(name))), base:base_courses(name)').in('section_id', secIds),
           supabase.from('student_sections').select('*').eq('academic_year', CURRENT_YEAR).in('section_id', secIds)
         ]);
         if (coursesRes.data) setSectionCourses(coursesRes.data);
         if (enrollsRes.data) setStudentEnrollments(enrollsRes.data);
+      } else {
+        setSectionCourses([]);
+        setStudentEnrollments([]);
       }
     } catch (e) {
       toast({ title: 'Error', description: 'Error al cargar los datos del sistema.', variant: 'destructive' });
@@ -141,8 +145,13 @@ const AdminUserManagement: React.FC = () => {
   };
 
   const openCreateModal = () => {
-    setNewUser({ dni: '', first_name: '', last_name: '', email: '', password: '', phone: '', birth_date: '', role: 'student', current_grade_id: '', current_section_id: '', guardian_name: '', emergency_phone: '' });
+    setNewUser({ ...initialNewUserState });
     setCreateModalOpen(true);
+  };
+
+  const closeCreateModal = () => {
+    setCreateModalOpen(false);
+    setNewUser({ ...initialNewUserState }); // Reset estricto
   };
 
   const handleCreateUser = async (e: React.FormEvent) => {
@@ -156,8 +165,12 @@ const AdminUserManagement: React.FC = () => {
 
     try {
       const { error } = await createUserByAdmin({
-        email: newUser.email.trim(), password: newUser.password, first_name: newUser.first_name.trim(), last_name: newUser.last_name.trim(),
-        role: newUser.role, phone: newUser.phone.trim() || undefined,
+        email: newUser.email.trim().toLowerCase(), 
+        password: newUser.password, 
+        first_name: newUser.first_name.trim(), 
+        last_name: newUser.last_name.trim(),
+        role: newUser.role, 
+        phone: newUser.phone.trim() || undefined,
         current_grade_id: newUser.role === 'student' && newUser.current_grade_id ? newUser.current_grade_id : undefined,
         guardian_name: newUser.role === 'student' ? newUser.guardian_name.trim() || undefined : undefined,
         emergency_phone: newUser.role === 'student' ? newUser.emergency_phone.trim() || undefined : undefined,
@@ -165,7 +178,7 @@ const AdminUserManagement: React.FC = () => {
 
       if (error) throw error;
 
-      const { data: newCreatedUser } = await supabase.from('profiles').select('id').eq('email', newUser.email.trim()).single();
+      const { data: newCreatedUser } = await supabase.from('profiles').select('id').eq('email', newUser.email.trim().toLowerCase()).single();
       
       if (newCreatedUser) {
         await supabase.from('profiles').update({ dni: newUser.dni.trim(), birth_date: newUser.birth_date || null }).eq('id', newCreatedUser.id);
@@ -175,7 +188,7 @@ const AdminUserManagement: React.FC = () => {
       }
 
       toast({ title: "Éxito", description: `Usuario registrado correctamente. Entrégale su contraseña.` });
-      setCreateModalOpen(false);
+      closeCreateModal();
       fetchAllData();
     } catch (error: any) {
       toast({ title: "Error", description: error.message || "No se pudo crear el usuario.", variant: "destructive" });
@@ -227,24 +240,6 @@ const AdminUserManagement: React.FC = () => {
     } finally { setCreating(false); }
   };
 
-  const handleDesvincular = async (role: string, userId: string) => {
-    if (!confirm('¿Estás seguro de quitar toda la carga académica de este usuario para el año actual?')) return;
-    setCreating(true);
-    try {
-      if (role === 'teacher') await supabase.from('section_courses').update({ teacher_id: null }).eq('teacher_id', userId);
-      if (role === 'tutor') await supabase.from('sections').update({ tutor_id: null }).eq('tutor_id', userId);
-      if (role === 'student') {
-        await supabase.from('profiles').update({ current_grade_id: null }).eq('id', userId);
-        await supabase.from('student_sections').delete().eq('student_id', userId).eq('academic_year', CURRENT_YEAR);
-        setEditUser((prev: any) => ({ ...prev, current_grade_id: '', current_section_id: '' }));
-      }
-      toast({ title: "Desvinculación exitosa", description: "Se ha retirado la carga académica." });
-      fetchAllData();
-    } catch (e) {
-      toast({ title: "Error", variant: "destructive" });
-    } finally { setCreating(false); }
-  };
-
   const handleToggleStatus = async (id: string, currentStatus: boolean) => {
     setSaving(id);
     try {
@@ -255,7 +250,56 @@ const AdminUserManagement: React.FC = () => {
     setSaving(null);
   };
 
-  // --- LÓGICA DE SEGURIDAD PARA ELIMINACIÓN ---
+  // =========================================================================
+  // FUNCIONES AVANZADAS DE LIMPIEZA DE CARGA (INDIVIDUAL Y MASIVA)
+  // =========================================================================
+  
+  const handleDesvincularCompleto = async (usersToClear: Profile[]) => {
+    if (!confirm(`¿Seguro que deseas remover toda la carga académica de ${usersToClear.length} usuario(s)?`)) return;
+    setBulkLoading(true);
+    setCreating(true); 
+    try {
+      for (const u of usersToClear) {
+        if (u.role === 'teacher') await supabase.from('section_courses').update({ teacher_id: null }).eq('teacher_id', u.id);
+        if (u.role === 'tutor') await supabase.from('sections').update({ tutor_id: null }).eq('tutor_id', u.id);
+        if (u.role === 'student') {
+          await supabase.from('profiles').update({ current_grade_id: null }).eq('id', u.id);
+          await supabase.from('student_sections').delete().eq('student_id', u.id).eq('academic_year', CURRENT_YEAR);
+          if (editUser.id === u.id) {
+            setEditUser((prev: any) => ({ ...prev, current_grade_id: '', current_section_id: '' }));
+          }
+        }
+      }
+      toast({ title: "Carga Liberada", description: "Dependencias removidas con éxito." });
+      await fetchAllData();
+    } catch (e) {
+      toast({ title: "Error", variant: "destructive" });
+    } finally { 
+      setBulkLoading(false); 
+      setCreating(false);
+    }
+  };
+
+  const handleRemoveSingleTeacherCourse = async (courseId: string) => {
+    setCreating(true); setBulkLoading(true);
+    try {
+      await supabase.from('section_courses').update({ teacher_id: null }).eq('id', courseId);
+      await fetchAllData();
+      toast({ title: "Curso desvinculado del profesor" });
+    } catch (e) { toast({ title: "Error", variant: "destructive" }); }
+    finally { setCreating(false); setBulkLoading(false); }
+  };
+
+  const handleRemoveSingleTutorship = async (sectionId: string) => {
+    setCreating(true); setBulkLoading(true);
+    try {
+      await supabase.from('sections').update({ tutor_id: null }).eq('id', sectionId);
+      await fetchAllData();
+      toast({ title: "Tutoría removida" });
+    } catch (e) { toast({ title: "Error", variant: "destructive" }); }
+    finally { setCreating(false); setBulkLoading(false); }
+  };
+
   const getBlockingReason = (p: Profile) => {
     if (p.role === 'student' && studentEnrollments.some(e => e.student_id === p.id)) return "Matrícula activa en aula";
     if (p.role === 'tutor' && sections.some(s => s.tutor_id === p.id)) return "Es tutor de un aula activa";
@@ -274,7 +318,7 @@ const AdminUserManagement: React.FC = () => {
         await supabase.rpc('delete_user_admin_v2', { target_user_id: user.id, target_email: user.email });
       }
       setSelectedIds([]);
-      fetchAllData();
+      await fetchAllData();
       setIsDeleteModalOpen(false);
       toast({ title: "Usuarios eliminados", description: `Se eliminaron ${safeToDelete.length} usuario(s) correctamente.` });
     } catch (error) { 
@@ -360,13 +404,13 @@ const AdminUserManagement: React.FC = () => {
     if (profile.role === 'student') {
       const myEnrollment = studentEnrollments.find(e => e.student_id === profile.id);
       const mySection = sections.find(s => s.id === myEnrollment?.section_id);
-      if (mySection) return <Badge variant="outline" className="bg-green-50 text-green-700">Aula {mySection.name} ({mySection.grade?.name})</Badge>;
+      if (mySection) return <Badge variant="outline" className="bg-green-50 text-green-700">Aula {mySection.name} ({mySection.grade?.name} - {mySection.grade?.level?.name})</Badge>;
       return <span className="text-red-500 text-xs flex items-center"><ShieldAlert className="w-3 h-3 mr-1"/> Sin matrícula {CURRENT_YEAR}</span>;
     }
     if (profile.role === 'tutor') {
       const myTutorships = sections.filter(s => s.tutor_id === profile.id);
       if (myTutorships.length === 0) return <span className="text-red-500 text-xs flex items-center"><ShieldAlert className="w-3 h-3 mr-1"/> Sin aulas a cargo</span>;
-      return (<div className="flex flex-col gap-1">{myTutorships.map(s => <span key={s.id} className="text-xs font-medium text-indigo-700 flex items-center gap-1"><School className="w-3 h-3"/> Aula {s.name} ({s.grade?.name})</span>)}</div>);
+      return (<div className="flex flex-col gap-1">{myTutorships.map(s => <span key={s.id} className="text-xs font-medium text-indigo-700 flex items-center gap-1"><School className="w-3 h-3"/> Aula {s.name} ({s.grade?.name} - {s.grade?.level?.name})</span>)}</div>);
     }
     if (profile.role === 'teacher') {
       const myCourses = sectionCourses.filter(c => c.teacher_id === profile.id);
@@ -379,7 +423,7 @@ const AdminUserManagement: React.FC = () => {
             <DialogHeader><DialogTitle className="text-blue-700 flex items-center gap-2"><BookOpen className="w-5 h-5"/> Carga Académica de {profile.first_name}</DialogTitle><DialogDescription>Listado de cursos asignados para el año {CURRENT_YEAR}.</DialogDescription></DialogHeader>
             <div className="max-h-[300px] overflow-y-auto space-y-2 mt-2">
               {myCourses.map(c => (
-                <div key={c.id} className="flex justify-between items-center p-2 bg-gray-50 border rounded-md text-sm"><span className="font-semibold text-gray-800">{c.base?.name}</span><Badge variant="outline" className="text-xs bg-white text-gray-600 border-gray-300">Aula {c.section?.name} ({c.section?.grade?.name})</Badge></div>
+                <div key={c.id} className="flex justify-between items-center p-2 bg-gray-50 border rounded-md text-sm"><span className="font-semibold text-gray-800">{c.base?.name}</span><Badge variant="outline" className="text-xs bg-white text-gray-600 border-gray-300">Aula {c.section?.name} ({c.section?.grade?.name} - {c.section?.grade?.level?.name})</Badge></div>
               ))}
             </div>
           </DialogContent>
@@ -387,6 +431,9 @@ const AdminUserManagement: React.FC = () => {
       );
     }
   };
+
+  const editingUserTutorships = editUser.role === 'tutor' ? sections.filter(s => s.tutor_id === editUser.id) : [];
+  const editingUserCourses = editUser.role === 'teacher' ? sectionCourses.filter(c => c.teacher_id === editUser.id) : [];
 
   return (
     <DashboardLayout>
@@ -401,22 +448,33 @@ const AdminUserManagement: React.FC = () => {
 
         <Card className="border-0 shadow-lg bg-white">
           <CardContent className="p-6">
+            
+            {/* BARRA DE ACCIONES MASIVAS */}
             {selectedIds.length > 0 && (
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg animate-in fade-in shadow-sm">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   <CheckSquare className="text-blue-600 w-5 h-5"/>
                   <span className="text-sm font-bold text-blue-800">{selectedIds.length} seleccionados</span>
-                  <div className="flex items-center gap-2 ml-4 border-l border-blue-300 pl-4">
+                  
+                  <div className="flex items-center gap-2 md:ml-4 md:border-l border-blue-300 md:pl-4">
                     <Select value={bulkRole || undefined} onValueChange={val => setBulkRole(val)}>
-                      <SelectTrigger className="w-48 bg-white h-9"><SelectValue placeholder="Cambiar rol a..." /></SelectTrigger>
+                      <SelectTrigger className="w-40 bg-white h-9"><SelectValue placeholder="Cambiar rol a..." /></SelectTrigger>
                       <SelectContent>
                         {ROLES.map((role) => <SelectItem key={role.value} value={role.value}>{role.label}</SelectItem>)}
                       </SelectContent>
                     </Select>
                     <Button className="bg-blue-600 h-9" size="sm" onClick={handleBulkRoleChange} disabled={!bulkRole || bulkLoading}>Aplicar Rol</Button>
                   </div>
+                  
+                  {/* BOTÓN NUEVO: LIMPIAR CARGA MASIVA */}
+                  <Button variant="outline" size="sm" className="h-9 border-orange-300 text-orange-700 hover:bg-orange-100" onClick={() => handleDesvincularCompleto(profiles.filter(p => selectedIds.includes(p.id)))} disabled={bulkLoading}>
+                    <Unlink className="w-4 h-4 mr-2" /> Limpiar Carga Masiva
+                  </Button>
                 </div>
-                <Button variant="destructive" size="sm" className="h-9" onClick={() => { setDeletingUsers(profiles.filter(p => selectedIds.includes(p.id))); setConfirmDeleteText(''); setIsDeleteModalOpen(true); }} disabled={bulkLoading}><Trash2 className="w-4 h-4 mr-2"/> Eliminar Registros</Button>
+
+                <Button variant="destructive" size="sm" className="h-9" onClick={() => { setDeletingUsers(profiles.filter(p => selectedIds.includes(p.id))); setConfirmDeleteText(''); setIsDeleteModalOpen(true); }} disabled={bulkLoading}>
+                   <Trash2 className="w-4 h-4 mr-2"/> Eliminar Registros
+                </Button>
               </div>
             )}
 
@@ -516,7 +574,7 @@ const AdminUserManagement: React.FC = () => {
         </Card>
 
         {/* MODAL CREAR */}
-        <Dialog open={createModalOpen} onOpenChange={(open) => { if (!open) setCreateModalOpen(false); }}>
+        <Dialog open={createModalOpen} onOpenChange={(open) => { if (!open) closeCreateModal(); }}>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader><DialogTitle className="text-xl flex items-center gap-2"><User className="h-5 w-5 text-blue-600" /> Registrar Nuevo Usuario y Cuenta</DialogTitle></DialogHeader>
             <form onSubmit={handleCreateUser} className="space-y-6 mt-2">
@@ -570,7 +628,7 @@ const AdminUserManagement: React.FC = () => {
                           {levels.map((level: any) => (
                             <div key={level.id}>
                               <div className="px-2 py-1.5 text-xs font-bold text-gray-400 uppercase bg-gray-50">{level.name}</div>
-                              {grades.filter((g: any) => g.level_id === level.id).map((grade: any) => <SelectItem key={grade.id} value={grade.id} className="pl-6">{grade.name}</SelectItem>)}
+                              {grades.filter((g: any) => g.level_id === level.id).map((grade: any) => <SelectItem key={grade.id} value={grade.id} className="pl-6">{grade.name} ({level.name})</SelectItem>)}
                             </div>
                           ))}
                         </SelectContent>
@@ -602,12 +660,17 @@ const AdminUserManagement: React.FC = () => {
                 </div>
               )}
 
-              <DialogFooter className="pt-4 border-t mt-6"><Button type="button" variant="outline" onClick={() => setCreateModalOpen(false)}>Cancelar</Button><Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white" disabled={creating}>{creating ? 'Registrando...' : 'Registrar Cuenta y Perfil'}</Button></DialogFooter>
+              <DialogFooter className="pt-4 border-t mt-6">
+                 <Button type="button" variant="outline" onClick={closeCreateModal}>Cancelar</Button>
+                 <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white" disabled={creating}>{creating ? 'Registrando...' : 'Registrar Cuenta y Perfil'}</Button>
+              </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
 
-        {/* MODAL EDITAR */}
+        {/* ========================================================================= */}
+        {/* MODAL EDITAR (CON VISUALIZACIÓN Y GESTIÓN DE CURSOS INDIVIDUALES Y AULAS) */}
+        {/* ========================================================================= */}
         <Dialog open={editModalOpen} onOpenChange={(open) => { if (!open) setEditModalOpen(false); }}>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader><DialogTitle className="text-xl flex items-center gap-2"><Pencil className="h-5 w-5 text-indigo-600" /> Editar Perfil y Accesos</DialogTitle></DialogHeader>
@@ -615,14 +678,14 @@ const AdminUserManagement: React.FC = () => {
               
               <div className="flex flex-col md:flex-row md:items-center justify-between p-3 bg-indigo-50 border border-indigo-200 rounded-md gap-4">
                 <div className="flex items-center">
-                  <Label className="text-indigo-800 font-bold ml-2">Rol del Usuario en el Sistema</Label>
+                  <Label className="text-indigo-800 font-bold ml-2">Rol del Usuario</Label>
                   <Select value={editUser.role} onValueChange={val => setEditUser({...editUser, role: val as UserRole})}>
                     <SelectTrigger className="w-[200px] bg-white ml-4"><SelectValue/></SelectTrigger>
                     <SelectContent>{ROLES.map((role) => <SelectItem key={role.value} value={role.value}>{role.label}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 {(editUser.role === 'teacher' || editUser.role === 'tutor' || editUser.role === 'student') && (
-                  <Button type="button" variant="outline" size="sm" className="border-red-200 text-red-600 hover:bg-red-50" onClick={() => handleDesvincular(editUser.role, editUser.id)} disabled={creating}>
+                  <Button type="button" variant="outline" size="sm" className="border-red-200 text-red-600 hover:bg-red-50" onClick={() => handleDesvincularCompleto([profiles.find(p=>p.id===editUser.id)!])} disabled={creating}>
                     <UserMinus className="w-4 h-4 mr-2"/> Desvincular Carga Académica
                   </Button>
                 )}
@@ -651,9 +714,75 @@ const AdminUserManagement: React.FC = () => {
                 </div>
               </div>
 
+              {/* SECCIÓN DINÁMICA: GESTIÓN DE CARGA SEGÚN ROL */}
+              {editUser.role === 'teacher' && (
+                <div className="space-y-4 bg-blue-50 p-4 rounded-lg border border-blue-100 mt-6">
+                  <div className="flex justify-between items-center mb-2">
+                     <h3 className="text-sm font-bold text-blue-800 flex items-center gap-2">
+                       <BookOpen className="h-4 w-4" /> Cursos Asignados Actualmente ({editingUserCourses.length})
+                     </h3>
+                     {editingUserCourses.length > 0 && (
+                       <Button type="button" size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50 h-8" onClick={() => handleDesvincularCompleto([profiles.find(p=>p.id===editUser.id)!])} disabled={creating}>
+                         <Unlink className="w-3 h-3 mr-2"/> Quitar Todos los Cursos
+                       </Button>
+                     )}
+                  </div>
+                  {editingUserCourses.length > 0 ? (
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
+                      {editingUserCourses.map(c => (
+                        <div key={c.id} className="flex items-center justify-between bg-white p-2.5 rounded border border-blue-200 text-sm shadow-sm">
+                          <span className="font-medium text-gray-800">{c.base?.name} - Aula "{c.section?.name}" <span className="text-xs text-gray-500 ml-1">({c.section?.grade?.name} - {c.section?.grade?.level?.name})</span></span>
+                          <Button type="button" size="sm" variant="ghost" className="text-red-500 hover:bg-red-50 hover:text-red-700 h-7 px-2" onClick={() => handleRemoveSingleTeacherCourse(c.id)} disabled={creating}>
+                            <XCircle className="w-4 h-4 mr-1"/> Quitar
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-blue-600/70 italic">No tiene cursos asignados en la malla actual. Ve a Aulas Virtuales para asignarle carga.</p>
+                  )}
+                </div>
+              )}
+
+              {editUser.role === 'tutor' && (
+                <div className="space-y-4 bg-indigo-50 p-4 rounded-lg border border-indigo-100 mt-6">
+                  <div className="flex justify-between items-center mb-2">
+                     <h3 className="text-sm font-bold text-indigo-800 flex items-center gap-2">
+                       <School className="h-4 w-4" /> Aulas a Cargo ({editingUserTutorships.length})
+                     </h3>
+                     {editingUserTutorships.length > 0 && (
+                       <Button type="button" size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50 h-8" onClick={() => handleDesvincularCompleto([profiles.find(p=>p.id===editUser.id)!])} disabled={creating}>
+                         <Unlink className="w-3 h-3 mr-2"/> Remover Todas las Tutorías
+                       </Button>
+                     )}
+                  </div>
+                  {editingUserTutorships.length > 0 ? (
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
+                      {editingUserTutorships.map(s => (
+                        <div key={s.id} className="flex items-center justify-between bg-white p-2.5 rounded border border-indigo-200 text-sm shadow-sm">
+                          <span className="font-medium text-gray-800">Aula "{s.name}" <span className="text-xs text-gray-500 ml-1">({s.grade?.name} - {s.grade?.level?.name})</span></span>
+                          <Button type="button" size="sm" variant="ghost" className="text-red-500 hover:bg-red-50 hover:text-red-700 h-7 px-2" onClick={() => handleRemoveSingleTutorship(s.id)} disabled={creating}>
+                            <XCircle className="w-4 h-4 mr-1"/> Quitar
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-indigo-600/70 italic">No es tutor de ninguna sección en el año actual. Ve a Aulas Virtuales para asignarlo.</p>
+                  )}
+                </div>
+              )}
+
               {editUser.role === 'student' && (
                 <div className="space-y-4 bg-gray-50 p-4 rounded-lg border border-gray-100 mt-6">
-                  <h3 className="text-sm font-bold text-gray-500 uppercase flex items-center gap-2 mb-2"><School className="h-4 w-4" /> Ubicación Académica ({CURRENT_YEAR})</h3>
+                  <div className="flex justify-between items-center mb-2">
+                     <h3 className="text-sm font-bold text-gray-500 uppercase flex items-center gap-2"><GraduationCap className="h-4 w-4" /> Ubicación Académica ({CURRENT_YEAR})</h3>
+                     {(editUser.current_grade_id || editUser.current_section_id) && (
+                       <Button type="button" size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50 h-8" onClick={() => handleDesvincularCompleto([profiles.find(p=>p.id===editUser.id)!])} disabled={creating}>
+                         <UserMinus className="w-3 h-3 mr-2"/> Desmatricular y Quitar Aula
+                       </Button>
+                     )}
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <Label className="text-gray-500 mb-1 block">Grado Matriculado</Label>
@@ -664,7 +793,7 @@ const AdminUserManagement: React.FC = () => {
                           {levels.map((level: any) => (
                             <div key={level.id}>
                               <div className="px-2 py-1.5 text-xs font-bold text-gray-400 uppercase bg-gray-50">{level.name}</div>
-                              {grades.filter((g: any) => g.level_id === level.id).map((grade: any) => <SelectItem key={grade.id} value={grade.id} className="pl-6">{grade.name}</SelectItem>)}
+                              {grades.filter((g: any) => g.level_id === level.id).map((grade: any) => <SelectItem key={grade.id} value={grade.id} className="pl-6">{grade.name} ({level.name})</SelectItem>)}
                             </div>
                           ))}
                         </SelectContent>
@@ -691,41 +820,107 @@ const AdminUserManagement: React.FC = () => {
           </DialogContent>
         </Dialog>
 
-        {/* MODAL ELIMINAR (SEGURIDAD) */}
-        <Dialog open={isDeleteModalOpen} onOpenChange={(open) => { setIsDeleteModalOpen(open); if (!open) setDeletingUsers([]); }}>
-          <DialogContent className="max-w-md">
-            <DialogHeader><DialogTitle className="text-red-600 flex items-center gap-2"><AlertTriangle className="w-5 h-5"/> Advertencia de Eliminación</DialogTitle></DialogHeader>
+        {/* ========================================================================= */}
+        {/* MODAL ELIMINAR Y LIMPIAR (SEGURIDAD AVANZADA VISIBLE)                     */}
+        {/* ========================================================================= */}
+        <Dialog open={isDeleteModalOpen} onOpenChange={(open) => { setIsDeleteModalOpen(open); if (!open) { setDeletingUsers([]); setConfirmDeleteText(''); } }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader><DialogTitle className="text-red-600 flex items-center gap-2"><AlertTriangle className="w-6 h-6"/> Advertencia de Eliminación y Dependencias</DialogTitle></DialogHeader>
             <div className="py-2 text-gray-700">
-              {blockedUsers.length > 0 ? (
-                <div className="mb-4">
-                  <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-md">
-                    <div className="flex items-center gap-2 text-red-800 font-bold mb-2"><ShieldAlert className="w-5 h-5" /> ACCIÓN BLOQUEADA</div>
-                    <p className="text-sm text-red-700 mb-2">No puedes eliminar a los siguientes usuarios porque <strong>aún tienen vínculos activos</strong>. Ve a editar su perfil y desvincúlalos primero:</p>
-                    <ul className="list-disc list-inside text-xs font-semibold text-red-900 max-h-32 overflow-y-auto pl-2">
-                      {blockedUsers.map(item => <li key={item.user.id}>{item.user.last_name}, {item.user.first_name} <span className="text-gray-500 font-normal ml-1">({item.reason})</span></li>)}
-                    </ul>
-                  </div>
-                  {safeToDelete.length > 0 && (<p className="mt-4 text-sm font-medium">Los otros {safeToDelete.length} usuario(s) sí pueden ser eliminados.</p>)}
-                </div>
-              ) : (<p className="mb-3">¿Estás absolutamente seguro que deseas eliminar permanentemente a {deletingUsers.length > 1 ? `estos ${deletingUsers.length} usuarios` : 'este usuario'} del sistema?</p>)}
               
-              {safeToDelete.length > 0 && blockedUsers.length === 0 && (
-                <div className="bg-gray-50 border border-gray-200 rounded-md p-3 max-h-32 overflow-y-auto mb-3">
-                  <ul className="list-disc list-inside text-sm font-medium text-gray-800 space-y-1">{safeToDelete.map(u => <li key={u.id}>{u.last_name}, {u.first_name} <span className="text-gray-500 font-normal">({ROLES.find(r => r.value === u.role)?.label})</span></li>)}</ul>
+              {/* ZONA DE BLOQUEOS Y LIMPIEZA */}
+              {blockedUsers.length > 0 && (
+                <div className="mb-6">
+                  <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-md shadow-sm">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-3 border-b border-red-200 pb-3 gap-2">
+                       <div className="flex items-center gap-2 text-red-800 font-bold"><ShieldAlert className="w-5 h-5" /> USUARIOS CON VÍNCULOS ACTIVOS</div>
+                       {blockedUsers.length > 1 && (
+                          <Button size="sm" variant="outline" className="h-8 text-xs border-red-300 text-red-700 hover:bg-red-100 bg-white shadow-sm w-full sm:w-auto" onClick={() => handleDesvincularCompleto(blockedUsers.map(b => b.user))} disabled={bulkLoading}>
+                             <Unlink className="w-4 h-4 mr-2"/> Forzar Desvinculación de Todos
+                          </Button>
+                       )}
+                    </div>
+                    <p className="text-sm text-red-700 mb-4 font-medium">No puedes eliminar a los siguientes usuarios porque <strong>aún tienen carga académica asignada</strong>. Utiliza los botones de abajo para liberar sus dependencias y habilitar su eliminación:</p>
+                    
+                    <div className="space-y-4 max-h-[350px] overflow-y-auto pr-2">
+                      {blockedUsers.map(item => {
+                         const role = item.user.role;
+                         const isTeacher = role === 'teacher';
+                         const isTutor = role === 'tutor';
+                         const isStudent = role === 'student';
+                         
+                         const myTutorships = isTutor ? sections.filter(s => s.tutor_id === item.user.id) : [];
+                         const myEnrollment = isStudent ? studentEnrollments.find(e => e.student_id === item.user.id) : null;
+                         const myStudentSection = myEnrollment ? sections.find(s => s.id === myEnrollment.section_id) : null;
+                         const myCourses = isTeacher ? sectionCourses.filter(c => c.teacher_id === item.user.id) : [];
+
+                         return (
+                            <div key={item.user.id} className="bg-white p-4 rounded-xl border border-red-200 shadow-sm flex flex-col gap-3">
+                               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                                  <div>
+                                     <div className="font-black text-gray-800 text-sm">{item.user.last_name}, {item.user.first_name}</div>
+                                     <div className="text-[11px] font-bold text-white bg-red-500 px-2 py-0.5 rounded-full mt-1 w-fit uppercase tracking-wider">{item.reason}</div>
+                                  </div>
+                                  <Button size="sm" variant="outline" className="h-8 text-xs text-red-600 border-red-200 hover:bg-red-50 shrink-0 shadow-sm" onClick={() => handleDesvincularCompleto([item.user])} disabled={bulkLoading}>
+                                     <Unlink className="w-3 h-3 mr-1.5"/> {isTeacher ? 'Quitar Toda la Carga' : isStudent ? 'Desmatricular de Todo' : 'Quitar Tutoría'}
+                                  </Button>
+                               </div>
+
+                               <div className="bg-gray-50 p-3 rounded-lg border border-dashed border-gray-300">
+                                  {isTutor && myTutorships.map(s => <div key={s.id} className="text-[11px] font-medium text-gray-600 flex items-center justify-between bg-white p-1.5 border rounded">
+                                    <span className="flex items-center gap-1"><School className="w-3 h-3 text-indigo-500"/> Tutor del Aula "{s.name}" ({s.grade?.name} - {s.grade?.level?.name})</span>
+                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-red-400 hover:text-red-700" onClick={() => handleRemoveSingleTutorship(s.id)} disabled={bulkLoading}><XCircle className="w-4 h-4"/></Button>
+                                  </div>)}
+                                  
+                                  {isStudent && myStudentSection && <div className="text-[11px] font-medium text-gray-600 flex items-center gap-1 bg-white p-1.5 border rounded"><GraduationCap className="w-3 h-3 text-green-500"/> Matriculado en el Aula "{myStudentSection.name}" ({myStudentSection.grade?.name} - {myStudentSection.grade?.level?.name})</div>}
+                                  
+                                  {isTeacher && myCourses.length > 0 && (
+                                     <div className="space-y-1.5">
+                                        <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Cursos que dicta actualmente:</div>
+                                        {myCourses.map(c => (
+                                           <div key={c.id} className="flex items-center justify-between text-[11px] font-medium text-gray-600 bg-white border border-gray-200 p-1.5 rounded">
+                                              <span className="truncate flex-1 flex items-center gap-1" title={`${c.base?.name} - Aula ${c.section?.name}`}><BookOpen className="w-3 h-3 text-blue-500"/> {c.base?.name} (Aula {c.section?.name} - {c.section?.grade?.level?.name})</span>
+                                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-red-400 hover:text-red-700" onClick={() => handleRemoveSingleTeacherCourse(c.id)} disabled={bulkLoading}>
+                                                <XCircle className="w-4 h-4"/>
+                                              </Button>
+                                           </div>
+                                        ))}
+                                     </div>
+                                  )}
+                               </div>
+                            </div>
+                         );
+                      })}
+                    </div>
+                  </div>
                 </div>
               )}
               
+              {/* ZONA SEGURA PARA ELIMINAR */}
               {safeToDelete.length > 0 && (
-                <>
-                  <p className="text-sm text-gray-500 mb-2 mt-4">Esta acción no se puede deshacer. Escribe <strong className="text-red-600">ELIMINAR</strong> para confirmar:</p>
-                  <Input value={confirmDeleteText} onChange={(e) => setConfirmDeleteText(e.target.value.toUpperCase())} placeholder="Escribe ELIMINAR" className="border-red-300 focus-visible:ring-red-500" />
-                </>
+                 <div className="animate-in fade-in zoom-in-95 duration-300">
+                    <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2 border-b pb-2"><CheckSquare className="w-4 h-4 text-green-600"/> Seguros para eliminar ({safeToDelete.length})</h3>
+                    <div className="bg-white border border-gray-200 shadow-sm rounded-lg p-3 max-h-40 overflow-y-auto mb-4">
+                      <ul className="divide-y divide-gray-50">
+                         {safeToDelete.map(u => <li key={u.id} className="py-2 text-sm font-medium text-gray-800 flex justify-between items-center">{u.last_name}, {u.first_name} <RoleBadge role={u.role}/></li>)}
+                      </ul>
+                    </div>
+                    
+                    <div className="bg-amber-50/80 p-4 rounded-lg border border-amber-200 shadow-inner">
+                       <p className="text-sm text-amber-900 mb-3 font-medium">Esta acción no se puede deshacer y borrará permanentemente las credenciales de ingreso al sistema.</p>
+                       <Label className="text-xs font-bold text-amber-800 uppercase tracking-wider mb-2 block">Escribe <strong className="text-red-600">ELIMINAR</strong> para confirmar el borrado:</Label>
+                       <Input value={confirmDeleteText} onChange={(e) => setConfirmDeleteText(e.target.value.toUpperCase())} placeholder="Escribe ELIMINAR" className="border-red-300 focus-visible:ring-red-500 text-center font-black tracking-widest bg-white h-12 text-lg shadow-sm" />
+                    </div>
+                 </div>
               )}
             </div>
-            <DialogFooter>
+            <DialogFooter className="mt-4 border-t pt-4">
               <DialogClose asChild><Button variant="outline" type="button" disabled={bulkLoading}>Cancelar</Button></DialogClose>
               {safeToDelete.length > 0 && (
-                <Button variant="destructive" onClick={confirmBulkDelete} disabled={bulkLoading || confirmDeleteText !== 'ELIMINAR'}>{bulkLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}{blockedUsers.length > 0 ? `Eliminar solo los ${safeToDelete.length} permitidos` : 'Sí, Eliminar Definitivamente'}</Button>
+                <Button variant="destructive" onClick={confirmBulkDelete} disabled={bulkLoading || confirmDeleteText !== 'ELIMINAR'} className="shadow-md">
+                   {bulkLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                   {blockedUsers.length > 0 ? `Eliminar solo los ${safeToDelete.length} seguros` : 'Eliminar Definitivamente'}
+                </Button>
               )}
             </DialogFooter>
           </DialogContent>

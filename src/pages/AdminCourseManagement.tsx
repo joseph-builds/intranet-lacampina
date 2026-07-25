@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -9,13 +9,23 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
-import { BookOpen, Edit, Trash2, Search, CheckCircle2, XCircle, Download, UploadCloud, FileSpreadsheet, Loader2, Info, AlertTriangle, CheckSquare, ShieldAlert, ArrowUpDown } from 'lucide-react';
+import { BookOpen, Edit, Trash2, Search, CheckCircle2, XCircle, Download, UploadCloud, FileSpreadsheet, Loader2, Info, AlertTriangle, CheckSquare, ShieldAlert, ArrowUpDown, Unlink, Layers } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface CourseGroup { level: string; grades: string[]; }
-interface Course { id: string; name: string; code: string; description?: string; course_type?: string; is_active: boolean; grades_taught?: CourseGroup[]; }
+interface RawBaseCourse { id: string; level: string; grade: string; }
+interface Course { 
+  id: string; 
+  name: string; 
+  code: string; 
+  description?: string; 
+  course_type?: string; 
+  is_active: boolean; 
+  grades_taught?: CourseGroup[];
+  raw_base_courses?: RawBaseCourse[]; 
+}
 interface CourseFormData { name: string; code: string; description: string; course_type: string; }
 
 const normalizeStr = (str: string) => str ? str.trim().toLowerCase().replace(/\s+/g, ' ') : '';
@@ -37,8 +47,13 @@ const AdminCourseManagement = () => {
   const [isBulkTypeModalOpen, setIsBulkTypeModalOpen] = useState(false);
   const [isBulkStatusModalOpen, setIsBulkStatusModalOpen] = useState(false);
   
+  // NUEVO ESTADO: Modal de Gestión de Grados
+  const [isGradeManageModalOpen, setIsGradeManageModalOpen] = useState(false);
+  const [selectedCourseForGrades, setSelectedCourseForGrades] = useState<Course | null>(null);
+
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [deletingCourses, setDeletingCourses] = useState<Course[]>([]); 
+  const [deleteConfirmText, setDeleteConfirmText] = useState(''); // Confirmación escrita
   
   const [formData, setFormData] = useState<CourseFormData>({ name: '', code: '', description: '', course_type: '' });
   
@@ -76,25 +91,46 @@ const AdminCourseManagement = () => {
   const fetchCourses = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase.from('courses').select(`id, name, code, description, is_active, course_type, base_courses (grade:academic_grades (name, level:academic_levels (name)))`).order('name', { ascending: true });
+      // Se agregó id a base_courses para poder identificarlos y borrarlos individualmente
+      const { data, error } = await supabase.from('courses').select(`
+        id, name, code, description, is_active, course_type, 
+        base_courses (id, grade_id, grade:academic_grades (name, level:academic_levels (name)))
+      `).order('name', { ascending: true });
+
       if (error) throw error;
       
       const formattedCourses = (data || []).map((c: any) => {
         const grouped: Record<string, Set<string>> = {};
+        const raw_base_courses: RawBaseCourse[] = [];
+
         if (c.base_courses) {
           c.base_courses.forEach((bc: any) => {
             if (bc.grade && bc.grade.level?.name && bc.grade.name) {
               const levelName = bc.grade.level.name;
               if (!grouped[levelName]) grouped[levelName] = new Set();
               grouped[levelName].add(bc.grade.name);
+              
+              raw_base_courses.push({
+                id: bc.id,
+                level: levelName,
+                grade: bc.grade.name
+              });
             }
           });
         }
+        
         const grades_taught: CourseGroup[] = Object.keys(grouped).map(lvl => ({ level: lvl, grades: Array.from(grouped[lvl]).sort() }));
-        return { ...c, grades_taught };
+        return { ...c, grades_taught, raw_base_courses };
       });
 
       setCourses(formattedCourses as Course[]);
+      
+      // Si el modal de gestión está abierto, actualizamos el curso seleccionado
+      if (selectedCourseForGrades) {
+        const updatedCourse = formattedCourses.find(fc => fc.id === selectedCourseForGrades.id);
+        if (updatedCourse) setSelectedCourseForGrades(updatedCourse as Course);
+      }
+
       setSelectedIds([]); 
     } catch (error: any) {
       toast({ title: "Error al cargar", description: error?.message || "Fallo al cargar cursos.", variant: "destructive" });
@@ -112,6 +148,52 @@ const AdminCourseManagement = () => {
     setFormData({ name: course.name, code: course.code, description: course.description || '', course_type: course.course_type || '' });
     setIsEditModalOpen(true);
   };
+
+  const openGradeManageModal = (course: Course) => {
+    setSelectedCourseForGrades(course);
+    setIsGradeManageModalOpen(true);
+  };
+
+  // --- NUEVAS FUNCIONES DE GESTIÓN DE MALLA ---
+  const handleRemoveIndividualGrade = async (baseCourseId: string) => {
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('base_courses').delete().eq('id', baseCourseId);
+      if (error) throw error;
+      toast({ title: "Curso desvinculado", description: "Se quitó el curso de este grado." });
+      await fetchCourses();
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally { setSaving(false); }
+  };
+
+  const handleClearAllGradesForCourse = async (courseId: string) => {
+    if (!confirm('¿Estás seguro que deseas remover este curso de TODOS los grados en los que se enseña?')) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('base_courses').delete().eq('course_id', courseId);
+      if (error) throw error;
+      toast({ title: "Malla limpiada", description: "El curso ya no pertenece a ningún grado." });
+      await fetchCourses();
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally { setSaving(false); }
+  };
+
+  const handleBulkClearGrades = async () => {
+    if (!confirm(`¿Estás seguro que deseas desvincular los ${selectedIds.length} cursos seleccionados de todas sus mallas curriculares?`)) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('base_courses').delete().in('course_id', selectedIds);
+      if (error) throw error;
+      toast({ title: "Cursos desvinculados", description: "Los cursos fueron removidos de todas las mallas." });
+      await fetchCourses();
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally { setSaving(false); }
+  };
+
+  // ---------------------------------------------
 
   const filteredCourses = useMemo(() => {
     return courses.filter(course => {
@@ -174,20 +256,26 @@ const AdminCourseManagement = () => {
 
   const isAllPageSelected = paginatedCourses.length > 0 && paginatedCourses.every(c => selectedIds.includes(c.id));
 
+  // --- SEGURIDAD: VERIFICAR BLOQUEOS ---
   const blockedFromDeletion = useMemo(() => deletingCourses.filter(c => c.grades_taught && c.grades_taught.length > 0), [deletingCourses]);
   const safeToDelete = useMemo(() => deletingCourses.filter(c => !c.grades_taught || c.grades_taught.length === 0), [deletingCourses]);
 
   const handleBulkDelete = async () => {
     if (safeToDelete.length === 0) return;
+    if (deleteConfirmText !== 'ELIMINAR') return; // Validación de seguridad
+
     setSaving(true);
     try {
       const idsToDelete = safeToDelete.map(c => c.id);
       const { data, error } = await supabase.from('courses').delete().in('id', idsToDelete).select();
+      
       if (error) throw error;
       if (!data || data.length === 0) throw new Error("Bloqueado por permisos (RLS). No se pudo eliminar.");
+      
       toast({ title: "Cursos eliminados", description: `Se eliminaron ${data.length} curso(s) correctamente.` });
       setIsDeleteModalOpen(false);
       setDeletingCourses([]);
+      setDeleteConfirmText('');
       fetchCourses();
     } catch (error: any) {
       toast({ title: "Error al eliminar", description: error?.message, variant: "destructive" });
@@ -339,7 +427,7 @@ const AdminCourseManagement = () => {
       try {
         const text = event.target?.result as string;
         const rows = text.split(/\r?\n/).filter(row => row.trim() !== '');
-        if (rows.length <= 1) throw new Error("El archivo está vacío.");
+        if (rows.length <= 1) throw new Error("El archivo está vacío o solo contiene la cabecera.");
         const toInsert = [];
         const duplicates = [];
         const separator = rows[0].includes(';') ? ';' : ',';
@@ -449,7 +537,8 @@ const AdminCourseManagement = () => {
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" className="bg-white border-blue-200 hover:bg-blue-50" onClick={() => setIsBulkStatusModalOpen(true)}>Cambiar Estado</Button>
                 <Button variant="outline" size="sm" className="bg-white border-blue-200 hover:bg-blue-50" onClick={() => setIsBulkTypeModalOpen(true)}>Asignar Tipo</Button>
-                <Button variant="destructive" size="sm" onClick={() => { setDeletingCourses(courses.filter(c => selectedIds.includes(c.id))); setIsDeleteModalOpen(true); }}>Eliminar Seleccionados</Button>
+                <Button variant="outline" size="sm" className="bg-white border-blue-200 hover:text-orange-600 hover:bg-orange-50" onClick={handleBulkClearGrades}><Unlink className="w-4 h-4 mr-2" /> Desvincular Malla</Button>
+                <Button variant="destructive" size="sm" onClick={() => { setDeletingCourses(courses.filter(c => selectedIds.includes(c.id))); setDeleteConfirmText(''); setIsDeleteModalOpen(true); }}>Eliminar Seleccionados</Button>
               </div>
             </div>
           )}
@@ -467,7 +556,7 @@ const AdminCourseManagement = () => {
                     <TableHead className="cursor-pointer hover:bg-gray-100 transition-colors group select-none" onClick={() => requestSort('course_type')}><div className="flex items-center gap-1">Etiqueta / Tipo <ArrowUpDown className={`w-3 h-3 ${sortConfig?.key === 'course_type' ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} /></div></TableHead>
                     <TableHead>Grados Asignados</TableHead>
                     <TableHead className="w-28 text-center">Estado</TableHead>
-                    <TableHead className="w-24 text-right">Acciones</TableHead>
+                    <TableHead className="w-32 text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -486,7 +575,7 @@ const AdminCourseManagement = () => {
                                 {group.grades.map(g => (<Badge key={g} variant="secondary" className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-[10px] py-0">{g}</Badge>))}
                               </div>
                             ))
-                          ) : (<span className="text-xs text-gray-400 italic">No asignado</span>)}
+                          ) : (<span className="text-xs text-gray-400 italic">No asignado en malla</span>)}
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
@@ -497,8 +586,9 @@ const AdminCourseManagement = () => {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => openEditModal(course)} disabled={quickEditMode} className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 h-8 w-8 p-0"><Edit className="w-4 h-4" /></Button>
-                          <Button variant="ghost" size="sm" onClick={() => { setDeletingCourses([course]); setIsDeleteModalOpen(true); }} disabled={quickEditMode} className="text-red-600 hover:text-red-800 hover:bg-red-50 h-8 w-8 p-0"><Trash2 className="w-4 h-4" /></Button>
+                          <Button variant="ghost" size="sm" onClick={() => openGradeManageModal(course)} disabled={quickEditMode} className="text-amber-600 hover:text-amber-800 hover:bg-amber-50 h-8 w-8 p-0" title="Gestionar Malla Curricular"><Layers className="w-4 h-4" /></Button>
+                          <Button variant="ghost" size="sm" onClick={() => openEditModal(course)} disabled={quickEditMode} className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 h-8 w-8 p-0" title="Editar"><Edit className="w-4 h-4" /></Button>
+                          <Button variant="ghost" size="sm" onClick={() => { setDeletingCourses([course]); setDeleteConfirmText(''); setIsDeleteModalOpen(true); }} disabled={quickEditMode} className="text-red-600 hover:text-red-800 hover:bg-red-50 h-8 w-8 p-0" title="Eliminar"><Trash2 className="w-4 h-4" /></Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -603,7 +693,44 @@ const AdminCourseManagement = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isDeleteModalOpen} onOpenChange={(open) => { setIsDeleteModalOpen(open); if (!open) setDeletingCourses([]); }}>
+      {/* NUEVO MODAL: GESTIÓN DE LA MALLA CURRICULAR */}
+      <Dialog open={isGradeManageModalOpen} onOpenChange={(open) => { setIsGradeManageModalOpen(open); if (!open) setSelectedCourseForGrades(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700"><Layers className="w-5 h-5"/> Gestión de Malla Curricular</DialogTitle>
+            <DialogDescription>Grados en los que se enseña <strong>{selectedCourseForGrades?.name}</strong>.</DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            {!selectedCourseForGrades?.raw_base_courses || selectedCourseForGrades.raw_base_courses.length === 0 ? (
+              <div className="text-center py-6 text-gray-500 text-sm">Este curso no está asignado a la malla de ningún grado.</div>
+            ) : (
+              <div className="space-y-4">
+                <div className="max-h-60 overflow-y-auto border rounded-md divide-y">
+                  {selectedCourseForGrades.raw_base_courses.map(bc => (
+                    <div key={bc.id} className="flex justify-between items-center p-3 hover:bg-gray-50">
+                      <div>
+                        <span className="font-semibold text-gray-800 text-sm block">{bc.grade}</span>
+                        <span className="text-xs text-gray-500 uppercase tracking-wider">{bc.level}</span>
+                      </div>
+                      <Button variant="ghost" size="sm" onClick={() => handleRemoveIndividualGrade(bc.id)} disabled={saving} className="text-red-500 hover:text-red-700 hover:bg-red-50 h-8" title="Quitar de este grado">
+                        <Trash2 className="w-4 h-4 mr-1"/> Quitar
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                <Button variant="outline" className="w-full text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleClearAllGradesForCourse(selectedCourseForGrades.id)} disabled={saving}>
+                  <Unlink className="w-4 h-4 mr-2"/> Remover de TODOS los grados
+                </Button>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsGradeManageModalOpen(false)}>Cerrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDeleteModalOpen} onOpenChange={(open) => { setIsDeleteModalOpen(open); if (!open) { setDeletingCourses([]); setDeleteConfirmText(''); }}}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle className="text-red-600 flex items-center gap-2"><AlertTriangle className="w-5 h-5"/> Advertencia de Eliminación</DialogTitle></DialogHeader>
           <div className="py-2 text-gray-700">
@@ -611,7 +738,7 @@ const AdminCourseManagement = () => {
               <div className="mb-4">
                 <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-md">
                   <div className="flex items-center gap-2 text-red-800 font-bold mb-2"><ShieldAlert className="w-5 h-5" /> ACCIÓN BLOQUEADA</div>
-                  <p className="text-sm text-red-700 mb-2">No puedes eliminar los siguientes cursos porque <strong>están asignados a una malla curricular</strong>. Quítalos de la malla (o desactívalos) primero:</p>
+                  <p className="text-sm text-red-700 mb-2">No puedes eliminar los siguientes cursos porque <strong>están asignados a una malla curricular</strong>. Quítalos de la malla primero:</p>
                   <ul className="list-disc list-inside text-xs font-semibold text-red-900 max-h-32 overflow-y-auto pl-2">{blockedFromDeletion.map(c => <li key={c.id}>{c.name} ({c.code})</li>)}</ul>
                 </div>
                 {safeToDelete.length > 0 && (<p className="mt-4 text-sm font-medium">Los otros {safeToDelete.length} curso(s) sí pueden ser eliminados.</p>)}
@@ -624,12 +751,17 @@ const AdminCourseManagement = () => {
               </div>
             )}
             
-            {safeToDelete.length > 0 && (<p className="text-sm text-gray-500">Esta acción no se puede deshacer y borrará permanentemente los datos.</p>)}
+            {safeToDelete.length > 0 && (
+              <>
+                <p className="text-sm text-gray-500 mb-2 mt-4">Esta acción no se puede deshacer. Escribe <strong className="text-red-600">ELIMINAR</strong> para confirmar:</p>
+                <Input value={deleteConfirmText} onChange={(e) => setDeleteConfirmText(e.target.value.toUpperCase())} placeholder="Escribe ELIMINAR" className="border-red-300 focus-visible:ring-red-500" />
+              </>
+            )}
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" type="button" disabled={saving}>Cancelar</Button></DialogClose>
             {safeToDelete.length > 0 && (
-              <Button variant="destructive" onClick={handleBulkDelete} disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}{blockedFromDeletion.length > 0 ? `Eliminar solo los ${safeToDelete.length} permitidos` : 'Sí, Eliminar Definitivamente'}</Button>
+              <Button variant="destructive" onClick={handleBulkDelete} disabled={saving || deleteConfirmText !== 'ELIMINAR'}>{saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}{blockedFromDeletion.length > 0 ? `Eliminar solo los ${safeToDelete.length} permitidos` : 'Sí, Eliminar Definitivamente'}</Button>
             )}
           </DialogFooter>
         </DialogContent>

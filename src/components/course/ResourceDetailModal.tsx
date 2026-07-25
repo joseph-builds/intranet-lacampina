@@ -180,27 +180,18 @@ export function ResourceDetailModal({
   const handleDownload = async () => {
     try {
       if (resource.file_path) {
-        // Use edge function for secure downloads
-        const { data, error } = await supabase.functions.invoke(
-          "download-file",
-          {
-            body: {
-              bucket: "course-documents",
-              filePath: resource.file_path,
-              fileName: resource.title,
-            },
-          },
-        );
+        const bucket = resource.resource_type === "video" ? "course-videos" : "course-documents";
+        
+        // Usamos createSignedUrl porque los buckets de cursos son privados
+        const { data, error } = await supabase.storage
+          .from(bucket)
+          .createSignedUrl(resource.file_path, 3600); // URL válida por 1 hora
 
         if (error) throw error;
-
-        // Download the file using the signed URL
-        const link = document.createElement("a");
-        link.href = data.signedUrl;
-        link.download = data.fileName || resource.title;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        
+        if (data?.signedUrl) {
+          window.open(data.signedUrl, "_blank");
+        }
       } else if (resource.resource_url) {
         // For external URLs, open in new tab
         window.open(resource.resource_url, "_blank");
@@ -216,23 +207,16 @@ export function ResourceDetailModal({
     fileName: string,
   ) => {
     try {
-      const { data, error } = await supabase.functions.invoke("download-file", {
-        body: {
-          bucket: "course-documents",
-          filePath: filePath,
-          fileName: fileName,
-        },
-      });
+      const { data, error } = await supabase.storage
+        .from("course-documents")
+        .createSignedUrl(filePath, 3600);
 
       if (error) throw error;
 
-      const link = document.createElement("a");
-      link.href = data.signedUrl;
-      link.download = data.fileName || fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
+      if (data?.signedUrl) {
+        window.open(data.signedUrl, "_blank");
+      }
+      
       toast.success("Descarga iniciada");
     } catch (error) {
       console.error("Error downloading file:", error);

@@ -23,7 +23,7 @@ interface Course {
   id: string;
   name: string;
   code: string;
-  schedule?: Array<{
+  schedule?: string | Array<{
     day: string;
     start_time: string;
     end_time: string;
@@ -231,6 +231,10 @@ export function StudentCourses() {
   const totalPages = Math.ceil(totalCourses / ITEMS_PER_PAGE);
 
     const formatSchedule = (course: Course) => {
+    if (typeof course.schedule === 'string' && course.schedule.trim() !== '') {
+      return course.schedule;
+    }
+
     if (!Array.isArray(course.schedule) || course.schedule.length === 0) {
       return "Horario no definido";
     }

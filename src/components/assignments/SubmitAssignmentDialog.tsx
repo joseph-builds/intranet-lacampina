@@ -96,12 +96,17 @@ export const SubmitAssignmentDialog = ({
             fileSize,
             mimeType,
             // also provide the files array format for newer versions of the edge function
-            files: fileUrl ? [{
+            files: (fileUrl || filePath) ? [{
               fileUrl,
               filePath,
               fileName,
               fileSize,
               mimeType,
+              file_url: fileUrl,
+              file_path: filePath,
+              file_name: fileName,
+              file_size: fileSize,
+              mime_type: mimeType,
             }] : [],
           },
         },

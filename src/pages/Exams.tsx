@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { extractAnswersMap, fetchTeacherCoursesWithClassrooms } from "@/lib/utils";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -125,28 +126,10 @@ const Exams = () => {
     if (!profile?.id) return;
     setLoadingCourses(true);
     try {
-      const { data: directCourses } = await supabase
-        .from("courses")
-        .select("id, name")
-        .eq("teacher_principal_id", profile.id)
-        .eq("is_active", true);
-
-      const { data: sectionCourses } = await supabase
-        .from("section_courses")
-        .select(`base_course:base_courses!inner(course_id, courses!inner(id, name))`)
-        .eq("teacher_id", profile.id);
-
-      let allCourses = directCourses || [];
-      if (sectionCourses) {
-        const additional = sectionCourses
-          .map((sc: any) => sc.base_course?.courses)
-          .filter(Boolean);
-        const newCourses = additional.filter(ac => !allCourses.find(c => c.id === ac.id));
-        allCourses = [...allCourses, ...newCourses];
-      }
+      const allCourses = await fetchTeacherCoursesWithClassrooms(supabase, profile.id);
       setTeacherCourses(allCourses);
     } catch(err) {
-      console.error(err);
+      console.error("Error fetching teacher courses:", err);
     } finally {
       setLoadingCourses(false);
     }
@@ -444,13 +427,13 @@ const Exams = () => {
                                 </p>
                               </div>
                               {(() => {
-                                const answers = exam.submission.answers || {};
+                                const answers = extractAnswersMap(exam.submission.answers);
                                 const hasUngradedQuestions = Object.values(
                                   answers,
                                 ).some(
                                   (answer: any) =>
-                                    answer.requires_grading === true &&
-                                    answer.points_earned === undefined,
+                                    answer?.requires_grading === true &&
+                                    answer?.points_earned === undefined,
                                 );
 
                                 return hasUngradedQuestions ? (

@@ -236,6 +236,11 @@ const AssignmentDetail = () => {
             .getPublicUrl(newFilePath);
 
           uploadedFiles.push({
+            fileUrl: publicUrl,
+            filePath: newFilePath,
+            fileName: file.name,
+            fileSize: file.size,
+            mimeType: file.type,
             file_url: publicUrl,
             file_path: newFilePath,
             file_name: file.name,
@@ -259,7 +264,7 @@ const AssignmentDetail = () => {
 
         // Combine existing files (not deleted) with new uploaded files
         const remainingExistingFiles = existingFiles.filter(
-          (file) => !filesToDelete.includes(file.file_path),
+          (file: any) => !filesToDelete.includes(file.file_path || file.filePath),
         );
         const updatedFiles = [...remainingExistingFiles, ...uploadedFiles];
 

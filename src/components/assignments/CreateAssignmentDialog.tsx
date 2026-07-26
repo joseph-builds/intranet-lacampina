@@ -31,6 +31,7 @@ import { es } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { fetchTeacherCoursesWithClassrooms } from "@/lib/utils";
 
 interface CreateAssignmentDialogProps {
   open: boolean;
@@ -103,44 +104,7 @@ export function CreateAssignmentDialog({
 
     try {
       setLoadingCourses(true);
-
-      // Fetch courses where the user is the teacher
-      const { data: directCourses, error: dcError } = await supabase
-        .from("courses")
-        .select("id, name, code")
-        .eq("teacher_principal_id", profile.id)
-        .eq("is_active", true);
-
-      if (dcError) throw dcError;
-
-      let allCourses = directCourses || [];
-
-      // Fetch courses via section_courses
-      const { data: sectionCourses, error: scError } = await supabase
-        .from("section_courses")
-        .select(`
-          base_course:base_courses!inner(
-            course_id,
-            courses!inner(id, name, code)
-          )
-        `)
-        .eq("teacher_id", profile.id);
-        
-      if (!scError && sectionCourses) {
-        const additionalCourses = sectionCourses
-          .map((sc: any) => sc.base_course?.courses)
-          .filter(Boolean);
-          
-        // Merge and avoid duplicates
-        const courseMap = new Map();
-        [...allCourses, ...additionalCourses].forEach(c => {
-          if (c && !courseMap.has(c.id)) courseMap.set(c.id, c);
-        });
-        allCourses = Array.from(courseMap.values());
-      }
-      
-      allCourses.sort((a, b) => a.name.localeCompare(b.name));
-
+      const allCourses = await fetchTeacherCoursesWithClassrooms(supabase, profile.id);
       setCourses(allCourses);
 
       // Auto-select if only one course

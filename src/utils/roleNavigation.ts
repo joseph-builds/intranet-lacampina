@@ -136,6 +136,12 @@ export const adminNavigationItems: NavItem[] = [
     url: '/admin/classrooms',
     icon: School,
     roles: ['admin']
+  },
+  {
+    title: 'Temarios de Cursos',
+    url: '/admin/temarios',
+    icon: FileText,
+    roles: ['admin']
   }
 ];
 

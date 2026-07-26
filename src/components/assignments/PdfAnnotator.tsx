@@ -57,7 +57,8 @@ const PdfAnnotator = forwardRef<PdfAnnotatorRef, Props>(({
   }));
 
   useEffect(() => {
-    (pdfjsLib as any).GlobalWorkerOptions.workerSrc = pdfWorker;
+    const version = (pdfjsLib as any).version || "5.4.449";
+    (pdfjsLib as any).GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${version}/legacy/build/pdf.worker.min.mjs`;
   }, []);
 
   // Cargar PDF

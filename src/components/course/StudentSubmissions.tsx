@@ -158,6 +158,16 @@ export function StudentSubmissions({
             fileSize,
             mimeType,
             courseId,
+            files: filePath ? [{
+              filePath,
+              fileName,
+              fileSize,
+              mimeType,
+              file_path: filePath,
+              file_name: fileName,
+              file_size: fileSize,
+              mime_type: mimeType,
+            }] : [],
           },
         },
       );

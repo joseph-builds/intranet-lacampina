@@ -197,8 +197,70 @@ const AssignmentReview = () => {
   };
 
   const formatKB = (bytes?: number | null) => {
-    if (!bytes || Number.isNaN(bytes)) return '0.00 KB';
-    return `${(bytes / 1024).toFixed(2)} KB`;
+    if (bytes === undefined || bytes === null || Number.isNaN(Number(bytes)) || Number(bytes) <= 0) {
+      return 'Tamaño no disponible';
+    }
+    const numBytes = Number(bytes);
+    const kb = numBytes / 1024;
+    if (kb < 1024) {
+      return `${kb.toFixed(2)} KB`;
+    }
+    return `${(kb / 1024).toFixed(2)} MB`;
+  };
+
+  const getStorageRelativePath = (pathOrUrl: string): string => {
+    if (!pathOrUrl) return '';
+    if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) {
+      const bucketMarker = '/student-submissions/';
+      const idx = pathOrUrl.indexOf(bucketMarker);
+      if (idx !== -1) {
+        return decodeURIComponent(pathOrUrl.substring(idx + bucketMarker.length));
+      }
+    }
+    return pathOrUrl;
+  };
+
+  const getSubmissionFiles = (sub: Submission | null) => {
+    if (!sub) return [];
+    const files: Array<{
+      file_path: string;
+      file_name: string;
+      file_size: number;
+      mime_type: string;
+      file_url?: string;
+    }> = [];
+
+    if (sub.student_files && Array.isArray(sub.student_files) && sub.student_files.length > 0) {
+      sub.student_files.forEach((f: any) => {
+        if (!f) return;
+        const path = f.file_path || f.filePath || f.path || f.fileUrl || f.file_url;
+        const name = f.file_name || f.fileName || f.name || (path ? String(path).split('/').pop() : 'Archivo');
+        const size = Number(f.file_size ?? f.fileSize ?? f.size ?? 0);
+        const mime = f.mime_type || f.mimeType || f.type || '';
+        const url = f.file_url || f.fileUrl || '';
+
+        if (path) {
+          files.push({
+            file_path: String(path),
+            file_name: String(name),
+            file_size: size,
+            mime_type: String(mime),
+            file_url: String(url)
+          });
+        }
+      });
+    }
+
+    if (files.length === 0 && sub.file_path) {
+      files.push({
+        file_path: sub.file_path,
+        file_name: sub.file_name || sub.file_path.split('/').pop() || 'Archivo',
+        file_size: Number(sub.file_size ?? 0),
+        mime_type: sub.mime_type || '',
+      });
+    }
+
+    return files;
   };
 
   const canPreview = (mimeType?: string | null, fileName?: string | null) => {
@@ -213,35 +275,41 @@ const AssignmentReview = () => {
     return false;
   };
 
-  // 🔥 CORRECCIÓN: Usamos storage.createSignedUrl en vez de la Edge Function
   const handleDownloadFile = async (filePath: string, fileName: string) => {
     try {
       if (!filePath) {
-          toast.error("Error: No se encontró la ruta del archivo");
-          return;
+        toast.error("Error: No se encontró la ruta del archivo");
+        return;
       }
 
-      // Método directo de Supabase Storage (Más robusto)
+      const cleanPath = getStorageRelativePath(filePath);
+
       const { data, error } = await supabase.storage
         .from('student-submissions')
-        .createSignedUrl(filePath, 60); // URL válida por 60 segundos
+        .createSignedUrl(cleanPath, 60);
 
-      if (error) throw error;
+      if (error) {
+        if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+          window.open(filePath, '_blank');
+          toast.success('Descarga iniciada');
+          return;
+        }
+        throw error;
+      }
 
       const link = document.createElement('a');
       link.href = data.signedUrl;
-      link.download = fileName;
+      link.download = fileName || 'archivo';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       toast.success('Descarga iniciada');
     } catch (error: any) {
       console.error('Error downloading file:', error);
-      toast.error('No se pudo descargar: ' + error.message);
+      toast.error('No se pudo descargar: ' + (error.message || 'Error al obtener URL del archivo'));
     }
   };
 
-  // 🔥 CORRECCIÓN: También en Preview
   const handlePreviewFile = async (file: PreviewFile) => {
     try {
       setPreviewLoading(true);
@@ -249,16 +317,22 @@ const AssignmentReview = () => {
       setPreviewUrl('');
       setPreviewOpen(true);
 
+      const cleanPath = getStorageRelativePath(file.filePath);
       const { data, error } = await supabase.storage
         .from('student-submissions')
-        .createSignedUrl(file.filePath, 60);
+        .createSignedUrl(cleanPath, 3600);
 
-      if (error) throw error;
+      if (error) {
+        if (file.filePath.startsWith('http://') || file.filePath.startsWith('https://')) {
+          setPreviewUrl(file.filePath);
+          return;
+        }
+        throw error;
+      }
       setPreviewUrl(data.signedUrl);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error previewing file:', error);
       toast.error('No se pudo abrir la vista previa');
-      setPreviewOpen(false);
     } finally {
       setPreviewLoading(false);
     }
@@ -551,54 +625,57 @@ const AssignmentReview = () => {
                     </div>
                   </div>
 
-                  {/* File Attachments (multi) */}
-                  {selectedSubmission.student_files && selectedSubmission.student_files.length > 0 && (
-                    <div>
-                      <Label className="text-base font-semibold">Archivos adjuntos del estudiante</Label>
-                      <div className="mt-2 space-y-2">
-                        {selectedSubmission.student_files.map((file: any, index: number) => {
-                          
-                          // 🔥 CORRECCIÓN: Buscamos en todas las propiedades posibles
-                          const filePath = file.file_path || file.filePath || file.path;
-                          const fileName = file.file_name || file.fileName;
-                          const fileSize = file.file_size || file.fileSize;
-                          const mimeType = file.mime_type || file.mimeType;
+                  {/* File Attachments */}
+                  {(() => {
+                    const files = getSubmissionFiles(selectedSubmission);
+                    if (files.length === 0) return null;
 
-                          return (
-                            <div key={index} className="flex items-center gap-3 p-3 border rounded-lg">
-                              <FileText className="w-5 h-5 text-muted-foreground" />
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium truncate">{fileName}</p>
-                                <p className="text-xs text-muted-foreground">{formatKB(fileSize)}</p>
+                    return (
+                      <div>
+                        <Label className="text-base font-semibold">Archivos adjuntos del estudiante</Label>
+                        <div className="mt-2 space-y-2">
+                          {files.map((file, index) => {
+                            const filePath = file.file_path;
+                            const fileName = file.file_name;
+                            const fileSize = file.file_size;
+                            const mimeType = file.mime_type;
+
+                            return (
+                              <div key={index} className="flex items-center gap-3 p-3 border rounded-lg">
+                                <FileText className="w-5 h-5 text-muted-foreground" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium truncate">{fileName}</p>
+                                  <p className="text-xs text-muted-foreground">{formatKB(fileSize)}</p>
+                                </div>
+
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    if (canPreview(mimeType, fileName) && (mimeType?.toLowerCase().includes('pdf') || fileName?.toLowerCase().endsWith('.pdf'))) {
+                                      navigate(`/grading/${selectedSubmission.id}`);
+                                    } else if (canPreview(mimeType, fileName)) {
+                                      handlePreviewFile({ filePath, fileName, mimeType, fileSize });
+                                    } else {
+                                      toast.message('Este tipo de archivo no se puede previsualizar. Usa Descargar.');
+                                    }
+                                  }}
+                                >
+                                  <Eye className="w-4 h-4 mr-1" />
+                                  {(mimeType?.includes('pdf') || fileName?.endsWith('.pdf')) ? "Calificar" : "Ver"}
+                                </Button>
+
+                                <Button variant="outline" size="sm" onClick={() => handleDownloadFile(filePath, fileName)}>
+                                  <Download className="w-4 h-4 mr-1" />
+                                  Descargar
+                                </Button>
                               </div>
-
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  if (canPreview(mimeType, fileName) && (mimeType?.toLowerCase().includes('pdf') || fileName?.toLowerCase().endsWith('.pdf'))) {
-                                    navigate(`/grading/${selectedSubmission.id}`);
-                                  } else if (canPreview(mimeType, fileName)) {
-                                    handlePreviewFile({ filePath, fileName, mimeType, fileSize });
-                                  } else {
-                                    toast.message('Este tipo de archivo no se puede previsualizar. Usa Descargar.');
-                                  }
-                                }}
-                              >
-                                <Eye className="w-4 h-4 mr-1" />
-                                {(mimeType?.includes('pdf') || fileName?.endsWith('.pdf')) ? "Calificar" : "Ver"}
-                              </Button>
-
-                              <Button variant="outline" size="sm" onClick={() => handleDownloadFile(filePath, fileName)}>
-                                <Download className="w-4 h-4 mr-1" />
-                                Descargar
-                              </Button>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Grading Section */}
                   <div className="space-y-4 border-t pt-6">

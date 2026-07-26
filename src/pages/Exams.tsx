@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { extractAnswersMap } from "@/lib/utils";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -444,13 +445,13 @@ const Exams = () => {
                                 </p>
                               </div>
                               {(() => {
-                                const answers = exam.submission.answers || {};
+                                const answers = extractAnswersMap(exam.submission.answers);
                                 const hasUngradedQuestions = Object.values(
                                   answers,
                                 ).some(
                                   (answer: any) =>
-                                    answer.requires_grading === true &&
-                                    answer.points_earned === undefined,
+                                    answer?.requires_grading === true &&
+                                    answer?.points_earned === undefined,
                                 );
 
                                 return hasUngradedQuestions ? (

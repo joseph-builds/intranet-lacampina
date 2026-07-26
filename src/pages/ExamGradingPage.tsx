@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { extractAnswersMap } from '@/lib/utils';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -94,12 +95,12 @@ const ExamGradingPage = () => {
       setQuestions((questionsData || []) as Question[]);
 
       // Initialize grades from existing data
-      const answers = submissionData.answers as Record<string, any>;
+      const answersMap = extractAnswersMap(submissionData.answers);
       const initialGrades: Record<string, { score: string; feedback: string }> = {};
       
-      Object.keys(answers).forEach(questionId => {
-        const answer = answers[questionId];
-        if (answer.requires_grading) {
+      Object.keys(answersMap).forEach(questionId => {
+        const answer = answersMap[questionId];
+        if (answer?.requires_grading) {
           // Para preguntas que requieren calificación manual, usar el score guardado
           initialGrades[questionId] = {
             score: answer.points_earned !== undefined ? String(answer.points_earned) : '',
@@ -129,9 +130,10 @@ const ExamGradingPage = () => {
 
   const calculateTotalScore = () => {
     let total = 0;
+    const answersMap = extractAnswersMap(submission?.answers);
     
     questions.forEach(question => {
-      const answer = submission?.answers[question.id];
+      const answer = answersMap[question.id];
       
       if (answer?.requires_grading) {
         // Use manually entered score (now a number)
@@ -155,7 +157,7 @@ const ExamGradingPage = () => {
       setSaving(true);
 
       // Update answers with grades
-      const updatedAnswers = { ...(submission.answers as Record<string, any>) };
+      const updatedAnswers = { ...extractAnswersMap(submission.answers) };
       let totalScore = 0;
 
       Object.keys(updatedAnswers).forEach(questionId => {
@@ -254,7 +256,7 @@ const ExamGradingPage = () => {
     );
   }
 
-  const answers = submission.answers as Record<string, any>;
+  const answers = extractAnswersMap(submission.answers);
   const totalScore = calculateTotalScore();
   const maxScore = questions.reduce((sum, q) => sum + q.points, 0);
 
@@ -302,8 +304,12 @@ const ExamGradingPage = () => {
         {/* Questions */}
         <div className="space-y-6">
           {questions.map((question, index) => {
-            const answer = answers[question.id];
-            if (!answer) return null;
+            const answer = answers[question.id] || {
+              answer: '',
+              is_correct: false,
+              points_earned: 0,
+              requires_grading: question.question_type !== 'multiple_choice' && question.question_type !== 'true_false'
+            };
 
             const isAutoGraded = question.question_type === 'multiple_choice' || question.question_type === 'true_false';
             const currentGrade = grades[question.id];

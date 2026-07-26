@@ -88,8 +88,21 @@ export default function GradingView() {
 
             // Generar URL firmada si encontramos un path válido
             if (finalPath) {
-                const { data: urlData } = await supabase.storage.from("student-submissions").createSignedUrl(finalPath, 3600);
-                if(urlData) setPdfUrl(urlData.signedUrl);
+                let cleanPath = finalPath;
+                if (cleanPath.startsWith('http://') || cleanPath.startsWith('https://')) {
+                  const bucketMarker = '/student-submissions/';
+                  const idx = cleanPath.indexOf(bucketMarker);
+                  if (idx !== -1) {
+                    cleanPath = decodeURIComponent(cleanPath.substring(idx + bucketMarker.length));
+                  }
+                }
+
+                const { data: urlData, error: urlErr } = await supabase.storage.from("student-submissions").createSignedUrl(cleanPath, 3600);
+                if(urlData && urlData.signedUrl) {
+                  setPdfUrl(urlData.signedUrl);
+                } else if (finalPath.startsWith('http://') || finalPath.startsWith('https://')) {
+                  setPdfUrl(finalPath);
+                }
             } else {
                 console.warn("No se encontró ningún archivo PDF en esta entrega.");
             }

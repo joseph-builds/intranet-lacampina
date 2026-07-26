@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { extractAnswersMap } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -111,9 +112,9 @@ export function ExamSubmissions({ examId, courseId }: ExamSubmissionsProps) {
 
       // Check which submissions have ungraded questions
       const submissionsWithStatus = (submissionsData || []).map((sub) => {
-        const answers = sub.answers as Record<string, any>;
+        const answers = extractAnswersMap(sub.answers);
         const hasUngraded = Object.values(answers).some(
-          (ans: any) => ans.requires_grading && ans.points_earned === undefined,
+          (ans: any) => ans?.requires_grading && ans?.points_earned === undefined,
         );
 
         return {

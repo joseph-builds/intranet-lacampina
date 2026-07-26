@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { GraduationCap, AlertCircle, ArrowLeft, Send } from 'lucide-react';
+import { GraduationCap, AlertCircle, ArrowLeft, Send, KeyRound } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -20,6 +20,8 @@ const Auth = () => {
   
   // Estados de vista
   const [isResetMode, setIsResetMode] = useState(false);
+  const [isOtpMode, setIsOtpMode] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
   
   // Estados de formularios
   const [loginData, setLoginData] = useState({ email: '', password: '' });
@@ -131,16 +133,43 @@ const Auth = () => {
       if (resetError) throw resetError;
 
       toast({
-        title: "Enlace enviado",
-        description: "Revisa tu bandeja de entrada o spam. Hemos enviado un enlace de recuperación.",
+        title: "Código enviado",
+        description: "Revisa tu bandeja de entrada o spam. Hemos enviado un código de 6 dígitos.",
       });
       
-      // Reseteamos el formulario y volvemos a la vista de login
+      // Pasamos al modo OTP
       setIsResetMode(false);
-      setResetData({ email: '', dni: '', role: '' });
+      setIsOtpMode(true);
 
     } catch (err: any) {
       setError(err.message || 'Hubo un error al procesar tu solicitud.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error: verifyError } = await supabase.auth.verifyOtp({
+        email: resetData.email.toLowerCase().trim(),
+        token: otpCode,
+        type: 'recovery'
+      });
+      if (verifyError) throw verifyError;
+      
+      toast({
+        title: "Código verificado",
+        description: "Por favor, ingresa tu nueva contraseña.",
+      });
+      
+      // La sesión se establece, redireccionamos a cambiar contraseña
+      window.location.href = '/update-password';
+      
+    } catch (err: any) {
+      setError(err.message || 'Código inválido o expirado.');
     } finally {
       setLoading(false);
     }
@@ -150,7 +179,37 @@ const Auth = () => {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/20 via-background to-secondary/20 p-4">
       <Card className="w-full max-w-md bg-gradient-card shadow-glow border-0 transition-all duration-300">
         
-        {isResetMode ? (
+        {isOtpMode ? (
+          /* --- VISTA: INGRESAR CÓDIGO OTP --- */
+          <>
+            <CardHeader className="text-center pb-2">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <div className="bg-primary/10 p-3 rounded-full"><KeyRound className="w-6 h-6 text-primary" /></div>
+              </div>
+              <CardTitle className="text-xl font-bold text-foreground">Verificar Código</CardTitle>
+              <CardDescription className="text-sm mt-2">Ingresa el código de 6 dígitos enviado a <strong>{resetData.email}</strong></CardDescription>
+            </CardHeader>
+            <CardContent>
+              {error && (
+                <Alert variant="destructive" className="mb-4"><AlertCircle className="h-4 w-4" /><AlertDescription className="font-medium text-xs">{error}</AlertDescription></Alert>
+              )}
+              <form onSubmit={handleVerifyOtp} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Código de seguridad</Label>
+                  <Input type="text" placeholder="123456" maxLength={6} className="text-center text-2xl tracking-widest font-mono" value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))} required disabled={loading} />
+                </div>
+                <div className="flex flex-col gap-3 pt-2">
+                  <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white" disabled={loading || otpCode.length !== 6}>
+                    {loading ? 'Verificando...' : 'Verificar Código'}
+                  </Button>
+                  <Button type="button" variant="ghost" className="w-full text-gray-500 hover:text-gray-800" onClick={() => { setIsOtpMode(false); setIsResetMode(true); setError(null); }} disabled={loading}>
+                    <ArrowLeft className="w-4 h-4 mr-2" /> Volver atrás
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </>
+        ) : isResetMode ? (
           /* --- VISTA: OLVIDÉ MI CONTRASEÑA --- */
           <>
             <CardHeader className="text-center pb-2">
@@ -189,7 +248,7 @@ const Auth = () => {
                   <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white" disabled={loading || !resetData.role}>
                     {loading ? 'Verificando datos...' : 'Enviar enlace a mi correo'}
                   </Button>
-                  <Button type="button" variant="ghost" className="w-full text-gray-500 hover:text-gray-800" onClick={() => { setIsResetMode(false); setError(null); }} disabled={loading}>
+                  <Button type="button" variant="ghost" className="w-full text-gray-500 hover:text-gray-800" onClick={() => { setIsResetMode(false); setResetData({ email: '', dni: '', role: '' }); setError(null); }} disabled={loading}>
                     <ArrowLeft className="w-4 h-4 mr-2" /> Volver al Inicio de Sesión
                   </Button>
                 </div>

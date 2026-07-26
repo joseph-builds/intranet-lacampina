@@ -91,6 +91,7 @@ const AdminUserManagement: React.FC = () => {
     dni: '', first_name: '', last_name: '', email: '', password: '', phone: '', birth_date: '', 
     role: 'student' as UserRole, current_grade_id: '', current_section_id: '', guardian_name: '', emergency_phone: '' 
   };
+  
   const [newUser, setNewUser] = useState(initialNewUserState);
   
   const [editUser, setEditUser] = useState<any>({ 
@@ -226,9 +227,16 @@ const AdminUserManagement: React.FC = () => {
         }
       }
 
+      // CORRECCIÓN AL CAMBIO DE CONTRASEÑA EN CUALQUIER USUARIO
       if (editUser.newPassword && editUser.newPassword.trim() !== '') {
         if (editUser.newPassword.length < 6) throw new Error("La nueva contraseña debe tener al menos 6 caracteres.");
-        const { error: pwdError } = await supabase.rpc('update_user_password_admin', { target_user_id: editUser.id, new_password: editUser.newPassword });
+        
+        // Se cambió a 'force_reset_password_by_email' para que coincida con la que funciona
+        const { error: pwdError } = await supabase.rpc('force_reset_password_by_email', { 
+          target_email: editUser.email, 
+          new_password: editUser.newPassword 
+        });
+        
         if (pwdError) throw pwdError;
       }
 
@@ -250,10 +258,6 @@ const AdminUserManagement: React.FC = () => {
     setSaving(null);
   };
 
-  // =========================================================================
-  // FUNCIONES AVANZADAS DE LIMPIEZA DE CARGA (INDIVIDUAL Y MASIVA)
-  // =========================================================================
-  
   const handleDesvincularCompleto = async (usersToClear: Profile[]) => {
     if (!confirm(`¿Seguro que deseas remover toda la carga académica de ${usersToClear.length} usuario(s)?`)) return;
     setBulkLoading(true);
@@ -466,7 +470,6 @@ const AdminUserManagement: React.FC = () => {
                     <Button className="bg-blue-600 h-9" size="sm" onClick={handleBulkRoleChange} disabled={!bulkRole || bulkLoading}>Aplicar Rol</Button>
                   </div>
                   
-                  {/* BOTÓN NUEVO: LIMPIAR CARGA MASIVA */}
                   <Button variant="outline" size="sm" className="h-9 border-orange-300 text-orange-700 hover:bg-orange-100" onClick={() => handleDesvincularCompleto(profiles.filter(p => selectedIds.includes(p.id)))} disabled={bulkLoading}>
                     <Unlink className="w-4 h-4 mr-2" /> Limpiar Carga Masiva
                   </Button>
@@ -573,9 +576,13 @@ const AdminUserManagement: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* MODAL CREAR */}
-        <Dialog open={createModalOpen} onOpenChange={(open) => { if (!open) closeCreateModal(); }}>
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        {/* MODAL CREAR: AHORA BLOQUEADO SI ESTÁ GUARDANDO */}
+        <Dialog open={createModalOpen} onOpenChange={(open) => { if (!open && !creating) closeCreateModal(); }}>
+          <DialogContent 
+            className="max-w-3xl max-h-[90vh] overflow-y-auto"
+            onPointerDownOutside={(e) => creating && e.preventDefault()}
+            onEscapeKeyDown={(e) => creating && e.preventDefault()}
+          >
             <DialogHeader><DialogTitle className="text-xl flex items-center gap-2"><User className="h-5 w-5 text-blue-600" /> Registrar Nuevo Usuario y Cuenta</DialogTitle></DialogHeader>
             <form onSubmit={handleCreateUser} className="space-y-6 mt-2">
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-md flex items-center justify-between">
@@ -589,9 +596,9 @@ const AdminUserManagement: React.FC = () => {
               <div className="space-y-4">
                 <h3 className="text-sm font-bold text-gray-500 uppercase border-b pb-2 flex items-center gap-2"><IdCard className="h-4 w-4" /> 1. Datos Personales</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div><Label>DNI <span className="text-red-500">*</span></Label><Input value={newUser.dni} onChange={e => setNewUser({...newUser, dni: e.target.value})} required maxLength={8} /></div>
-                  <div><Label>Nombres <span className="text-red-500">*</span></Label><Input value={newUser.first_name} onChange={e => setNewUser({...newUser, first_name: e.target.value})} required /></div>
-                  <div><Label>Apellidos <span className="text-red-500">*</span></Label><Input value={newUser.last_name} onChange={e => setNewUser({...newUser, last_name: e.target.value})} required /></div>
+                  <div><Label>DNI <span className="text-red-500">*</span></Label><Input value={newUser.dni} onChange={e => setNewUser({...newUser, dni: e.target.value.replace(ONLY_NUMBERS_REGEX, '').slice(0, 8)})} required maxLength={8} /></div>
+                  <div><Label>Nombres <span className="text-red-500">*</span></Label><Input value={newUser.first_name} onChange={e => setNewUser({...newUser, first_name: e.target.value.replace(ONLY_LETTERS_REGEX, '')})} required /></div>
+                  <div><Label>Apellidos <span className="text-red-500">*</span></Label><Input value={newUser.last_name} onChange={e => setNewUser({...newUser, last_name: e.target.value.replace(ONLY_LETTERS_REGEX, '')})} required /></div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div><Label>Correo (Login) <span className="text-red-500">*</span></Label><Input type="email" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} required /></div>
@@ -604,7 +611,7 @@ const AdminUserManagement: React.FC = () => {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div><Label className="text-gray-500">Teléfono Celular <span className="font-normal">(Opcional)</span></Label><Input value={newUser.phone} onChange={e => setNewUser({...newUser, phone: e.target.value})} /></div>
+                  <div><Label className="text-gray-500">Teléfono Celular <span className="font-normal">(Opcional)</span></Label><Input value={newUser.phone} onChange={e => setNewUser({...newUser, phone: e.target.value.replace(ONLY_NUMBERS_REGEX, '').slice(0, 9)})} placeholder="9 dígitos numéricos"/></div>
                   <div>
                     <Label className="text-gray-500">Fecha Nacimiento <span className="font-normal">(Opcional)</span></Label>
                     <div className="relative">
@@ -626,7 +633,7 @@ const AdminUserManagement: React.FC = () => {
                         <SelectContent>
                           <SelectItem value="none" className="text-gray-400 italic">No asignar aún</SelectItem>
                           {levels.map((level: any) => (
-                            <div key={level.id}>
+                            <div key={`group-${level.id}`}>
                               <div className="px-2 py-1.5 text-xs font-bold text-gray-400 uppercase bg-gray-50">{level.name}</div>
                               {grades.filter((g: any) => g.level_id === level.id).map((grade: any) => <SelectItem key={grade.id} value={grade.id} className="pl-6">{grade.name} ({level.name})</SelectItem>)}
                             </div>
@@ -654,25 +661,27 @@ const AdminUserManagement: React.FC = () => {
                 <div className="space-y-4">
                   <h3 className="text-sm font-bold text-gray-500 uppercase border-b pb-2 flex items-center gap-2"><User className="h-4 w-4" /> 3. Apoderado / Contacto</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div><Label className="text-gray-600">Nombre del Apoderado <span className="font-normal">(Opcional)</span></Label><Input value={newUser.guardian_name} onChange={e => setNewUser({...newUser, guardian_name: e.target.value})} placeholder="Nombre completo" /></div>
-                    <div><Label className="text-gray-600">Teléfono de Emergencia <span className="font-normal">(Opcional)</span></Label><Input value={newUser.emergency_phone} onChange={e => setNewUser({...newUser, emergency_phone: e.target.value})} placeholder="Nro para llamadas urgentes" /></div>
+                    <div><Label className="text-gray-600">Nombre del Apoderado <span className="font-normal">(Opcional)</span></Label><Input value={newUser.guardian_name} onChange={e => setNewUser({...newUser, guardian_name: e.target.value.replace(ONLY_LETTERS_REGEX, '')})} placeholder="Nombre completo" /></div>
+                    <div><Label className="text-gray-600">Teléfono de Emergencia <span className="font-normal">(Opcional)</span></Label><Input value={newUser.emergency_phone} onChange={e => setNewUser({...newUser, emergency_phone: e.target.value.replace(ONLY_NUMBERS_REGEX, '').slice(0, 9)})} placeholder="Nro para llamadas urgentes" className="border-red-200 focus-visible:ring-red-500" /></div>
                   </div>
                 </div>
               )}
 
               <DialogFooter className="pt-4 border-t mt-6">
-                 <Button type="button" variant="outline" onClick={closeCreateModal}>Cancelar</Button>
+                 <Button type="button" variant="outline" onClick={closeCreateModal} disabled={creating}>Cancelar</Button>
                  <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white" disabled={creating}>{creating ? 'Registrando...' : 'Registrar Cuenta y Perfil'}</Button>
               </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
 
-        {/* ========================================================================= */}
-        {/* MODAL EDITAR (CON VISUALIZACIÓN Y GESTIÓN DE CURSOS INDIVIDUALES Y AULAS) */}
-        {/* ========================================================================= */}
-        <Dialog open={editModalOpen} onOpenChange={(open) => { if (!open) setEditModalOpen(false); }}>
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        {/* MODAL EDITAR */}
+        <Dialog open={editModalOpen} onOpenChange={(open) => { if (!open && !creating) setEditModalOpen(false); }}>
+          <DialogContent 
+             className="max-w-3xl max-h-[90vh] overflow-y-auto"
+             onPointerDownOutside={(e) => creating && e.preventDefault()}
+             onEscapeKeyDown={(e) => creating && e.preventDefault()}
+          >
             <DialogHeader><DialogTitle className="text-xl flex items-center gap-2"><Pencil className="h-5 w-5 text-indigo-600" /> Editar Perfil y Accesos</DialogTitle></DialogHeader>
             <form onSubmit={handleUpdateUser} className="space-y-6 mt-4">
               
@@ -694,14 +703,20 @@ const AdminUserManagement: React.FC = () => {
               <div className="space-y-4">
                 <h3 className="text-sm font-bold text-gray-500 uppercase border-b pb-2 flex items-center gap-2"><IdCard className="h-4 w-4" /> Datos de Identificación</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div><Label>DNI <span className="text-red-500">*</span></Label><Input value={editUser.dni} onChange={e => setEditUser({...editUser, dni: e.target.value})} required maxLength={8} /></div>
-                  <div><Label>Nombres <span className="text-red-500">*</span></Label><Input value={editUser.first_name} onChange={e => setEditUser({...editUser, first_name: e.target.value})} required /></div>
-                  <div><Label>Apellidos <span className="text-red-500">*</span></Label><Input value={editUser.last_name} onChange={e => setEditUser({...editUser, last_name: e.target.value})} required /></div>
+                  <div><Label>DNI <span className="text-red-500">*</span></Label><Input value={editUser.dni} onChange={e => setEditUser({...editUser, dni: e.target.value.replace(ONLY_NUMBERS_REGEX, '').slice(0, 8)})} required maxLength={8} /></div>
+                  <div><Label>Nombres <span className="text-red-500">*</span></Label><Input value={editUser.first_name} onChange={e => setEditUser({...editUser, first_name: e.target.value.replace(ONLY_LETTERS_REGEX, '')})} required /></div>
+                  <div><Label>Apellidos <span className="text-red-500">*</span></Label><Input value={editUser.last_name} onChange={e => setEditUser({...editUser, last_name: e.target.value.replace(ONLY_LETTERS_REGEX, '')})} required /></div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div><Label className="text-gray-500">Correo (Solo Lectura)</Label><Input value={editUser.email} disabled className="bg-gray-100" /></div>
-                  <div><Label className="text-orange-500">Nueva Contraseña <span className="font-normal text-gray-500">(Opcional)</span></Label><Input type="password" value={editUser.newPassword} onChange={e => setEditUser({...editUser, newPassword: e.target.value})} placeholder="Escribir para cambiar" className="border-orange-200" /></div>
-                  <div><Label className="text-gray-500">Teléfono Celular <span className="font-normal">(Opcional)</span></Label><Input value={editUser.phone} onChange={e => setEditUser({...editUser, phone: e.target.value})} /></div>
+                  <div>
+                    <Label className="text-orange-500">Nueva Contraseña <span className="font-normal text-gray-500">(Opcional)</span></Label>
+                    <div className="flex gap-2 mt-1">
+                      <Input type="text" value={editUser.newPassword} onChange={e => setEditUser({...editUser, newPassword: e.target.value})} placeholder="Escribir para cambiar" className="border-orange-200" />
+                      <Button type="button" variant="outline" className="shrink-0 border-orange-200 hover:bg-orange-50 text-orange-600" onClick={() => setEditUser({...editUser, newPassword: generateRandomPassword()})} title="Generar contraseña segura aleatoria"><RefreshCw className="w-4 h-4" /></Button>
+                    </div>
+                  </div>
+                  <div><Label className="text-gray-500">Teléfono Celular <span className="font-normal">(Opcional)</span></Label><Input value={editUser.phone} onChange={e => setEditUser({...editUser, phone: e.target.value.replace(ONLY_NUMBERS_REGEX, '').slice(0, 9)})} placeholder="9 dígitos numéricos"/></div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
@@ -815,20 +830,20 @@ const AdminUserManagement: React.FC = () => {
                 </div>
               )}
 
-              <DialogFooter className="pt-4 border-t"><Button type="button" variant="outline" onClick={() => setEditModalOpen(false)}>Cancelar</Button><Button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white" disabled={creating}>{creating ? 'Guardando...' : 'Guardar Cambios'}</Button></DialogFooter>
+              <DialogFooter className="pt-4 border-t">
+                 <Button type="button" variant="outline" onClick={() => setEditModalOpen(false)} disabled={creating}>Cancelar</Button>
+                 <Button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white" disabled={creating}>{creating ? 'Guardando...' : 'Guardar Cambios'}</Button>
+              </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
 
-        {/* ========================================================================= */}
-        {/* MODAL ELIMINAR Y LIMPIAR (SEGURIDAD AVANZADA VISIBLE)                     */}
-        {/* ========================================================================= */}
+        {/* MODAL ELIMINAR Y LIMPIAR (SEGURIDAD AVANZADA VISIBLE) */}
         <Dialog open={isDeleteModalOpen} onOpenChange={(open) => { setIsDeleteModalOpen(open); if (!open) { setDeletingUsers([]); setConfirmDeleteText(''); } }}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader><DialogTitle className="text-red-600 flex items-center gap-2"><AlertTriangle className="w-6 h-6"/> Advertencia de Eliminación y Dependencias</DialogTitle></DialogHeader>
             <div className="py-2 text-gray-700">
               
-              {/* ZONA DE BLOQUEOS Y LIMPIEZA */}
               {blockedUsers.length > 0 && (
                 <div className="mb-6">
                   <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-md shadow-sm">
@@ -896,7 +911,6 @@ const AdminUserManagement: React.FC = () => {
                 </div>
               )}
               
-              {/* ZONA SEGURA PARA ELIMINAR */}
               {safeToDelete.length > 0 && (
                  <div className="animate-in fade-in zoom-in-95 duration-300">
                     <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2 border-b pb-2"><CheckSquare className="w-4 h-4 text-green-600"/> Seguros para eliminar ({safeToDelete.length})</h3>

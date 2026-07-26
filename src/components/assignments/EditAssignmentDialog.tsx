@@ -39,6 +39,7 @@ import { es } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { fetchTeacherCoursesWithClassrooms } from "@/lib/utils";
 
 interface EditAssignmentDialogProps {
   assignmentId: string | null;
@@ -148,15 +149,8 @@ export function EditAssignmentDialog({
     if (!profile?.id) return;
 
     try {
-      const { data, error } = await supabase
-        .from("courses")
-        .select("id, name, code")
-        .eq("teacher_principal_id", profile.id)
-        .eq("is_active", true)
-        .order("name");
-
-      if (error) throw error;
-      setCourses(data || []);
+      const allCourses = await fetchTeacherCoursesWithClassrooms(supabase, profile.id);
+      setCourses(allCourses);
     } catch (error) {
       console.error("Error fetching courses:", error);
     }

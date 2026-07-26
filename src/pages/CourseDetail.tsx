@@ -39,6 +39,7 @@ import { CourseEditDialog } from "@/components/course/CourseEditDialog";
 import { CourseAssignmentsReview } from "@/components/course/CourseAssignmentsReview";
 import TeacherGradesConfig from "@/components/grades/TeacherGradesConfig";
 import StudentCourseGrades from "@/components/grades/StudentCourseGrades";
+import { CourseSyllabusManager } from "@/components/course/CourseSyllabusManager";
 
 interface Course {
   id: string;
@@ -451,6 +452,15 @@ export default function CourseDetail() {
                 Entregas
               </TabsTrigger>
             )}
+            {(profile?.role === "teacher" || profile?.role === "admin") && (
+              <TabsTrigger
+                value="syllabus"
+                className="flex items-center gap-2"
+              >
+                <FileText className="h-4 w-4 text-primary" />
+                Temario
+              </TabsTrigger>
+            )}
             <TabsTrigger value="students" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
               Estudiantes
@@ -536,24 +546,22 @@ export default function CourseDetail() {
           <TabsContent value="submissions">
             <CourseAssignmentsReview courseId={course.id} />
           </TabsContent>
-
           <TabsContent value="students">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="h-5 w-5" />
-                  Estudiantes Inscritos ({students.length})
-                </CardTitle>
+                <CardTitle>Estudiantes Inscritos ({students.length})</CardTitle>
               </CardHeader>
               <CardContent>
                 {students.length > 0 ? (
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {students.map((student) => (
-                      <div key={student.id} className="p-4 border rounded-lg">
-                        <h3 className="font-medium">
-                          {student?.first_name || "Sin nombre"}{" "}
-                          {student?.last_name || ""}
-                        </h3>
+                      <div
+                        key={student.id}
+                        className="p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                      >
+                        <p className="font-medium">
+                          {student.first_name} {student.last_name}
+                        </p>
                         <p className="text-sm text-muted-foreground">
                           {student.email}
                         </p>
@@ -578,6 +586,16 @@ export default function CourseDetail() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {(profile?.role === "teacher" || profile?.role === "admin") && (
+            <TabsContent value="syllabus">
+              <CourseSyllabusManager
+                courseId={course.id}
+                teacherId={course.teacher?.id}
+                canEdit={canEdit || false}
+              />
+            </TabsContent>
+          )}
         </Tabs>
 
         {/* Course Edit Dialog */}

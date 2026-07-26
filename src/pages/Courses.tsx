@@ -356,15 +356,6 @@ const Courses = () => {
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <h1 className="text-3xl font-bold text-foreground">Mis Cursos</h1>
-            {profile?.role === 'teacher' && (
-            <Button 
-              className="bg-gradient-primary shadow-glow"
-              onClick={() => navigate('/admin/courses')}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Crear Curso
-            </Button>
-            )}
           </div>
           {profile?.role === 'student' && studentSection && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground bg-slate-100 w-fit px-3 py-1.5 rounded-full border">

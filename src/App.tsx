@@ -20,7 +20,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import AdminUserManagement from "./pages/AdminUserManagement";
 import AdminCourseManagement from "./pages/AdminCourseManagement";
 import Index from "./pages/Index";
-
+import UpdatePassword from "./pages/UpdatePassword";
 // Parent imports
 import ParentAdminPanel from "./pages/ParentAdminPanel";
 import ParentStudentDetail from "./pages/ParentStudentDetail";
@@ -68,6 +68,7 @@ const App = () => (
                 <Index />
               </ProtectedRoute>
             } />
+            <Route path="/update-password" element={<UpdatePassword />} />
             <Route path="/courses" element={
               <ProtectedRoute>
                 <Courses />

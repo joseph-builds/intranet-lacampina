@@ -18,6 +18,11 @@ import { useAuth } from '@/hooks/useAuth';
 
 const CURRENT_YEAR = new Date().getFullYear();
 
+// --- EXPRESIONES REGULARES PARA VALIDACIÓN ESTRICTA ---
+const ONLY_NUMBERS_REGEX = /[^0-9]/g;
+const ONLY_LETTERS_REGEX = /[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; 
+
 type UserRole = 'admin' | 'teacher' | 'student' | 'tutor';
 
 interface Profile {
@@ -152,7 +157,7 @@ const AdminUserManagement: React.FC = () => {
 
   const closeCreateModal = () => {
     setCreateModalOpen(false);
-    setNewUser({ ...initialNewUserState }); // Reset estricto
+    setNewUser({ ...initialNewUserState });
   };
 
   const handleCreateUser = async (e: React.FormEvent) => {
@@ -227,11 +232,9 @@ const AdminUserManagement: React.FC = () => {
         }
       }
 
-      // CORRECCIÓN AL CAMBIO DE CONTRASEÑA EN CUALQUIER USUARIO
       if (editUser.newPassword && editUser.newPassword.trim() !== '') {
         if (editUser.newPassword.length < 6) throw new Error("La nueva contraseña debe tener al menos 6 caracteres.");
         
-        // Se cambió a 'force_reset_password_by_email' para que coincida con la que funciona
         const { error: pwdError } = await supabase.rpc('force_reset_password_by_email', { 
           target_email: editUser.email, 
           new_password: editUser.newPassword 
@@ -576,12 +579,12 @@ const AdminUserManagement: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* MODAL CREAR: AHORA BLOQUEADO SI ESTÁ GUARDANDO */}
+        {/* MODAL CREAR: BLOQUEADO SI ESTÁ GUARDANDO */}
         <Dialog open={createModalOpen} onOpenChange={(open) => { if (!open && !creating) closeCreateModal(); }}>
           <DialogContent 
-            className="max-w-3xl max-h-[90vh] overflow-y-auto"
-            onPointerDownOutside={(e) => creating && e.preventDefault()}
-            onEscapeKeyDown={(e) => creating && e.preventDefault()}
+             className="max-w-3xl max-h-[90vh] overflow-y-auto"
+             onPointerDownOutside={(e) => creating && e.preventDefault()}
+             onEscapeKeyDown={(e) => creating && e.preventDefault()}
           >
             <DialogHeader><DialogTitle className="text-xl flex items-center gap-2"><User className="h-5 w-5 text-blue-600" /> Registrar Nuevo Usuario y Cuenta</DialogTitle></DialogHeader>
             <form onSubmit={handleCreateUser} className="space-y-6 mt-2">
@@ -709,14 +712,8 @@ const AdminUserManagement: React.FC = () => {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div><Label className="text-gray-500">Correo (Solo Lectura)</Label><Input value={editUser.email} disabled className="bg-gray-100" /></div>
-                  <div>
-                    <Label className="text-orange-500">Nueva Contraseña <span className="font-normal text-gray-500">(Opcional)</span></Label>
-                    <div className="flex gap-2 mt-1">
-                      <Input type="text" value={editUser.newPassword} onChange={e => setEditUser({...editUser, newPassword: e.target.value})} placeholder="Escribir para cambiar" className="border-orange-200" />
-                      <Button type="button" variant="outline" className="shrink-0 border-orange-200 hover:bg-orange-50 text-orange-600" onClick={() => setEditUser({...editUser, newPassword: generateRandomPassword()})} title="Generar contraseña segura aleatoria"><RefreshCw className="w-4 h-4" /></Button>
-                    </div>
-                  </div>
-                  <div><Label className="text-gray-500">Teléfono Celular <span className="font-normal">(Opcional)</span></Label><Input value={editUser.phone} onChange={e => setEditUser({...editUser, phone: e.target.value.replace(ONLY_NUMBERS_REGEX, '').slice(0, 9)})} placeholder="9 dígitos numéricos"/></div>
+                  <div><Label className="text-orange-500">Nueva Contraseña <span className="font-normal text-gray-500">(Opcional)</span></Label><Input type="password" value={editUser.newPassword} onChange={e => setEditUser({...editUser, newPassword: e.target.value})} placeholder="Escribir para cambiar" className="border-orange-200" /></div>
+                  <div><Label className="text-gray-500">Teléfono Celular <span className="font-normal">(Opcional)</span></Label><Input value={editUser.phone} onChange={e => setEditUser({...editUser, phone: e.target.value.replace(ONLY_NUMBERS_REGEX, '').slice(0, 9)})} /></div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
@@ -844,6 +841,7 @@ const AdminUserManagement: React.FC = () => {
             <DialogHeader><DialogTitle className="text-red-600 flex items-center gap-2"><AlertTriangle className="w-6 h-6"/> Advertencia de Eliminación y Dependencias</DialogTitle></DialogHeader>
             <div className="py-2 text-gray-700">
               
+              {/* ZONA DE BLOQUEOS Y LIMPIEZA */}
               {blockedUsers.length > 0 && (
                 <div className="mb-6">
                   <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-md shadow-sm">
@@ -911,6 +909,7 @@ const AdminUserManagement: React.FC = () => {
                 </div>
               )}
               
+              {/* ZONA SEGURA PARA ELIMINAR */}
               {safeToDelete.length > 0 && (
                  <div className="animate-in fade-in zoom-in-95 duration-300">
                     <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2 border-b pb-2"><CheckSquare className="w-4 h-4 text-green-600"/> Seguros para eliminar ({safeToDelete.length})</h3>

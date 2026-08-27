@@ -21,50 +21,45 @@ serve(async (req) => {
       );
     }
 
-    // Cliente admin para generar el link de recuperación
+    // Cliente admin para generar el link de recuperación (contiene el token OTP)
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // Generar el link de recuperación de contraseña
+    // Generamos el enlace de recuperación para extraer el token OTP
     const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
       type: 'recovery',
       email: email,
-      options: {
-        redirectTo: `${Deno.env.get('SITE_URL') ?? 'https://intranet.ie1267bicentenario.edu.pe'}/update-password`,
-      }
     });
 
     if (linkError || !linkData) {
-      console.error('Error generando link de recuperación:', linkError);
+      console.error('Error generando link:', linkError);
       return new Response(
-        JSON.stringify({ error: 'No se pudo generar el enlace de recuperación. Verifica que el correo esté registrado.' }),
+        JSON.stringify({ error: 'No se pudo generar el código. Verifica que el correo esté registrado.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const recoveryLink = linkData.properties?.action_link;
-    if (!recoveryLink) {
+    // Extraemos el token OTP del action_link
+    // El action_link tiene el formato: .../auth/v1/verify?token=XXXXXX&type=recovery...
+    const actionLink = linkData.properties?.action_link ?? '';
+    const urlParams = new URL(actionLink).searchParams;
+    const otpToken = urlParams.get('token') ?? '';
+
+    if (!otpToken) {
       return new Response(
-        JSON.stringify({ error: 'No se pudo obtener el enlace de recuperación' }),
+        JSON.stringify({ error: 'No se pudo obtener el código de recuperación.' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Configuración de Brevo via API HTTP (sin SMTP, sin problemas de red)
+    // Configuración de Brevo
     const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY') ?? '';
     const SMTP_ADMIN_EMAIL = Deno.env.get('SMTP_ADMIN_EMAIL') ?? '';
     const SMTP_SENDER_NAME = Deno.env.get('SMTP_SENDER_NAME') ?? 'Sistema Soporte';
 
-    if (!BREVO_API_KEY) {
-      return new Response(
-        JSON.stringify({ error: 'Configuración de correo incompleta en el servidor' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Envío del correo via Brevo API REST (puerto 443 HTTPS, nunca bloqueado)
+    // Enviamos el correo con el TOKEN para que el usuario lo ingrese en la intranet
     const emailResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {
@@ -73,41 +68,26 @@ serve(async (req) => {
         'Accept': 'application/json',
       },
       body: JSON.stringify({
-        sender: {
-          name: SMTP_SENDER_NAME,
-          email: SMTP_ADMIN_EMAIL,
-        },
+        sender: { name: SMTP_SENDER_NAME, email: SMTP_ADMIN_EMAIL },
         to: [{ email: email }],
-        subject: 'Recuperación de contraseña - Intranet I.E. 1267 Bicentenario',
+        subject: 'Código de recuperación - Intranet I.E. 1267 Bicentenario',
         htmlContent: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
-            <div style="background-color: #1a237e; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-              <h1 style="color: white; margin: 0; font-size: 22px;">I.E. 1267 Bicentenario</h1>
-              <p style="color: #90caf9; margin: 5px 0 0 0; font-size: 14px;">Sistema de Gestión Escolar</p>
+          <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
+            <div style="background:#1a237e;padding:20px;border-radius:8px 8px 0 0;text-align:center">
+              <h1 style="color:white;margin:0">I.E. 1267 Bicentenario</h1>
+              <p style="color:#90caf9;margin:5px 0 0">Sistema de Gestión Escolar</p>
             </div>
-            <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; border: 1px solid #e0e0e0;">
-              <h2 style="color: #1a237e; margin-top: 0;">Recuperación de Contraseña</h2>
-              <p style="color: #555; line-height: 1.6;">
-                Hemos recibido una solicitud para restablecer la contraseña de tu cuenta en la Intranet Escolar.
-              </p>
-              <p style="color: #555; line-height: 1.6;">
-                Haz clic en el botón de abajo para crear una nueva contraseña. Este enlace expirará en <strong>1 hora</strong>.
-              </p>
-              <div style="text-align: center; margin: 30px 0;">
-                <a href="${recoveryLink}" 
-                   style="background-color: #1a237e; color: white; padding: 14px 30px; text-decoration: none; border-radius: 6px; font-size: 16px; display: inline-block;">
-                  Restablecer Contraseña
-                </a>
+            <div style="background:white;padding:30px;border-radius:0 0 8px 8px;border:1px solid #e0e0e0">
+              <h2 style="color:#1a237e;margin-top:0">Recuperación de Contraseña</h2>
+              <p style="color:#555;line-height:1.6">Ingresa el siguiente código en la página de la intranet:</p>
+              <div style="background:#f0f4ff;border:2px dashed #1a237e;border-radius:8px;padding:20px;text-align:center;margin:25px 0">
+                <p style="margin:0 0 8px;color:#555;font-size:13px">Tu código de seguridad es:</p>
+                <span style="font-size:36px;font-weight:bold;color:#1a237e;letter-spacing:8px;font-family:monospace">${otpToken}</span>
+                <p style="margin:8px 0 0;color:#888;font-size:12px">Este código expirará en 1 hora</p>
               </div>
-              <p style="color: #888; font-size: 13px; line-height: 1.5;">
-                Si no solicitaste este cambio, puedes ignorar este correo de forma segura. 
-                Tu contraseña actual seguirá siendo la misma.
-              </p>
-              <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 20px 0;">
-              <p style="color: #aaa; font-size: 12px; text-align: center; margin: 0;">
-                Este correo fue enviado automáticamente por la Intranet de la I.E. N° 1267 Bicentenario.
-                Por favor no respondas a este mensaje.
-              </p>
+              <p style="color:#888;font-size:13px">Si no solicitaste este cambio, ignora este correo.</p>
+              <hr style="border:none;border-top:1px solid #e0e0e0;margin:20px 0">
+              <p style="color:#aaa;font-size:12px;text-align:center;margin:0">Correo automático de la Intranet I.E. N° 1267 Bicentenario. No respondas este mensaje.</p>
             </div>
           </div>
         `,
@@ -116,20 +96,20 @@ serve(async (req) => {
 
     if (!emailResponse.ok) {
       const errorBody = await emailResponse.text();
-      console.error('Error de Brevo API:', errorBody);
+      console.error('Error Brevo:', errorBody);
       return new Response(
-        JSON.stringify({ error: 'No se pudo enviar el correo. Intenta nuevamente.' }),
+        JSON.stringify({ error: 'No se pudo enviar el correo.' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     return new Response(
-      JSON.stringify({ message: 'Correo de recuperación enviado exitosamente' }),
+      JSON.stringify({ message: 'Código de recuperación enviado exitosamente' }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
-    console.error('Error inesperado:', error);
+    console.error('Error:', error);
     return new Response(
       JSON.stringify({ error: 'Error interno del servidor' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

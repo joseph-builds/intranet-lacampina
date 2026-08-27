@@ -133,11 +133,11 @@ const Auth = () => {
       if (resetError) throw new Error('No se pudo enviar el correo de recuperación. Intenta nuevamente.');
 
       toast({
-        title: "Código enviado",
-        description: "Revisa tu bandeja de entrada o spam. Hemos enviado un código de seguridad.",
+        title: "¡Correo enviado!",
+        description: "Revisa tu bandeja de entrada y haz clic en el enlace para cambiar tu contraseña.",
       });
       
-      // Pasamos al modo OTP
+      // Pasamos a la pantalla de confirmación de correo enviado
       setIsResetMode(false);
       setIsOtpMode(true);
 
@@ -180,33 +180,34 @@ const Auth = () => {
       <Card className="w-full max-w-md bg-gradient-card shadow-glow border-0 transition-all duration-300">
         
         {isOtpMode ? (
-          /* --- VISTA: INGRESAR CÓDIGO OTP --- */
+          /* --- VISTA: CONFIRMACIÓN DE CORREO ENVIADO --- */
           <>
             <CardHeader className="text-center pb-2">
               <div className="flex items-center justify-center gap-2 mb-2">
-                <div className="bg-primary/10 p-3 rounded-full"><KeyRound className="w-6 h-6 text-primary" /></div>
+                <div className="bg-green-100 p-3 rounded-full"><Send className="w-6 h-6 text-green-600" /></div>
               </div>
-              <CardTitle className="text-xl font-bold text-foreground">Verificar Código</CardTitle>
-              <CardDescription className="text-sm mt-2">Ingresa el código de seguridad enviado a <strong>{resetData.email}</strong></CardDescription>
+              <CardTitle className="text-xl font-bold text-foreground">¡Correo enviado!</CardTitle>
+              <CardDescription className="text-sm mt-2">
+                Hemos enviado un enlace a <strong>{resetData.email}</strong>
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              {error && (
-                <Alert variant="destructive" className="mb-4"><AlertCircle className="h-4 w-4" /><AlertDescription className="font-medium text-xs">{error}</AlertDescription></Alert>
-              )}
-              <form onSubmit={handleVerifyOtp} className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Código de seguridad</Label>
-                  <Input type="text" placeholder="Pega aquí el código" className="text-center text-lg tracking-widest font-mono" value={otpCode} onChange={(e) => setOtpCode(e.target.value.trim())} required disabled={loading} />
+              <div className="flex flex-col gap-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <p className="text-sm text-blue-800 leading-relaxed text-center">
+                    📧 Revisa tu bandeja de entrada (o carpeta <strong>spam</strong>) y haz clic en el botón <strong>"Restablecer Contraseña"</strong>.
+                  </p>
                 </div>
-                <div className="flex flex-col gap-3 pt-2">
-                  <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white" disabled={loading || otpCode.length < 6}>
-                    {loading ? 'Verificando...' : 'Verificar Código'}
-                  </Button>
-                  <Button type="button" variant="ghost" className="w-full text-gray-500 hover:text-gray-800" onClick={() => { setIsOtpMode(false); setIsResetMode(true); setError(null); }} disabled={loading}>
-                    <ArrowLeft className="w-4 h-4 mr-2" /> Volver atrás
-                  </Button>
-                </div>
-              </form>
+                <p className="text-xs text-gray-400 text-center">El enlace expirará en 1 hora.</p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full text-gray-500 hover:text-gray-800"
+                  onClick={() => { setIsOtpMode(false); setIsResetMode(true); setError(null); }}
+                >
+                  <ArrowLeft className="w-4 h-4 mr-2" /> Volver atrás
+                </Button>
+              </div>
             </CardContent>
           </>
         ) : isResetMode ? (

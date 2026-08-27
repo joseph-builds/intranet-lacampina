@@ -125,12 +125,12 @@ const Auth = () => {
         }
       }
 
-      // 2. Si la validación pasa sin errores, procedemos a enviar el enlace a su correo
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-        redirectTo: `${window.location.origin}/update-password`,
+      // 2. Si la validación pasa sin errores, enviamos el correo via nuestra Edge Function personalizada
+      const { error: resetError } = await supabase.functions.invoke('send-recovery-email', {
+        body: { email: cleanEmail },
       });
 
-      if (resetError) throw resetError;
+      if (resetError) throw new Error('No se pudo enviar el correo de recuperación. Intenta nuevamente.');
 
       toast({
         title: "Código enviado",
